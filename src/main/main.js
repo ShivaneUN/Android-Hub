@@ -1,11 +1,60 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const path = require("path");
 const fs = require("fs");
 const { exec, spawn } = require("child_process");
+
+const CREATE_NO_WINDOW = 0x08000000;
+
+function spawnHiddenProcess(command, args, options = {}) {
+    const spawnOptions = {
+        windowsHide: true,
+        ...options
+    };
+    if (process.platform === "win32") {
+        spawnOptions.creationFlags = CREATE_NO_WINDOW;
+    }
+    return spawn(command, args, spawnOptions);
+}
 const { ScrcpySocketClient } = require("../native/scrcpy/scrcpy-socket");
-const { AdbInputController } = require("../native/scrcpy/control/adb-input-controller");
+const { AdbInputController, KEYCODE_MAP } = require("../native/scrcpy/control/adb-input-controller");
 const { NewInstanceManager } = require("./managers/new-instance-manager");
 const { registerNewInstanceIpc } = require("./ipc/new-instance-ipc");
+const BrowserViewManager = require("./managers/browserViewManager");
+const {
+    registerSessionHandlers,
+    registerStreamParamsHandlers,
+    setupBrowserViewVideoForwarding,
+    forwardTypeAVideoEvent,
+    forwardSessionAudioEvent
+} = require("./ipc/sessionHandlers");
+const { StreamParamsManager } = require("./managers/stream-params-manager");
+const {
+    applyCaptureOrientationToOptions,
+    getOrientationFromScrcpyOptions
+} = require("../shared/stream-params");
+const { SessionStreamRegistry } = require("./managers/session-stream-registry");
+const { VideoPreviewTooltipManager } = require("./managers/video-preview-tooltip-manager");
+const { registerVideoPreviewHandlers } = require("./ipc/videoPreviewHandlers");
+const { CustomNamesManager } = require("./managers/custom-names-manager");
+const { registerNamesHandlers } = require("./ipc/namesHandlers");
+const { RenameDialogManager } = require("./managers/rename-dialog-manager");
+const { HubModalOverlayManager } = require("./managers/hub-modal-overlay-manager");
+const { registerHubModalHandlers } = require("./ipc/hubModalHandlers");
+const { registerContextMenuHandlers } = require("./ipc/contextMenuHandlers");
+const { LaunchHistoryManager } = require("./managers/launch-history-manager");
+const { registerLaunchHistoryHandlers } = require("./ipc/launchHistoryHandlers");
+const { DeviceColorsManager } = require("./managers/device-colors-manager");
+const { registerDeviceColorsHandlers } = require("./ipc/deviceColorsHandlers");
+const { AppMetadataManager } = require("./managers/app-metadata-manager");
+const { registerAppMetadataHandlers, attachAppMetadataPrefetch } = require("./ipc/appMetadataHandlers");
+const { fromScrcpyOptions } = require("../shared/stream-params");
+const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
+const { SessionAudioProcessManager } = require("./managers/session-audio-process-manager");
+const { registerAudioHandlers } = require("./ipc/audioHandlers");
+
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -19,9 +68,10 @@ function execPromise(command) {
     });
 }
 
-async function resolveLaunchActivity(serial, packageName) {
+async function resolveLaunchActivity(serial, packageName, userId = null) {
+    const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
     try {
-        const stdout = await execPromise(`"${adbPath}" -s ${serial} shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${packageName}`);
+        const stdout = await execPromise(`"${adbPath}" -s ${serial} shell cmd package resolve-activity${userArg} --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${packageName}`);
         const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (lines.length === 0) return null;
         const candidate = lines.find(l => l.includes('/')) || lines[lines.length - 1];
@@ -37,10 +87,11 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
 
     const userId = Number.isInteger(options.userId) ? options.userId : null;
     const userArg = userId !== null ? ` --user ${userId}` : "";
-    const activity = await resolveLaunchActivity(serial, packageName);
+    const monkeyUserArg = userId !== null ? ` --user ${userId}` : "";
+    const activity = await resolveLaunchActivity(serial, packageName, userId);
 
     if (!activity) {
-        exec(`"${adbPath}" -s ${serial} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
+        exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
             if (err) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err.message);
         });
         return;
@@ -60,7 +111,7 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
             ? `"${adbPath}" -s ${serial} shell am start${userArg} --activity-task-on-home -n ${activity}`
             : `"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`
     );
-    launchCandidates.push(`"${adbPath}" -s ${serial} shell am start -n ${activity}`);
+    launchCandidates.push(`"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`);
 
     let launched = false;
     for (const launchCmd of launchCandidates) {
@@ -74,7 +125,7 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     }
 
     if (!launched) {
-        exec(`"${adbPath}" -s ${serial} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
+        exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
             if (err2) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err2.message);
         });
         return;
@@ -89,6 +140,8 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
 
 let win;
 
+const appIconPath = path.join(__dirname, "..", "assets", "icons", "icon.ico");
+
 function createWindow() {
     win = new BrowserWindow({
         width: 1200,
@@ -97,27 +150,101 @@ function createWindow() {
         minHeight: 700,
         autoHideMenuBar: true,
         frame: false,
+        icon: appIconPath,
+        show: false,
         backgroundColor: "#0a0e14",
         webPreferences: {
             preload: path.join(__dirname, "..", "preload", "preload.js"),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            backgroundThrottling: false
         }
     });
 
+    win.setTitle("Android Hub");
+    win.once("ready-to-show", () => {
+        if (!win.isDestroyed()) {
+            win.show();
+        }
+    });
     win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 }
 
-const adbPath = path.join(__dirname, "..", "..", "tools", "adb.exe");
-const serverJarPath = path.join(__dirname, "..", "..", "tools", "scrcpy-server");
-const scrcpyBinaryPath = path.join(__dirname, "..", "..", "tools", "scrcpy.exe");
+const { getAdbPath, getScrcpyBinaryPath, getServerJarPath } = require("./paths");
+const { initAutoUpdater } = require("./auto-updater");
+const { registerUpdateHandlers } = require("./ipc/updateHandlers");
 const { DeviceManager } = require("./managers/device-manager");
+const { DevicePowerManager } = require("./managers/device-power-manager");
+const { DeviceOrientationManager } = require("./managers/device-orientation-manager");
+
+const adbPath = getAdbPath();
+const serverJarPath = getServerJarPath();
+const scrcpyBinaryPath = getScrcpyBinaryPath();
 
 let historyPath;
 let deviceManager;
+let appMetadataManager;
 let newInstanceManager;
+let launchHistoryManager;
+let devicePowerManager;
+let deviceOrientationManager;
+let lastConnectedSerials = [];
 
-function loadHistory() {
+function syncDevicePowerPolicy(devices) {
+    if (!devicePowerManager || !Array.isArray(devices)) return;
+    const serials = devices
+        .filter((device) => device?.serial && device.connected !== false)
+        .map((device) => device.serial);
+    if (!serials.length) return;
+    void devicePowerManager.syncConnectedDevices(serials);
+}
+
+function getConnectedDeviceIds() {
+    return lastConnectedSerials.slice();
+}
+
+function rememberConnectedSerials(devices) {
+    lastConnectedSerials = (Array.isArray(devices) ? devices : [])
+        .filter((device) => device?.serial && device.connected !== false)
+        .map((device) => device.serial);
+}
+
+function applyDeviceColorMetadata(devices) {
+    if (!global.deviceColorsManager) return devices;
+    const enriched = global.deviceColorsManager.applyDeviceColors(devices);
+    rememberConnectedSerials(enriched);
+    return enriched;
+}
+
+function buildLaunchHistoryKey(deviceId, packageName, userId = null) {
+    const uid = Number.isInteger(userId) ? userId : 0;
+    return `${String(deviceId || "")}::${String(packageName || "")}::${uid}`;
+}
+
+function getActiveTypeBHistoryKeys() {
+    const keys = new Set();
+
+    if (newInstanceManager) {
+        for (const session of newInstanceManager.listNewInstanceSessions()) {
+            if (session.serial && session.packageName) {
+                keys.add(buildLaunchHistoryKey(session.serial, session.packageName, session.userId));
+            }
+        }
+    }
+
+    const bvm = global.browserViewManager;
+    if (bvm) {
+        for (const session of bvm.getAllSessions()) {
+            if (session.type === "B" && session.deviceId && session.packageName) {
+                keys.add(buildLaunchHistoryKey(session.deviceId, session.packageName, session.userId));
+            }
+        }
+    }
+
+    return keys;
+}
+
+function loadHistoryFromDisk() {
     if (!historyPath) return {};
     try {
         if (fs.existsSync(historyPath)) {
@@ -129,6 +256,18 @@ function loadHistory() {
     return {};
 }
 
+let deviceHistoryCache = null;
+let deviceHistoryDirty = false;
+let deviceHistoryFlushTimer = null;
+const DEVICE_HISTORY_FLUSH_MS = 2000;
+
+function loadHistory() {
+    if (deviceHistoryCache === null) {
+        deviceHistoryCache = loadHistoryFromDisk();
+    }
+    return deviceHistoryCache;
+}
+
 function saveHistory(history) {
     if (!historyPath) return;
     try {
@@ -138,10 +277,49 @@ function saveHistory(history) {
     }
 }
 
+function flushDeviceHistoryNow() {
+    if (deviceHistoryFlushTimer) {
+        clearTimeout(deviceHistoryFlushTimer);
+        deviceHistoryFlushTimer = null;
+    }
+    if (!deviceHistoryDirty || deviceHistoryCache === null) return;
+    saveHistory(deviceHistoryCache);
+    deviceHistoryDirty = false;
+}
+
+function scheduleDeviceHistoryFlush() {
+    if (deviceHistoryFlushTimer) return;
+    deviceHistoryFlushTimer = setTimeout(() => {
+        deviceHistoryFlushTimer = null;
+        flushDeviceHistoryNow();
+    }, DEVICE_HISTORY_FLUSH_MS);
+}
+
 function updateDeviceInHistory(serial, name) {
     const history = loadHistory();
     history[serial] = { serial, name: name || serial, lastSeen: new Date().toISOString() };
-    saveHistory(history);
+    deviceHistoryDirty = true;
+    scheduleDeviceHistoryFlush();
+    return history;
+}
+
+function updateDevicesInHistory(devices) {
+    if (!Array.isArray(devices) || devices.length === 0) {
+        return loadHistory();
+    }
+
+    const history = loadHistory();
+    const now = new Date().toISOString();
+    for (const device of devices) {
+        if (!device?.serial) continue;
+        history[device.serial] = {
+            serial: device.serial,
+            name: device.name || device.serial,
+            lastSeen: now
+        };
+    }
+    deviceHistoryDirty = true;
+    scheduleDeviceHistoryFlush();
     return history;
 }
 
@@ -188,18 +366,246 @@ function getConnectedDevicesSimple() {
 // --- Flux vidéo natif (socket scrcpy-server + WebCodecs côté renderer) ---
 
 const videoClients = {}; // { tabId: ScrcpySocketClient }
-const inputControllers = {}; // { serial: AdbInputController }
-const inputDeviceMeta = {}; // { serial: { streamWidth, streamHeight } }
-const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient }
-const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId } }
+const inputControllersBySession = {}; // { sessionId: AdbInputController }
+const inputDeviceMetaBySession = {}; // { sessionId: { streamWidth, streamHeight } }
+const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
+const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
+
+function handoffExternalScrcpyLaunch(launchId) {
+    const launch = externalLaunches[launchId];
+    if (!launch || launch.handedOff) return;
+    launch.handedOff = true;
+    console.log(`[NewInstance] Session Hub active — lancement externe ${launchId} repris (pas de force-stop a la sortie scrcpy)`);
+}
+
+global.handoffExternalScrcpyLaunch = handoffExternalScrcpyLaunch;
 const externalScrcpyWindows = {}; // { tabId: { child, displayId, displayReadyPromise } }
+const pendingRendererRestarts = new Map();
+
+function waitForRendererRestart(mainWindow, payload, timeoutMs = 45000) {
+    return new Promise((resolve) => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+            resolve({ success: false, error: "Fenêtre principale indisponible" });
+            return;
+        }
+
+        const requestId = `${payload.sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timer = setTimeout(() => {
+            pendingRendererRestarts.delete(requestId);
+            resolve({ success: false, error: "Délai dépassé lors du redémarrage du flux" });
+        }, timeoutMs);
+
+        pendingRendererRestarts.set(requestId, (result) => {
+            clearTimeout(timer);
+            resolve(result);
+        });
+
+        mainWindow.webContents.send("session:restart-stream-request", {
+            ...payload,
+            requestId
+        });
+    });
+}
+
+function buildExternalScrcpyArgs(baseArgs) {
+    const manager = global.globalAudioOutputManager;
+    if (manager && typeof manager.applyScrcpyCliArgs === "function") {
+        return manager.applyScrcpyCliArgs(baseArgs);
+    }
+    return baseArgs;
+}
+
+/** scrcpy.exe externe Type B : display uniquement, audio via socket Hub. */
+function buildDisplayBootstrapScrcpyArgs(baseArgs) {
+    const manager = global.globalAudioOutputManager;
+    if (manager && typeof manager.applyDisplayBootstrapScrcpyArgs === "function") {
+        return manager.applyDisplayBootstrapScrcpyArgs(baseArgs);
+    }
+    const next = baseArgs.filter((arg) => arg !== "--no-audio" && arg !== "--no-playback");
+    next.push("--no-audio", "--no-playback");
+    return next;
+}
+
+function buildNewInstanceExternalBaseArgs(serial, packageName, userId) {
+    const normalizedUserId = Number.isInteger(userId) ? userId : null;
+    const args = [
+        "--serial", serial,
+        "--new-display=1920x1080",
+        "--turn-screen-off",
+        "--stay-awake",
+        "--no-window",
+        "--record=NUL",
+        "--record-format=mkv"
+    ];
+    if (normalizedUserId === null && packageName) {
+        args.splice(3, 0, `--start-app=${packageName}`);
+    }
+    return args;
+}
+
+function buildExternalScrcpyBaseArgsForDisplayId(serial, displayId) {
+    return [
+        "--serial", serial,
+        `--display-id=${displayId}`,
+        "--turn-screen-off",
+        "--stay-awake",
+        "--no-window",
+        "--record=NUL",
+        "--record-format=mkv"
+    ];
+}
+
+function waitForChildExit(child, timeoutMs = 8000) {
+    return new Promise((resolve) => {
+        if (!child || child.killed || child.exitCode !== null) {
+            resolve();
+            return;
+        }
+
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(done, timeoutMs);
+        child.once("exit", done);
+        child.once("error", done);
+    });
+}
+
+function handleExternalLaunchChildExit(launchId, child) {
+    const launch = externalLaunches[launchId];
+    if (!launch || launch.child !== child) return;
+
+    if (launch.restartingForAudio) {
+        return;
+    }
+
+    if (launch.handedOff || launch.awaitingHub || newInstanceManager?.isExternalLaunchOwned(launchId)) {
+        console.log(`[NewInstance] scrcpy externe termine (${launchId}) — session Hub active, conservation de l'app`);
+        delete externalLaunches[launchId];
+        return;
+    }
+
+    if (launch.packageName && launch.serial && newInstanceManager) {
+        void newInstanceManager.forceStopAppOnDevice({
+            serial: launch.serial,
+            packageName: launch.packageName,
+            userId: launch.userId,
+            sessionId: launchId
+        });
+    }
+    delete externalLaunches[launchId];
+}
+
+function spawnExternalLaunchChild(launchId, baseArgs) {
+    const args = buildDisplayBootstrapScrcpyArgs(baseArgs);
+    const child = spawnHiddenProcess(scrcpyBinaryPath, args, {
+        detached: false,
+        stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    child.stderr.on("data", (data) => {
+        const trimmed = data.toString().trim();
+        if (trimmed) console.error(`[NewInstance scrcpy ${launchId}] ${trimmed}`);
+    });
+
+    child.on("exit", () => handleExternalLaunchChildExit(launchId, child));
+
+    return child;
+}
+
+async function restartExternalScrcpyLaunchForAudio(launchId) {
+    const launch = externalLaunches[launchId];
+    if (!launch?.serial) return;
+
+    const previousChild = launch.child;
+    launch.restartingForAudio = true;
+
+    if (previousChild && !previousChild.killed) {
+        try {
+            previousChild.kill("SIGTERM");
+        } catch (_) {
+            /* ignore */
+        }
+        await waitForChildExit(previousChild);
+    }
+
+    const baseArgs = Number.isInteger(launch.displayId)
+        ? buildExternalScrcpyBaseArgsForDisplayId(launch.serial, launch.displayId)
+        : (launch.baseArgs || buildNewInstanceExternalBaseArgs(launch.serial, launch.packageName, launch.userId));
+
+    const child = spawnExternalLaunchChild(launchId, baseArgs);
+    launch.child = child;
+    launch.restartingForAudio = false;
+
+    const audioState = global.globalAudioOutputManager?.isGlobalMuted() ? "off" : "on";
+    console.log(`[GlobalAudio] scrcpy externe relancé (${launchId}) audio=${audioState} display=${launch.displayId ?? "?"}`);
+}
+
+async function restartAllExternalScrcpyLaunchesForAudio() {
+    const launchIds = Object.keys(externalLaunches).filter((launchId) => {
+        const launch = externalLaunches[launchId];
+        return launch?.child && !launch.child.killed;
+    });
+
+    await Promise.allSettled(launchIds.map((launchId) => restartExternalScrcpyLaunchForAudio(launchId)));
+}
+
+function resolveHubSocketAudioEnabled(_options = {}) {
+    // Audio PC via scrcpy.exe dedie (--no-video). Le socket Hub = video seule.
+    return false;
+}
+
+async function startSessionAudioPlayback(sessionId, { serial, displayId = null } = {}) {
+    if (!sessionId || !serial || !global.sessionAudioProcessManager) return;
+    if (global.globalAudioOutputManager?.isGlobalMuted?.()) return;
+
+    try {
+        await global.sessionAudioProcessManager.start(sessionId, { serial, displayId });
+    } catch (err) {
+        console.warn(`[SessionAudio ${sessionId}] demarrage:`, err?.message || err);
+    }
+}
+
+async function stopSessionAudioPlayback(sessionId) {
+    if (!sessionId || !global.sessionAudioProcessManager) return;
+    try {
+        await global.sessionAudioProcessManager.stop(sessionId);
+    } catch (err) {
+        console.warn(`[SessionAudio ${sessionId}] arret:`, err?.message || err);
+    }
+}
+
+global.startSessionAudioPlayback = startSessionAudioPlayback;
+global.stopSessionAudioPlayback = stopSessionAudioPlayback;
+
+async function applyGlobalAudioMuteSideEffects(globalMuted) {
+    const audioState = globalMuted ? "off" : "on";
+    console.log(`[GlobalAudio] Toggle → audio=${audioState}, refresh sessions actives`);
+
+    if (global.streamParamsManager) {
+        await global.streamParamsManager.refreshAllSessionsForGlobalAudio();
+    }
+
+    if (!global.sessionAudioProcessManager) return;
+
+    if (globalMuted) {
+        await global.sessionAudioProcessManager.stopAll();
+        return;
+    }
+
+    await global.sessionAudioProcessManager.syncAllActiveSessions();
+}
 
 function launchCompanionScrcpyWindow(serial, packageName, options = {}) {
     if (!fs.existsSync(scrcpyBinaryPath)) {
         throw new Error(`scrcpy introuvable: ${scrcpyBinaryPath}`);
     }
 
-    const args = ["--serial", serial];
+    const args = buildExternalScrcpyArgs(["--serial", serial]);
 
     if (options.newDisplay) {
         args.push(`--new-display=${options.newDisplay}`);
@@ -209,12 +615,10 @@ function launchCompanionScrcpyWindow(serial, packageName, options = {}) {
         args.push(`--start-app=${options.startApp || packageName}`);
     }
 
-    const child = spawn(scrcpyBinaryPath, args, {
+    const child = spawnHiddenProcess(scrcpyBinaryPath, args, {
         detached: false,
-        stdio: ["ignore", "ignore", "pipe"],
-        windowsHide: false
+        stdio: ["ignore", "ignore", "pipe"]
     });
-
     let displayId = null;
     let resolveDisplayReady;
     const displayReadyPromise = new Promise((resolve) => {
@@ -278,13 +682,53 @@ function notifyNewInstanceDisplayReady(launchId, serial, packageName, displayId,
 
 app.whenReady().then(() => {
     historyPath = path.join(app.getPath("userData"), "device-history.json");
+    global.customNamesManager = new CustomNamesManager(app.getPath("userData"));
+    global.deviceColorsManager = new DeviceColorsManager(app.getPath("userData"));
     deviceManager = new DeviceManager(adbPath);
+    devicePowerManager = new DevicePowerManager(adbPath);
+    global.devicePowerManager = devicePowerManager;
+    deviceOrientationManager = new DeviceOrientationManager(adbPath);
+    global.deviceOrientationManager = deviceOrientationManager;
+    appMetadataManager = new AppMetadataManager(app.getPath("userData"), adbPath, {
+        notifyUpdate: ({ serial, updates }) => {
+            if (!win || win.isDestroyed()) return;
+            win.webContents.send("app-metadata:updated", { serial, updates });
+        }
+    });
+    global.appMetadataManager = appMetadataManager;
+    attachAppMetadataPrefetch(deviceManager, appMetadataManager);
     newInstanceManager = new NewInstanceManager({
         adbPath,
         serverJarPath,
         scrcpyBinaryPath,
-        launchPackageOnDisplay
+        launchPackageOnDisplay,
+        onStreamMeta: (serial, meta, sessionId) => {
+            if (!sessionId) return;
+            inputDeviceMetaBySession[sessionId] = {
+                streamWidth: meta.width,
+                streamHeight: meta.height
+            };
+            const controller = inputControllersBySession[sessionId];
+            if (controller && typeof controller.setStreamSize === "function") {
+                controller.setStreamSize(meta.width, meta.height);
+            }
+        }
     });
+
+    launchHistoryManager = new LaunchHistoryManager(app.getPath("userData"), {
+        getActiveTypeBKeys: getActiveTypeBHistoryKeys
+    });
+    global.launchHistoryManager = launchHistoryManager;
+    global.globalAudioOutputManager = new GlobalAudioOutputManager();
+    global.sessionAudioProcessManager = new SessionAudioProcessManager(scrcpyBinaryPath);
+    global.sessionAudioProcessManager.setResolvers({
+        getBrowserViewManager: () => global.browserViewManager,
+        getNewInstanceManager: () => newInstanceManager
+    });
+    global.globalAudioOutputManager.setOnMuteStateChanged(async (globalMuted) => {
+        await applyGlobalAudioMuteSideEffects(globalMuted);
+    });
+    registerAudioHandlers(() => win, global.globalAudioOutputManager);
 
     registerNewInstanceIpc({
         ipcMain,
@@ -322,13 +766,23 @@ app.whenReady().then(() => {
 
         console.log(`[get-devices] connected count=${connected.length}`);
 
-        connected.forEach(d => updateDeviceInHistory(d.serial, d.name));
-        const history = loadHistory();
+        if (connected.length > 0 && deviceManager?.enrichDevicesWithStatus) {
+            try {
+                connected = await deviceManager.enrichDevicesWithStatus(connected);
+            } catch (err) {
+                console.warn("[get-devices] enrich status error:", err.message);
+            }
+        }
+
+        const history = updateDevicesInHistory(connected);
+        connected = global.customNamesManager.applyDeviceNames(connected);
+        connected = applyDeviceColorMetadata(connected);
+        syncDevicePowerPolicy(connected);
         const connectedSerials = connected.map(d => d.serial);
         const historicalOnly = Object.values(history)
             .filter(h => !connectedSerials.includes(h.serial))
             .map(h => ({ serial: h.serial, name: h.name, status: "red", connected: false, lastSeen: h.lastSeen }));
-        return [...connected, ...historicalOnly];
+        return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
     });
 
     ipcMain.handle("device:list", async () => {
@@ -357,13 +811,15 @@ app.whenReady().then(() => {
             }
         }
 
-        connected.forEach(d => updateDeviceInHistory(d.serial, d.name));
-        const history = loadHistory();
+        const history = updateDevicesInHistory(connected);
+        connected = global.customNamesManager.applyDeviceNames(connected);
+        connected = applyDeviceColorMetadata(connected);
+        syncDevicePowerPolicy(connected);
         const connectedSerials = connected.map(d => d.serial);
         const historicalOnly = Object.values(history)
             .filter(h => !connectedSerials.includes(h.serial))
             .map(h => ({ serial: h.serial, name: h.name, status: "red", connected: false, lastSeen: h.lastSeen }));
-        return [...connected, ...historicalOnly];
+        return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
     });
 
     ipcMain.handle("get-apps", async (event, serial) => {
@@ -378,9 +834,19 @@ app.whenReady().then(() => {
 
     ipcMain.handle("device:apps", async (event, serial) => {
         try {
+            if (!deviceManager) {
+                return { success: false, error: "DeviceManager non initialise", apps: [] };
+            }
+            if (!serial) {
+                return { success: false, error: "Serial appareil manquant", apps: [] };
+            }
+
+            console.log(`[device:apps] Demande pour ${serial}`);
             const apps = await deviceManager.getInstalledAppsWithDetails(serial);
+            console.log(`[device:apps] ${apps.length} apps retournees`);
             return { success: true, apps };
         } catch (err) {
+            console.error("[device:apps] Erreur:", err.message);
             return { success: false, error: err.message, apps: [] };
         }
     });
@@ -394,32 +860,230 @@ app.whenReady().then(() => {
         }
     });
 
+    function releaseSessionInputResources(sessionId) {
+        if (!sessionId) return;
+        delete inputControllersBySession[sessionId];
+        delete inputDeviceMetaBySession[sessionId];
+    }
+    global.releaseSessionInputResources = releaseSessionInputResources;
+
+    function resolveScrcpyClientForInput({ tabId, sessionId, deviceId }) {
+        const routingId = tabId || sessionId;
+
+        if (routingId && videoClients[routingId]) {
+            return videoClients[routingId];
+        }
+
+        if (routingId && newInstanceManager) {
+            const typeBSession = newInstanceManager.getNewInstanceSession(routingId);
+            if (typeBSession?.client) return typeBSession.client;
+        }
+
+        // Ne jamais retomber sur le serial : plusieurs onglets peuvent partager le même appareil.
+        return null;
+    }
+
+    async function getOrCreateSessionInputController(routingId, deviceId) {
+        const existing = inputControllersBySession[routingId];
+        if (existing) {
+            if (existing.serial === deviceId) {
+                return existing;
+            }
+            delete inputControllersBySession[routingId];
+        }
+
+        const controller = new AdbInputController(adbPath, deviceId);
+        await controller.init();
+        const meta = inputDeviceMetaBySession[routingId];
+        if (meta) {
+            controller.setStreamSize(meta.streamWidth, meta.streamHeight);
+        }
+        inputControllersBySession[routingId] = controller;
+        return controller;
+    }
+
+    function resolveTypeBDisplayId(typeBSession) {
+        if (!typeBSession) return null;
+        if (Number.isInteger(typeBSession.displayId)) {
+            return typeBSession.displayId;
+        }
+        const fromClient = typeBSession.client?.getNewDisplayId?.();
+        if (Number.isInteger(fromClient)) {
+            return fromClient;
+        }
+        if (Number.isInteger(typeBSession.presetDisplayId)) {
+            return typeBSession.presetDisplayId;
+        }
+        return null;
+    }
+
+    async function sendTypeBInputViaHubAdb({
+        routingId,
+        resolvedDeviceId,
+        displayId,
+        typeBSession,
+        type,
+        action,
+        x,
+        y,
+        key,
+        streamWidth,
+        streamHeight,
+        isStreamPixel,
+        x2,
+        y2
+    }) {
+        let controller = inputControllersBySession[routingId];
+        if (!controller || controller.serial !== resolvedDeviceId) {
+            controller = await getOrCreateSessionInputController(routingId, resolvedDeviceId);
+        }
+        if (Number.isInteger(displayId)) {
+            controller.setDisplayId(displayId);
+        }
+        if (streamWidth > 0 && streamHeight > 0) {
+            controller.setStreamSize(streamWidth, streamHeight);
+        } else if (typeBSession?.streamSize?.width > 0 && typeBSession?.streamSize?.height > 0) {
+            controller.setStreamSize(typeBSession.streamSize.width, typeBSession.streamSize.height);
+        } else {
+            const meta = inputDeviceMetaBySession[routingId];
+            if (meta?.streamWidth > 0 && meta?.streamHeight > 0) {
+                controller.setStreamSize(meta.streamWidth, meta.streamHeight);
+            }
+        }
+        if (type === "touch") {
+            await controller.sendTouch(action === "tap" ? "tap" : action, x, y, isStreamPixel);
+            return;
+        }
+        if (type === "scroll") {
+            await controller.sendScroll(x, y, x2, y2, isStreamPixel);
+            return;
+        }
+        if (type === "key") {
+            await controller.sendKey(key);
+            return;
+        }
+        throw new Error(`Type input hub ADB non supporte: ${type}`);
+    }
+
     ipcMain.handle("send-input", async (event, payload) => {
-        const { deviceId, type, action, x, y, key, orientation, streamWidth, streamHeight, isStreamPixel } = payload;
-        if (!deviceId) {
+        const {
+            tabId,
+            sessionId,
+            deviceId,
+            type,
+            action,
+            x,
+            y,
+            key,
+            orientation,
+            streamWidth,
+            streamHeight,
+            isStreamPixel
+        } = payload;
+        const routingId = tabId || sessionId;
+        if (!routingId) {
+            throw new Error("sessionId/tabId manquant pour send-input");
+        }
+
+        let resolvedDeviceId = deviceId;
+        if (!resolvedDeviceId) {
+            const entry = global.browserViewManager?.getSessionEntry(routingId);
+            resolvedDeviceId = entry?.deviceId || null;
+        }
+        if (!resolvedDeviceId && newInstanceManager) {
+            const typeBSession = newInstanceManager.getNewInstanceSession(routingId);
+            resolvedDeviceId = typeBSession?.serial || null;
+        }
+        if (!resolvedDeviceId) {
             throw new Error("DeviceId manquant pour send-input");
         }
 
-        let controller = inputControllers[deviceId];
-        if (!controller) {
-            controller = new AdbInputController(adbPath, deviceId);
-            await controller.init();
-            const meta = inputDeviceMeta[deviceId];
-            if (meta) {
-                controller.setStreamSize(meta.streamWidth, meta.streamHeight);
+        const sessionEntry = global.browserViewManager?.getSessionEntry(routingId);
+        const typeBSession = newInstanceManager?.getNewInstanceSession(routingId);
+        const isTypeB = sessionEntry?.type === "B" || Boolean(typeBSession);
+
+        if (isTypeB && newInstanceManager) {
+            const displayId = resolveTypeBDisplayId(typeBSession);
+            const preferHubAdbTouch = Number.isInteger(displayId) && (type === "touch" || type === "scroll");
+
+            if (preferHubAdbTouch) {
+                try {
+                    await sendTypeBInputViaHubAdb({
+                        routingId,
+                        resolvedDeviceId,
+                        displayId,
+                        typeBSession,
+                        type,
+                        action,
+                        x,
+                        y,
+                        key,
+                        streamWidth,
+                        streamHeight,
+                        isStreamPixel,
+                        x2: payload.x2,
+                        y2: payload.y2
+                    });
+                    console.log(
+                        `[Input] Type B ${routingId} path=hub-adb displayId=${displayId} type=${type}${action ? ` action=${action}` : ""}`
+                    );
+                    return { success: true };
+                } catch (hubAdbErr) {
+                    console.warn(
+                        `[Input] Type B ${routingId} hub ADB ${type}, poursuite routeInputToSession:`,
+                        hubAdbErr.message
+                    );
+                }
             }
-            inputControllers[deviceId] = controller;
+
+            try {
+                await newInstanceManager.routeInputToSession(routingId, {
+                    type,
+                    action,
+                    x,
+                    y,
+                    key,
+                    streamWidth,
+                    streamHeight,
+                    isStreamPixel
+                });
+                return { success: true };
+            } catch (err) {
+                console.warn(`[Input] Type B ${routingId}:`, err.message);
+                if (Number.isInteger(displayId)) {
+                    try {
+                        await sendTypeBInputViaHubAdb({
+                            routingId,
+                            resolvedDeviceId,
+                            displayId,
+                            typeBSession,
+                            type,
+                            action,
+                            x,
+                            y,
+                            key,
+                            streamWidth,
+                            streamHeight,
+                            isStreamPixel,
+                            x2: payload.x2,
+                            y2: payload.y2
+                        });
+                        console.log(
+                            `[Input] Type B ${routingId} path=hub-adb-fallback displayId=${displayId} type=${type}`
+                        );
+                        return { success: true };
+                    } catch (fallbackErr) {
+                        console.warn(`[Input] Type B ${routingId} fallback hub ADB:`, fallbackErr.message);
+                    }
+                }
+                return { success: false, error: err.message };
+            }
         }
 
-        if (orientation) {
-            controller.setOrientation(orientation);
-        }
+        const isTypeA = sessionEntry?.type === "A";
 
-        if (streamWidth && streamHeight) {
-            controller.setStreamSize(streamWidth, streamHeight);
-        }
-
-        const logParts = [`[Input] device=${deviceId}`, `type=${type}`];
+        const logParts = [`[Input] device=${resolvedDeviceId}`, `session=${routingId}`];
+        logParts.push(`type=${type}`);
         if (action) logParts.push(`action=${action}`);
         if (x !== undefined && y !== undefined) logParts.push(`x=${x} y=${y}`);
         if (payload.x2 !== undefined && payload.y2 !== undefined) logParts.push(`x2=${payload.x2} y2=${payload.y2}`);
@@ -428,73 +1092,116 @@ app.whenReady().then(() => {
         if (key) logParts.push(`key=${key}`);
         console.log(logParts.join(" "));
 
-        function getControlSize() {
-            if (streamWidth && streamHeight) {
+        const scrcpyClient = resolveScrcpyClientForInput({ tabId, sessionId, deviceId: resolvedDeviceId });
+
+        function resolveControlSize(client) {
+            if (streamWidth > 0 && streamHeight > 0) {
                 return { width: streamWidth, height: streamHeight };
             }
-            const meta = inputDeviceMeta[deviceId];
-            if (meta && meta.streamWidth && meta.streamHeight) {
+            const meta = inputDeviceMetaBySession[routingId];
+            if (meta?.streamWidth > 0 && meta?.streamHeight > 0) {
                 return { width: meta.streamWidth, height: meta.streamHeight };
             }
-            return { width: 0, height: 0 };
+            const videoSize = client?.getVideoStreamSize?.();
+            if (videoSize?.width > 0 && videoSize?.height > 0) {
+                return videoSize;
+            }
+            const cachedController = inputControllersBySession[routingId];
+            if (cachedController?.deviceWidth > 0 && cachedController?.deviceHeight > 0) {
+                return { width: cachedController.deviceWidth, height: cachedController.deviceHeight };
+            }
+            return { width: 1920, height: 1080 };
         }
 
-        // Cherche d'abord dans les clients de session classique
-        let scrcpyClient = scrcpyClientsBySerial[deviceId];
-        
-        // Si pas trouvé, cherche dans les sessions new-instance
-        if (!scrcpyClient || !scrcpyClient.controlSocket) {
-            const newInstSessions = newInstanceManager.listNewInstanceSessions();
-            for (const s of newInstSessions) {
-                const session = newInstanceManager.getNewInstanceSession(s.sessionId);
-                if (session && session.serial === deviceId && session.client && session.client.controlSocket) {
-                    scrcpyClient = session.client;
-                    break;
+        const connState = scrcpyClient?.getConnectionState?.();
+        const preferAdbTouch = Boolean(connState?.controlFromFallback && connState?.hasAudio);
+
+        if (scrcpyClient?.controlSocket && !preferAdbTouch && (type === "touch" || type === "scroll")) {
+            const controlSize = resolveControlSize(scrcpyClient);
+            try {
+                if (type === "touch") {
+                    if (action === "tap") {
+                        return scrcpyClient.sendTap(x, y, controlSize.width, controlSize.height);
+                    }
+                    if (action === "down") {
+                        return scrcpyClient.sendTouchEvent(0, x, y, controlSize.width, controlSize.height);
+                    }
+                    if (action === "up") {
+                        return scrcpyClient.sendTouchEvent(1, x, y, controlSize.width, controlSize.height);
+                    }
+                    if (action === "move") {
+                        return scrcpyClient.sendTouchEvent(2, x, y, controlSize.width, controlSize.height);
+                    }
+                }
+
+                if (type === "scroll") {
+                    const x2 = payload.x2;
+                    const y2 = payload.y2;
+                    await scrcpyClient.sendTouchEvent(0, x, y, controlSize.width, controlSize.height);
+                    await scrcpyClient.sendTouchEvent(2, x2, y2, controlSize.width, controlSize.height);
+                    return scrcpyClient.sendTouchEvent(1, x2, y2, controlSize.width, controlSize.height);
+                }
+            } catch (err) {
+                console.warn(`[Input] scrcpy ${type} echoue (${routingId}):`, err.message);
+                if (isTypeA) {
+                    throw err;
                 }
             }
         }
 
-        if (scrcpyClient && scrcpyClient.controlSocket) {
-            const controlSize = getControlSize();
+        if (!scrcpyClient?.controlSocket && type === "touch") {
+            console.warn(`[Input] Pas de socket controle scrcpy pour session=${routingId}`);
+            if (isTypeA) {
+                console.warn(`[Input] Type A ${routingId}: poursuite vers fallback ADB pour touch`);
+            }
+        }
 
-            if (type === "touch") {
-                if (action === "tap") {
-                    return scrcpyClient.sendTap(x, y, controlSize.width, controlSize.height);
+        if (scrcpyClient?.controlSocket && type === "key") {
+            try {
+                if (key.length > 1) {
+                    const keycode = KEYCODE_MAP[key] ?? Number(key);
+                    if (Number.isFinite(keycode)) {
+                        await scrcpyClient.sendKeyCode(0, keycode);
+                        return scrcpyClient.sendKeyCode(1, keycode);
+                    }
                 }
-                if (action === "down") {
-                    return scrcpyClient.sendTouchEvent(0, x, y, controlSize.width, controlSize.height);
-                }
-                if (action === "up") {
-                    return scrcpyClient.sendTouchEvent(1, x, y, controlSize.width, controlSize.height);
-                }
-                if (action === "move") {
-                    return scrcpyClient.sendTouchEvent(2, x, y, controlSize.width, controlSize.height);
+            } catch (err) {
+                console.warn(`[Input] scrcpy key echoue (${routingId}):`, err.message);
+                if (isTypeA) {
+                    throw err;
                 }
             }
+        }
 
-            if (type === "scroll") {
-                const x2 = payload.x2;
-                const y2 = payload.y2;
-                await scrcpyClient.sendTouchEvent(0, x, y, controlSize.width, controlSize.height);
-                await scrcpyClient.sendTouchEvent(2, x2, y2, controlSize.width, controlSize.height);
-                return scrcpyClient.sendTouchEvent(1, x2, y2, controlSize.width, controlSize.height);
-            }
+        let controller = inputControllersBySession[routingId];
+        if (!controller || controller.serial !== resolvedDeviceId) {
+            controller = await getOrCreateSessionInputController(routingId, resolvedDeviceId);
+        }
 
-            if (type === "key") {
-                return controller.sendKey(key);
+        if (orientation) {
+            controller.setOrientation(orientation);
+        }
+
+        if (sessionEntry?.captureRotation !== undefined && typeof controller.setCaptureRotation === "function") {
+            controller.setCaptureRotation(sessionEntry.captureRotation);
+        }
+
+        if (streamWidth && streamHeight) {
+            controller.setStreamSize(streamWidth, streamHeight);
+        }
+
+        if (scrcpyClient?.controlSocket && type === "key") {
+            try {
+                if (key.length === 1) {
+                    return controller.sendKey(key);
+                }
+            } catch (err) {
+                console.warn(`[Input] scrcpy key echoue (${routingId}), fallback ADB:`, err.message);
             }
         }
 
         if (type === "touch") {
-            return controller.sendTouch(action, x, y, isStreamPixel);
-        }
-
-        if (type === "scroll") {
-            return controller.sendScroll(x, y, payload.x2, payload.y2, isStreamPixel);
-        }
-
-        if (type === "key") {
-            return controller.sendKey(key);
+            return controller.sendTouch(action === "tap" ? "tap" : action, x, y, isStreamPixel);
         }
 
         if (type === "scroll") {
@@ -520,26 +1227,14 @@ app.whenReady().then(() => {
         }
 
         const normalizedUserId = Number.isInteger(userId) ? userId : null;
-
-        const args = [
-            "--serial", serial,
-            "--new-display=1920x1080",
-            "--no-window",
-            "--record=NUL",
-            "--record-format=mkv"
-        ];
-
-        // Si un profil est ciblé, on lance l'app explicitement via adb avec --user.
-        if (normalizedUserId === null) {
-            args.splice(3, 0, `--start-app=${packageName}`);
-        }
+        const baseArgs = buildNewInstanceExternalBaseArgs(serial, packageName, normalizedUserId);
+        const args = buildExternalScrcpyArgs(baseArgs);
 
         try {
             const launchId = `launch-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            const child = spawn(scrcpyBinaryPath, args, {
-                detached: true,
-                stdio: ["ignore", "pipe", "pipe"],
-                windowsHide: true
+            const child = spawnHiddenProcess(scrcpyBinaryPath, args, {
+                detached: false,
+                stdio: ["ignore", "pipe", "pipe"]
             });
 
             externalLaunches[launchId] = {
@@ -547,7 +1242,9 @@ app.whenReady().then(() => {
                 serial,
                 packageName,
                 userId: normalizedUserId,
-                displayId: null
+                displayId: null,
+                baseArgs,
+                restartingForAudio: false
             };
 
             let resolved = false;
@@ -571,6 +1268,7 @@ app.whenReady().then(() => {
                 if (!Number.isInteger(displayId)) return null;
 
                 externalLaunches[launchId].displayId = displayId;
+                externalLaunches[launchId].awaitingHub = true;
                 notifyNewInstanceDisplayReady(launchId, serial, packageName, displayId, normalizedUserId);
 
                 if (normalizedUserId !== null) {
@@ -604,14 +1302,12 @@ app.whenReady().then(() => {
                 }
             });
 
-            child.on("exit", () => {
-                delete externalLaunches[launchId];
-            });
+            child.on("exit", () => handleExternalLaunchChildExit(launchId, child));
 
             await new Promise((resolve, reject) => {
                 const timer = setTimeout(() => {
                     resolve();
-                }, 3500);
+                }, 10000);
 
                 const checkDone = () => {
                     if (resolved) {
@@ -649,9 +1345,34 @@ app.whenReady().then(() => {
         }
     });
 
-    async function startVideoStreamLogic(serial, tabId, packageName, options = {}) {
+    async function startVideoStreamLogic(serial, tabId, packageName, options = {}, runtime = {}) {
+        if (!options.captureOrientationLock) {
+            let dims = null;
+            for (const ctrl of Object.values(inputControllersBySession)) {
+                if (ctrl.serial === serial && ctrl.deviceWidth > 0 && ctrl.deviceHeight > 0) {
+                    dims = { width: ctrl.deviceWidth, height: ctrl.deviceHeight };
+                    break;
+                }
+            }
+            const orientation = options.orientation || getOrientationFromScrcpyOptions(options);
+            applyCaptureOrientationToOptions(options, orientation, dims?.width, dims?.height);
+        }
+
         if (videoClients[tabId]) {
-            return { success: false, error: "Stream déjà actif pour cet onglet" };
+            if (runtime.force) {
+                try {
+                    videoClients[tabId].stop();
+                } catch (_err) {
+                    // noop
+                }
+                delete videoClients[tabId];
+                if (scrcpyClientsBySerial[serial]) {
+                    delete scrcpyClientsBySerial[serial];
+                }
+                await new Promise((resolve) => setTimeout(resolve, 500));
+            } else {
+                return { success: false, error: "Stream déjà actif pour cet onglet" };
+            }
         }
 
         function waitForFirstPacket(client, timeoutMs = 5000) {
@@ -678,10 +1399,11 @@ app.whenReady().then(() => {
 
             const userId = Number.isInteger(options.userId) ? options.userId : null;
             const userArg = userId !== null ? ` --user ${userId}` : "";
+            const monkeyUserArg = userId !== null ? ` --user ${userId}` : "";
 
-            const activity = await resolveLaunchActivity(serial, targetPackage);
+            const activity = await resolveLaunchActivity(serial, targetPackage, userId);
             if (!activity) {
-                exec(`"${adbPath}" -s ${serial} shell monkey -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
+                exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
                     if (err) console.error(`Fallback lancement app ${targetPackage} (user=${userId ?? "default"}):`, err.message);
                 });
                 return;
@@ -701,7 +1423,7 @@ app.whenReady().then(() => {
                     ? `"${adbPath}" -s ${serial} shell am start${userArg} --activity-task-on-home -n ${activity}`
                     : `"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`
             );
-            launchCandidates.push(`"${adbPath}" -s ${serial} shell am start -n ${activity}`);
+            launchCandidates.push(`"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`);
 
             (async () => {
                 let launched = false;
@@ -716,7 +1438,7 @@ app.whenReady().then(() => {
                 }
 
                 if (!launched) {
-                    exec(`"${adbPath}" -s ${serial} shell monkey -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
+                    exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
                         if (err2) console.error(`Fallback lancement app ${targetPackage} (user=${userId ?? "default"}):`, err2.message);
                     });
                     return;
@@ -744,17 +1466,18 @@ app.whenReady().then(() => {
 
             scrcpyClient.on("codec-meta", (meta) => {
                 if (win && !win.isDestroyed()) {
-                    win.webContents.send("video-codec-meta", { tabId, ...meta });
+                    const payload = { tabId, ...meta };
+                    forwardTypeAVideoEvent(tabId, "video-codec-meta", payload);
                     win.webContents.send("video-stream-state", {
                         tabId,
                         stage: "codec-meta"
                     });
                 }
-                inputDeviceMeta[serial] = {
+                inputDeviceMetaBySession[tabId] = {
                     streamWidth: meta.width,
                     streamHeight: meta.height
                 };
-                const controller = inputControllers[serial];
+                const controller = inputControllersBySession[tabId];
                 if (controller && typeof controller.setStreamSize === "function") {
                     controller.setStreamSize(meta.width, meta.height);
                 }
@@ -770,7 +1493,30 @@ app.whenReady().then(() => {
                                 stage: "h264-first-packet"
                             });
                         }
-                        win.webContents.send("video-packet", {
+                        const packetPayload = {
+                            tabId,
+                            pts: packet.pts.toString(),
+                            isConfig: packet.isConfig,
+                            isKeyFrame: packet.isKeyFrame,
+                            data: packet.data
+                        };
+                        forwardTypeAVideoEvent(tabId, "video-packet", packetPayload);
+                    } catch (err) {
+                        console.error("❌ ERREUR ENVOI IPC PACKET:", err.message);
+                    }
+                }
+            });
+
+            scrcpyClient.on("audio-codec-meta", (meta) => {
+                if (win && !win.isDestroyed()) {
+                    forwardSessionAudioEvent(() => win, "audio-codec-meta", { tabId, ...meta });
+                }
+            });
+
+            scrcpyClient.on("raw-audio-packet", (packet) => {
+                if (win && !win.isDestroyed()) {
+                    try {
+                        forwardSessionAudioEvent(() => win, "audio-packet", {
                             tabId,
                             pts: packet.pts.toString(),
                             isConfig: packet.isConfig,
@@ -778,7 +1524,7 @@ app.whenReady().then(() => {
                             data: packet.data
                         });
                     } catch (err) {
-                        console.error("❌ ERREUR ENVOI IPC PACKET:", err.message);
+                        console.error("❌ ERREUR ENVOI IPC AUDIO:", err.message);
                     }
                 }
             });
@@ -786,7 +1532,8 @@ app.whenReady().then(() => {
             scrcpyClient.on("error", (err) => {
                 console.error(`[Video] Erreur pour ${tabId}:`, err.message);
                 if (win && !win.isDestroyed()) {
-                    win.webContents.send("video-error", { tabId, error: err.message });
+                    const errorPayload = { tabId, error: err.message };
+                    forwardTypeAVideoEvent(tabId, "video-error", errorPayload);
                 }
                 delete videoClients[tabId];
             });
@@ -805,18 +1552,13 @@ app.whenReady().then(() => {
 
         try {
             const primaryOptions = {
-                ...options
+                ...options,
+                audio: resolveHubSocketAudioEnabled(options)
             };
 
             if (options.disableAnimations) {
                 exec(`"${adbPath}" -s ${serial} shell settings put global window_animation_scale 0.0 && settings put global transition_animation_scale 0.0 && settings put global animator_duration_scale 0.0`, { windowsHide: true }, (err) => {
                     if (err) console.error(`Erreur désactivation animations:`, err.message);
-                });
-            }
-
-            if (options.screenOff) {
-                exec(`"${adbPath}" -s ${serial} shell input keyevent 26`, { windowsHide: true }, (err) => {
-                    if (err) console.error(`Erreur mise écran en veille:`, err.message);
                 });
             }
 
@@ -843,6 +1585,7 @@ app.whenReady().then(() => {
 
                 const retryOptions = {
                     ...options,
+                    audio: resolveHubSocketAudioEnabled(options),
                     newDisplay: options.newDisplay || "1920x1080"
                 };
                 delete retryOptions.displayId;
@@ -876,6 +1619,7 @@ app.whenReady().then(() => {
 
                 const safeOptions = {
                     ...options,
+                    audio: resolveHubSocketAudioEnabled(options),
                     newDisplay: fallbackNewDisplay,
                     skipPackageLaunch: false
                 };
@@ -911,6 +1655,14 @@ app.whenReady().then(() => {
                     if (externalScrcpyWindows[tabId] === companion) {
                         delete externalScrcpyWindows[tabId];
                     }
+                    if (packageName && newInstanceManager) {
+                        void newInstanceManager.forceStopAppOnDevice({
+                            serial,
+                            packageName,
+                            userId: Number.isInteger(options.userId) ? options.userId : null,
+                            sessionId: tabId
+                        });
+                    }
                 });
             } catch (err) {
                 console.error(`[Companion scrcpy] Impossible de lancer la fenêtre pour ${tabId}:`, err.message);
@@ -942,12 +1694,36 @@ app.whenReady().then(() => {
             streamOptions.fallbackStartApp = originalStartApp || packageName;
         }
 
+        streamOptions.audio = resolveHubSocketAudioEnabled(streamOptions);
+
         const result = await startVideoStreamLogic(serial, tabId, packageName, streamOptions);
+
+        if (result?.success && global.browserViewManager) {
+            const entry = global.browserViewManager.getSessionEntry(tabId);
+            if (entry) {
+                const isFirst = !entry._streamInitialized;
+                const params = fromScrcpyOptions(streamOptions, entry.type);
+                global.browserViewManager.setSessionStreamParams(tabId, params, { asOriginal: isFirst });
+                global.browserViewManager.setSessionScrcpyOptions(tabId, streamOptions);
+                global.browserViewManager.setSessionCaptureOrientation(
+                    tabId,
+                    getOrientationFromScrcpyOptions(streamOptions),
+                    { captureRotation: streamOptions.captureRotation || 0 }
+                );
+
+                if (global.sessionStreamRegistry) {
+                    global.sessionStreamRegistry.syncFromBrowserViewEntry(tabId, entry);
+                    global.sessionStreamRegistry.setScrcpyOptions(tabId, streamOptions, { asOriginal: isFirst });
+                }
+            }
+
+            void startSessionAudioPlayback(tabId, { serial });
+        }
 
         return result;
     });
 
-    ipcMain.handle("stop-video-stream", async (event, tabId) => {
+    async function stopVideoStreamForTab(tabId) {
         const client = videoClients[tabId];
         if (client) {
             client.stop();
@@ -963,8 +1739,12 @@ app.whenReady().then(() => {
             delete externalScrcpyWindows[tabId];
         }
 
+        releaseSessionInputResources(tabId);
+        await stopSessionAudioPlayback(tabId);
         return { success: true };
-    });
+    }
+
+    ipcMain.handle("stop-video-stream", async (event, tabId) => stopVideoStreamForTab(tabId));
 
     // --- Layout (LayoutManager) IPC ---
     const { LayoutManager } = require("./managers/layout-manager");
@@ -1021,7 +1801,97 @@ app.whenReady().then(() => {
     });
     ipcMain.on("window-close", () => { win.close(); });
 
+    ipcMain.on("session:restart-stream-result", (_event, { requestId, success, error }) => {
+        const resolve = pendingRendererRestarts.get(requestId);
+        if (resolve) {
+            pendingRendererRestarts.delete(requestId);
+            resolve({ success: Boolean(success), error: error || null });
+        }
+    });
+
     createWindow();
+    global.browserViewManager = new BrowserViewManager(win);
+    global.videoPreviewTooltipManager = new VideoPreviewTooltipManager(win);
+    global.renameDialogManager = new RenameDialogManager(win);
+    global.hubModalOverlayManager = new HubModalOverlayManager(win);
+    global.sessionStreamRegistry = new SessionStreamRegistry();
+
+    registerHubModalHandlers(() => global.hubModalOverlayManager);
+
+    global.streamParamsManager = new StreamParamsManager({
+        getBrowserViewManager: () => global.browserViewManager,
+        getNewInstanceManager: () => newInstanceManager,
+        getRegistry: () => global.sessionStreamRegistry,
+        getMainWindow: () => win,
+        waitForRendererRestart: (payload, timeoutMs) => waitForRendererRestart(win, payload, timeoutMs),
+        stopVideoStream: (tabId) => stopVideoStreamForTab(tabId),
+        startVideoStream: (serial, tabId, packageName, options, runtime = {}) =>
+            startVideoStreamLogic(serial, tabId, packageName, options, runtime),
+        getVideoClient: (sessionId) => videoClients[sessionId] || null,
+        getGlobalAudioOutputManager: () => global.globalAudioOutputManager,
+        setInputControllerOrientation: (sessionId, orientation) => {
+            const controller = inputControllersBySession[sessionId];
+            const entry = global.browserViewManager?.getSessionEntry(sessionId);
+            if (controller && typeof controller.setOrientation === "function") {
+                controller.setOrientation(orientation);
+            }
+            if (controller && typeof controller.setCaptureRotation === "function") {
+                controller.setCaptureRotation(entry?.captureRotation || 0);
+            }
+        },
+        getDeviceDimensions: (serial) => {
+            if (!serial) return null;
+            for (const controller of Object.values(inputControllersBySession)) {
+                if (controller.serial === serial && controller.deviceWidth > 0 && controller.deviceHeight > 0) {
+                    return { width: controller.deviceWidth, height: controller.deviceHeight };
+                }
+            }
+            return null;
+        },
+        applyPhysicalOrientation: (serial, orientation, deviceDims) =>
+            deviceOrientationManager?.applyOrientation(serial, orientation, deviceDims)
+                ?? Promise.resolve({ success: false, error: "Gestionnaire d'orientation indisponible" })
+    });
+
+    registerSessionHandlers(adbPath, {
+        getVideoClient: (sessionId) => videoClients[sessionId] || null,
+        getNewInstanceManager: () => newInstanceManager,
+        stopVideoStream: (sessionId) => stopVideoStreamForTab(sessionId)
+    });
+    registerStreamParamsHandlers(global.streamParamsManager);
+    setupBrowserViewVideoForwarding(newInstanceManager, () => win);
+    registerVideoPreviewHandlers(() => global.videoPreviewTooltipManager);
+    registerNamesHandlers({
+        getCustomNamesManager: () => global.customNamesManager,
+        getBrowserViewManager: () => global.browserViewManager,
+        getMainWindow: () => win,
+        getRenameDialogManager: () => global.renameDialogManager
+    });
+    registerContextMenuHandlers({
+        getCustomNamesManager: () => global.customNamesManager,
+        getBrowserViewManager: () => global.browserViewManager,
+        getMainWindow: () => win,
+        getRenameDialogManager: () => global.renameDialogManager,
+        getDeviceColorsManager: () => global.deviceColorsManager,
+        getConnectedDeviceIds
+    });
+    registerDeviceColorsHandlers({
+        getDeviceColorsManager: () => global.deviceColorsManager,
+        getMainWindow: () => win,
+        getConnectedDeviceIds
+    });
+    registerLaunchHistoryHandlers({
+        getLaunchHistoryManager: () => launchHistoryManager,
+        getAppMetadataManager: () => appMetadataManager
+    });
+    registerAppMetadataHandlers({
+        ipcMain,
+        getAppMetadataManager: () => appMetadataManager,
+        getWindow: () => win
+    });
+    registerUpdateHandlers(ipcMain);
+    initAutoUpdater(win);
+
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -1029,4 +1899,8 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+    flushDeviceHistoryNow();
 });

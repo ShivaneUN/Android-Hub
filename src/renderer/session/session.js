@@ -809,7 +809,7 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "landscap
             coordsOverride || normalizePointerPosition(canvasEl, event)
         );
         try {
-            await window.videoAPI.sendInput({
+            const result = await window.videoAPI.sendInput({
                 tabId,
                 sessionId: tabId,
                 deviceId,
@@ -822,6 +822,9 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "landscap
                 streamWidth: coords.canvasWidth,
                 streamHeight: coords.canvasHeight
             });
+            if (result && result.success === false) {
+                throw new Error(result.error || "Echec envoi touch");
+            }
         } catch (err) {
             console.warn(`[SessionView ${tabId}] touch:`, err?.message || err);
         }
