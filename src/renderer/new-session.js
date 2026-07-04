@@ -10,11 +10,55 @@
 
 let selectedDevice = null;
 let selectedApp = null;
-let allApps = [];
+let launcherApps = [];
 let launchPipeline = null;
+let historyEntries = [];
+let connectedDevicesCache = [];
+
+const DEFAULT_APP_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><circle cx="12" cy="12" r="2.5"/></svg>`;
+const DELETE_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
 
 const newInstanceSessions = new Map();
 let activeNewInstanceSessionId = null;
+let historyAppList = null;
+let metadataPrefetchTimer = null;
+const METADATA_PREFETCH_MAX = 16;
+const METADATA_PREFETCH_DEBOUNCE_MS = 450;
+
+function isHubModalChildWindow() {
+    return /hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"));
+}
+
+function dismissHubModalPanel() {
+    if (isHubModalChildWindow()) {
+        window.hubModalWindowAPI?.close?.();
+        return;
+    }
+    if (typeof closeHubModal === "function") {
+        void closeHubModal();
+    }
+}
+
+async function invokeMainAction(action, args = []) {
+    const response = await window.hubModalWindowAPI.invokeMain(action, args);
+    if (!response?.success) {
+        throw new Error(response?.error || "Action impossible");
+    }
+    return response.result;
+}
+
+function getAppLabel(app = {}) {
+    if (window.AppDisplay?.getAppLabel) {
+        return window.AppDisplay.getAppLabel(app);
+    }
+    return app.labelName || app.displayName || app.package || "";
+}
+
+function getAppVariantClass(app = {}) {
+    if (app.variantType === "clone") return "app-variant-clone";
+    if (app.variantType === "duplicate") return "app-variant-duplicate";
+    return "";
+}
 
 function buildAppKey(app = {}) {
     if (app.appKey) return String(app.appKey);
@@ -23,10 +67,20 @@ function buildAppKey(app = {}) {
     return `${pkg}@@${userId}`;
 }
 
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
 function getNewInstanceElements() {
     return {
         deviceList: document.getElementById("new-instance-device-list"),
-        appSearchBlock: document.getElementById("new-instance-app-search-block"),
+        historyList: document.getElementById("new-instance-history-list"),
+        historySearchInput: document.getElementById("new-instance-history-search-input"),
+        appLauncherHint: document.getElementById("new-instance-app-launcher-hint"),
         appSearchInput: document.getElementById("new-instance-app-search-input"),
         appResults: document.getElementById("new-instance-app-results"),
         launchBtn: document.getElementById("new-instance-launch-btn"),
@@ -36,6 +90,343 @@ function getNewInstanceElements() {
     };
 }
 
+function formatHistoryDate(timestamp) {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    if (isToday) return `Aujourd'hui ${time}`;
+    if (isYesterday) return `Hier ${time}`;
+    return date.toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function resolveDeviceName(serial) {
+    const device = connectedDevicesCache.find((d) => d.serial === serial);
+    return device?.name || serial;
+}
+
+function mapLauncherAppToSelection(app) {
+    const label = getAppLabel(app);
+    return {
+        package: app.package,
+        displayName: app.displayName || label,
+        labelName: label,
+        appName: label,
+        variantType: app.variantType,
+        userId: app.userId === undefined || app.userId === null ? null : Number(app.userId),
+        appKey: buildAppKey(app),
+        iconPath: app.iconPath || null,
+        iconUrl: app.iconUrl || null
+    };
+}
+
+function renderLauncherAppIcon(app) {
+    const iconSrc = app.iconUrl || app.iconPath;
+    if (iconSrc) {
+        return `<span class="new-instance-app-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`;
+    }
+    return `<span class="new-instance-app-icon">${DEFAULT_APP_ICON_SVG}</span>`;
+}
+
+function updateLauncherHint(message) {
+    const { appLauncherHint } = getNewInstanceElements();
+    if (appLauncherHint) appLauncherHint.textContent = message;
+}
+
+function resetLauncherApps() {
+    launcherApps = [];
+    const { appSearchInput, appResults } = getNewInstanceElements();
+    if (appSearchInput) appSearchInput.value = "";
+    updateLauncherHint("Selectionnez un appareil pour afficher ses applications.");
+    if (appResults) {
+        appResults.innerHTML = '<p class="apps-loading">Aucun appareil selectionne</p>';
+    }
+}
+
+function renderLauncherAppsList(apps) {
+    const { appResults } = getNewInstanceElements();
+    if (!appResults) return;
+
+    if (!selectedDevice) {
+        appResults.innerHTML = '<p class="apps-loading">Selectionnez un appareil</p>';
+        return;
+    }
+
+    if (!apps.length) {
+        appResults.innerHTML = '<p class="apps-loading">Aucune application trouvee</p>';
+        return;
+    }
+
+    appResults.innerHTML = apps.map((app) => {
+        const label = getAppLabel(app);
+        const variantClass = getAppVariantClass(app);
+        const isSelected = selectedApp && buildAppKey(app) === selectedApp.appKey;
+        return `
+        <button type="button" class="new-instance-app-item ${variantClass}${isSelected ? " selected" : ""}" data-app-key="${buildAppKey(app)}">
+            ${renderLauncherAppIcon(app)}
+            <span class="new-instance-app-main">
+                <span class="new-instance-app-name">${escapeHtml(label)}</span>
+                <span class="new-instance-app-package">${escapeHtml(app.package)}${app.userId !== undefined && app.userId !== null ? ` (profil ${app.userId})` : ""}</span>
+            </span>
+        </button>
+    `;
+    }).join("");
+
+    appResults.querySelectorAll(".new-instance-app-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const app = launcherApps.find((entry) => buildAppKey(entry) === btn.dataset.appKey);
+            if (!app) return;
+            selectAppFromLauncher(app);
+        });
+    });
+}
+
+function selectAppFromLauncher(app) {
+    if (!selectedDevice) {
+        setStatus("Selectionnez d'abord un appareil", true);
+        return;
+    }
+
+    selectedApp = mapLauncherAppToSelection(app);
+    updateLaunchState();
+
+    const { appSearchInput } = getNewInstanceElements();
+    filterLauncherAppsAndRender(appSearchInput?.value || "");
+    setStatus(`Application selectionnee : ${getAppLabel(selectedApp)} — cliquez « Lancer instance »`);
+}
+
+function scheduleVisibleAppsMetadataPrefetch(apps = []) {
+    if (!selectedDevice?.serial || !window.electronAPI?.prefetchAppMetadata) return;
+
+    clearTimeout(metadataPrefetchTimer);
+    metadataPrefetchTimer = setTimeout(() => {
+        const payloadApps = apps.slice(0, METADATA_PREFETCH_MAX).map((app) => ({
+            package: app.package,
+            packageName: app.package,
+            userId: app.userId ?? null,
+            appName: app.appName || app.labelName || app.displayName || app.package
+        }));
+
+        if (!payloadApps.length) return;
+
+        window.electronAPI.prefetchAppMetadata({
+            deviceId: selectedDevice.serial,
+            apps: payloadApps,
+            maxCount: METADATA_PREFETCH_MAX
+        }).catch((err) => {
+            console.warn("[NewSession] prefetch metadata:", err.message);
+        });
+    }, METADATA_PREFETCH_DEBOUNCE_MS);
+}
+
+function filterLauncherAppsAndRender(query) {
+    if (!selectedDevice) {
+        renderLauncherAppsList([]);
+        return;
+    }
+
+    const normalized = String(query || "").toLowerCase().trim();
+    let list = launcherApps.slice();
+
+    if (normalized) {
+        list = list.filter((app) => {
+            const appName = getAppLabel(app).toLowerCase();
+            const packageName = String(app.package || "").toLowerCase();
+            return appName.includes(normalized) || packageName.includes(normalized);
+        });
+    }
+
+    list.sort((a, b) => getAppLabel(a).localeCompare(getAppLabel(b), "fr", { sensitivity: "base" }));
+    renderLauncherAppsList(list);
+    scheduleVisibleAppsMetadataPrefetch(list);
+}
+
+function createHistoryAppList() {
+    const { historyList, historySearchInput } = getNewInstanceElements();
+    if (!historyList || historyAppList) return historyAppList;
+
+    historyList.classList.add("app-list");
+    historyAppList = new AppList(historyList, {
+        mode: "history",
+        emptyMessage: "Aucun historique recent",
+        noResultsMessage: "Aucun element ne correspond a la recherche",
+        sortAlphabetically: false,
+        searchInput: historySearchInput || null,
+        itemClassName: "app-list-item new-instance-history-item",
+        itemTag: "div",
+        getItemKey: (entry) => entry.key || buildAppKey({ package: entry.packageName, userId: entry.userId }),
+        getAppName: (entry) => entry.appName || entry.packageName,
+        getPackageName: (entry) => entry.packageName,
+        getIconSrc: (entry) => entry.iconUrl || entry.iconPath || null,
+        renderMeta: (entry) => {
+            const deviceLabel = escapeHtml(resolveDeviceName(entry.deviceId));
+            const dateLabel = formatHistoryDate(entry.lastLaunchedAt);
+            const countLabel = entry.launchCount > 1 ? ` · ${entry.launchCount} lancements` : "";
+            const userLabel = Number.isInteger(entry.userId) && entry.userId !== 0
+                ? ` · profil ${entry.userId}`
+                : "";
+            return `<span class="app-list-item-meta">${deviceLabel}${userLabel} · ${dateLabel}${countLabel}</span>`;
+        },
+        renderActions: (entry) => `
+            <button type="button" class="app-list-action-btn new-instance-history-delete" data-app-list-action="delete" title="Supprimer" data-history-key="${escapeHtml(entry.key || "")}" data-device-id="${escapeHtml(entry.deviceId)}" data-package="${escapeHtml(entry.packageName)}" data-user-id="${entry.userId ?? ""}" aria-label="Supprimer">${DELETE_ICON_SVG}</button>
+        `,
+        onSelect: (entry) => {
+            selectFromHistory({
+                deviceId: entry.deviceId,
+                packageName: entry.packageName,
+                appName: entry.appName,
+                userId: entry.userId ?? null,
+                iconPath: entry.iconPath || null,
+                iconUrl: entry.iconUrl || null
+            });
+        }
+    });
+
+    historyList.addEventListener("click", (event) => {
+        const deleteBtn = event.target.closest(".new-instance-history-delete");
+        if (!deleteBtn) return;
+        event.stopPropagation();
+        removeHistoryEntry({
+            key: deleteBtn.dataset.historyKey || null,
+            deviceId: deleteBtn.dataset.deviceId,
+            packageName: deleteBtn.dataset.package,
+            userId: deleteBtn.dataset.userId === "" ? null : Number(deleteBtn.dataset.userId)
+        }).catch((err) => {
+            setStatus(`Erreur suppression: ${err.message}`, true);
+        });
+    });
+
+    historyList.addEventListener("dblclick", (event) => {
+        if (event.target.closest(".new-instance-history-delete")) return;
+
+        const itemEl = event.target.closest(".new-instance-history-item");
+        if (!itemEl || !historyList.contains(itemEl)) return;
+
+        const entry = historyEntries.find((item) => {
+            const key = item.key || buildAppKey({ package: item.packageName, userId: item.userId });
+            return key === itemEl.dataset.itemKey;
+        });
+        if (!entry) return;
+
+        event.preventDefault();
+        launchFromHistory({
+            deviceId: entry.deviceId,
+            packageName: entry.packageName,
+            appName: entry.appName,
+            userId: entry.userId ?? null,
+            iconPath: entry.iconPath || null,
+            iconUrl: entry.iconUrl || null
+        }).catch((err) => {
+            setStatus(`Erreur lancement: ${err.message}`, true);
+        });
+    });
+
+    return historyAppList;
+}
+
+function applyMetadataUpdates(updates = []) {
+    if (!updates.length) return;
+
+    launcherApps = launcherApps.map((app) => {
+        const match = updates.find((update) => buildAppKey(update) === buildAppKey(app));
+        if (!match) return app;
+        return {
+            ...app,
+            appName: match.appName || app.appName,
+            labelName: match.appName || app.labelName,
+            displayName: match.appName || app.displayName,
+            iconPath: match.iconPath || app.iconPath,
+            iconUrl: match.iconUrl || app.iconUrl
+        };
+    });
+
+    const { appSearchInput } = getNewInstanceElements();
+    filterLauncherAppsAndRender(appSearchInput?.value || "");
+
+    historyEntries = historyEntries.map((entry) => {
+        const match = updates.find((update) =>
+            update.packageName === entry.packageName
+            && (update.userId ?? null) === (entry.userId ?? null)
+            && (!update.deviceId || update.deviceId === entry.deviceId)
+        );
+        if (!match) return entry;
+        return {
+            ...entry,
+            appName: match.appName || entry.appName,
+            iconPath: match.iconPath || entry.iconPath,
+            iconUrl: match.iconUrl || entry.iconUrl
+        };
+    });
+
+    if (historyAppList) {
+        historyAppList.updateMetadata(updates.map((update) => {
+            const entry = historyEntries.find((item) =>
+                item.packageName === (update.packageName || update.package)
+                && (item.userId ?? null) === (update.userId ?? null)
+                && (!update.deviceId || item.deviceId === update.deviceId)
+            );
+            return entry ? { ...update, key: entry.key } : update;
+        }));
+    }
+}
+
+async function loadLaunchHistory() {
+    const { historyList } = getNewInstanceElements();
+    if (!historyList || !window.launchHistoryAPI?.list) {
+        return;
+    }
+
+    try {
+        const response = await window.launchHistoryAPI.list();
+        historyEntries = Array.isArray(response?.entries) ? response.entries : [];
+    } catch (err) {
+        console.error("[NewSession] loadLaunchHistory:", err);
+        historyEntries = [];
+    }
+
+    renderHistoryList();
+}
+
+function scheduleLaunchHistoryRefresh() {
+    const run = () => {
+        loadLaunchHistory().catch((err) => {
+            console.error("[NewSession] scheduleLaunchHistoryRefresh:", err);
+        });
+    };
+
+    if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(run, { timeout: 3000 });
+    } else {
+        setTimeout(run, 0);
+    }
+}
+
+function renderHistoryList() {
+    const list = createHistoryAppList();
+    if (!list) return;
+    list.setItems(historyEntries);
+    list.syncSearchFromInput();
+}
+
+async function removeHistoryEntry({ key, deviceId, packageName, userId = null }) {
+    if (!window.launchHistoryAPI?.remove) return;
+    const response = await window.launchHistoryAPI.remove({ key, deviceId, packageName, userId });
+    if (!response?.success) {
+        const detail = response?.requestedKey
+            ? ` (clé: ${response.requestedKey})`
+            : "";
+        throw new Error((response?.error || "suppression impossible") + detail);
+    }
+    await loadLaunchHistory();
+}
+
 function setStatus(message = "", isError = false) {
     const { status } = getNewInstanceElements();
     if (!status) return;
@@ -43,11 +434,54 @@ function setStatus(message = "", isError = false) {
     status.classList.toggle("error", Boolean(isError));
 }
 
+function buildTypeBLaunchStreamOptions() {
+    return {
+        newDisplay: "1920x1080",
+        stayAwake: true,
+        turnScreenOff: true
+    };
+}
+
+const pendingDisplayIdWaiters = [];
+
+function resolveDisplayIdWaiters(data) {
+    if (!data?.serial || !Number.isInteger(data.displayId)) return;
+
+    for (let i = pendingDisplayIdWaiters.length - 1; i >= 0; i -= 1) {
+        const waiter = pendingDisplayIdWaiters[i];
+        if (waiter.serial === data.serial) {
+            clearTimeout(waiter.timer);
+            waiter.resolve(data.displayId);
+            pendingDisplayIdWaiters.splice(i, 1);
+        }
+    }
+}
+
+function waitForVirtualDisplayId(serial, knownDisplayId, timeoutMs = 10000) {
+    if (Number.isInteger(knownDisplayId)) {
+        return Promise.resolve(knownDisplayId);
+    }
+
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            const index = pendingDisplayIdWaiters.findIndex((w) => w.resolve === resolve);
+            if (index >= 0) pendingDisplayIdWaiters.splice(index, 1);
+            resolve(null);
+        }, timeoutMs);
+
+        pendingDisplayIdWaiters.push({ serial, resolve, timer });
+    });
+}
+
+function formatTypeBLaunchCommand(packageName) {
+    const pkg = packageName || "";
+    return `scrcpy --new-display=1920x1080 --stay-awake --turn-screen-off --start-app=${pkg}`;
+}
+
 function updateCommandPreview() {
     const { commandPreview } = getNewInstanceElements();
     if (!commandPreview) return;
-    const packageName = selectedApp?.package || "";
-    commandPreview.textContent = `scrcpy --new-display=1920x1080 --start-app=${packageName}`;
+    commandPreview.textContent = formatTypeBLaunchCommand(selectedApp?.package || "");
 }
 
 function updateLaunchState() {
@@ -102,103 +536,99 @@ function renderDeviceList(devices) {
     });
 }
 
-function renderAppsList(apps) {
+async function loadAppsForSelectedDevice() {
+    if (!selectedDevice) return;
+
     const { appResults } = getNewInstanceElements();
     if (!appResults) return;
 
-    if (!apps.length) {
-        appResults.innerHTML = '<p class="apps-loading">Aucune application trouvee</p>';
-        return;
-    }
-
-    appResults.innerHTML = apps.map((app) => `
-        <button type="button" class="new-instance-app-item ${selectedApp && selectedApp.appKey === buildAppKey(app) ? "selected" : ""}" data-package="${app.package}" data-display="${app.displayName}" data-app-key="${buildAppKey(app)}" data-user-id="${app.userId ?? ""}">
-            <span class="new-instance-app-name">${app.displayName}</span>
-            <span class="new-instance-app-package">${app.package}${app.userId !== undefined && app.userId !== null ? ` (profil ${app.userId})` : ""}</span>
-        </button>
-    `).join("");
-
-    appResults.querySelectorAll(".new-instance-app-item").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            selectedApp = {
-                package: btn.dataset.package,
-                displayName: btn.dataset.display,
-                userId: btn.dataset.userId === "" ? null : Number(btn.dataset.userId),
-                appKey: btn.dataset.appKey
-            };
-            renderAppsList(allApps);
-            updateLaunchState();
-            setStatus("");
-        });
-    });
-}
-
-function filterAppsAndRender(query) {
-    const normalized = query.toLowerCase().trim();
-    if (!normalized) {
-        renderAppsList(allApps);
-        return;
-    }
-
-    const filtered = allApps.filter((app) => {
-        const displayName = String(app.displayName || "").toLowerCase();
-        const pkg = String(app.package || "").toLowerCase();
-        const profile = app.userId === undefined || app.userId === null ? "" : String(app.userId).toLowerCase();
-        return displayName.includes(normalized) || pkg.includes(normalized) || profile.includes(normalized);
-    });
-
-    renderAppsList(filtered);
-}
-
-async function loadAppsForSelectedDevice() {
-    const { appSearchBlock, appResults } = getNewInstanceElements();
-    if (!selectedDevice || !appResults || !appSearchBlock) return;
-
-    appSearchBlock.classList.remove("hidden");
+    updateLauncherHint(`Applications installees sur ${selectedDevice.name || selectedDevice.serial}`);
     appResults.innerHTML = '<p class="apps-loading">Chargement des applications...</p>';
+    setStatus("Chargement des applications...");
 
     try {
         const response = await window.electronAPI.getAppsWithDetails(selectedDevice.serial);
+        if (response?.success === false) {
+            throw new Error(response.error || "Impossible de charger les applications");
+        }
+
         const apps = Array.isArray(response)
             ? response
             : Array.isArray(response?.apps)
                 ? response.apps
                 : [];
 
-        allApps = apps.map((app) => ({
+        launcherApps = apps.map((app) => ({
             ...app,
-            appKey: buildAppKey(app)
+            appKey: buildAppKey(app),
+            appName: app.appName || app.labelName || app.displayName || app.package,
+            labelName: app.labelName || app.appName || app.displayName || app.package
         }));
-        renderAppsList(allApps);
+
+        const { appSearchInput } = getNewInstanceElements();
+        filterLauncherAppsAndRender(appSearchInput?.value || "");
+
+        if (!launcherApps.length) {
+            setStatus("Aucune application detectee sur cet appareil.", true);
+            return;
+        }
+
+        setStatus(`${launcherApps.length} application(s) chargee(s).`);
     } catch (err) {
-        allApps = [];
+        launcherApps = [];
         appResults.innerHTML = '<p class="apps-loading">Erreur lors du chargement des applications</p>';
         setStatus(`Erreur apps: ${err.message}`, true);
+        console.error("[NewSession] loadAppsForSelectedDevice:", err);
+    }
+}
+
+async function fetchConnectedDevices() {
+    if (typeof window.refreshDevices === "function") {
+        await window.refreshDevices();
+    }
+
+    const source = typeof window.getCurrentDevices === "function"
+        ? window.getCurrentDevices()
+        : [];
+
+    if (source.length > 0) {
+        return source.filter((d) => d?.connected !== false);
+    }
+
+    try {
+        const response = await window.electronAPI.getDevices();
+        const devices = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.devices)
+                ? response.devices
+                : [];
+        return devices.filter((d) => d?.connected !== false);
+    } catch (_err) {
+        return [];
     }
 }
 
 async function selectDevice(serial, name) {
     selectedDevice = { serial, name };
     selectedApp = null;
-    allApps = [];
 
-    const devices = (Array.isArray(currentDevices) ? currentDevices : []).filter((d) => d.connected);
+    const devices = await fetchConnectedDevices();
     renderDeviceList(devices);
     updateLaunchState();
     setStatus("");
+
     await loadAppsForSelectedDevice();
 }
 
 async function loadConnectedDevices() {
-    const devices = (Array.isArray(currentDevices) ? currentDevices : []).filter((d) => d.connected);
+    const devices = await fetchConnectedDevices();
+    connectedDevicesCache = devices;
 
     renderDeviceList(devices);
+    renderHistoryList();
 
-    const { appSearchBlock, appSearchInput, appResults } = getNewInstanceElements();
     if (!selectedDevice) {
-        if (appSearchBlock) appSearchBlock.classList.add("hidden");
-        if (appSearchInput) appSearchInput.value = "";
-        if (appResults) appResults.innerHTML = "";
+        resetLauncherApps();
     }
 
     if (devices.length === 1 && !selectedDevice) {
@@ -229,102 +659,57 @@ function renderLaunchPipelineStatus(prefix = "Pipeline") {
     setStatus(`${prefix}: ${parts.join(" | ")}`);
 }
 
-function setAllTabsInactive() {
-    document.querySelectorAll(".scrcpy-tab").forEach((tab) => tab.classList.remove("active"));
-}
-
-function createNewInstanceTab(sessionId, label) {
-    const tabsBar = document.getElementById("tabs-bar");
-    if (!tabsBar) return null;
-
-    const tab = document.createElement("div");
-    tab.className = "scrcpy-tab active";
-    tab.dataset.tabId = sessionId;
-    tab.dataset.kind = "new-instance";
-    tab.innerHTML = `
-        <span class="tab-icon"></span>
-        <span class="tab-label">${label}</span>
-        <span class="tab-close">&#10005;</span>
-    `;
-
-    tab.addEventListener("click", (event) => {
-        if (event.target.classList.contains("tab-close")) return;
-        activateNewInstanceSession(sessionId);
-    });
-
-    const closeButton = tab.querySelector(".tab-close");
-    if (closeButton) {
-        closeButton.addEventListener("click", async (event) => {
-            event.stopPropagation();
-            await closeNewInstanceSession(sessionId);
-        });
-    }
-
-    setAllTabsInactive();
-    tabsBar.appendChild(tab);
-    return tab;
-}
-
 function activateNewInstanceSession(sessionId) {
     const entry = newInstanceSessions.get(sessionId);
     if (!entry) return;
 
-    const stage = document.getElementById("video-stage");
-    if (!stage) return;
-
-    stage.classList.add("active");
-
-    stage.querySelectorAll("canvas").forEach((canvas) => {
-        canvas.style.display = canvas.dataset.sessionId === sessionId ? "block" : "none";
-    });
-
     document.querySelectorAll(".page").forEach((p) => p.classList.add("hidden"));
-    setAllTabsInactive();
-    if (entry.tab) {
-        entry.tab.classList.add("active");
-    }
-
+    document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
     activeNewInstanceSessionId = sessionId;
-    const titlebarTitle = document.querySelector(".titlebar-title");
-    if (titlebarTitle) {
-        titlebarTitle.textContent = entry.label || "Nouvelle instance";
-    }
 }
 
 async function closeNewInstanceSession(sessionId) {
     const entry = newInstanceSessions.get(sessionId);
-    if (!entry) return;
 
-    try {
-        // Suppression de l'Input Controller (identique au bouton Mirroring)
-        if (typeof window.removeInputHandlers === "function") {
-            window.removeInputHandlers(sessionId);
-        }
-
-        if (entry.player) {
-            try {
-                await entry.player.stop();
-            } catch (_err) {
-                // noop
+    if (entry) {
+        try {
+            if (entry.player) {
+                try {
+                    await entry.player.stop();
+                } catch (_err) {
+                    // noop
+                }
             }
+
+            if (entry.pipeline) {
+                await entry.pipeline.stop();
+            } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
+                await window.electronAPI.newInstanceStop({ sessionId });
+            }
+        } catch (err) {
+            console.error(`[NewSession] Erreur fermeture session ${sessionId}:`, err);
         }
 
-        if (entry.pipeline) {
-            await entry.pipeline.stop();
+        if (entry.canvas) {
+            entry.canvas.remove();
         }
-    } catch (err) {
-        console.error(`[NewSession] Erreur fermeture session ${sessionId}:`, err);
+
+        if (window.__sessionStreamBridge) {
+            window.__sessionStreamBridge.unregisterSessionStreamHandle(sessionId);
+        }
+
+        newInstanceSessions.delete(sessionId);
+    } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
+        try {
+            await window.electronAPI.newInstanceStop({ sessionId });
+        } catch (err) {
+            console.error(`[NewSession] Erreur arret backend ${sessionId}:`, err);
+        }
     }
 
-    if (entry.canvas) {
-        entry.canvas.remove();
+    if (window.sessionAPI) {
+        await window.sessionAPI.close(sessionId);
     }
-
-    if (entry.tab) {
-        entry.tab.remove();
-    }
-
-    newInstanceSessions.delete(sessionId);
 
     if (activeNewInstanceSessionId === sessionId) {
         activeNewInstanceSessionId = null;
@@ -332,39 +717,60 @@ async function closeNewInstanceSession(sessionId) {
         if (remaining.length > 0) {
             activateNewInstanceSession(remaining[remaining.length - 1]);
         } else {
-            const stage = document.getElementById("video-stage");
-            if (stage) {
-                stage.classList.remove("active");
-            }
             showPage("page-new");
             document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
         }
     }
+
+    if (typeof renderSidebar === "function") renderSidebar();
 }
 
-async function launchNewInstanceSession() {
-    if (!selectedDevice) {
-        updateLaunchState();
-        return;
-    }
-    if (!selectedApp) {
-        updateLaunchState();
-        return;
+async function launchTypeBSession({ serial, deviceName, packageName, appLabel, userId = null, iconPath = null }) {
+    if (isHubModalChildWindow()) {
+        dismissHubModalPanel();
+        return invokeMainAction("launchTypeBSession", [{ serial, deviceName, packageName, appLabel, userId, iconPath }]);
     }
 
-    const payload = {
-        serial: selectedDevice.serial,
-        packageName: selectedApp.package,
-        userId: Number.isInteger(selectedApp.userId) ? selectedApp.userId : null,
-        tabLabel: selectedApp.displayName
+    dismissHubModalPanel();
+
+    if (!serial || !packageName) {
+        throw new Error("appareil ou application manquant");
+    }
+
+    const normalizedUserId = Number.isInteger(userId) ? userId : null;
+    const tabLabel = appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName;
+
+    setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName)}`);
+
+    const scrcpyLaunch = await window.electronAPI.launchNewInstance(serial, packageName, normalizedUserId);
+    if (!scrcpyLaunch?.success) {
+        throw new Error(scrcpyLaunch?.error || "Echec lancement scrcpy");
+    }
+
+    const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
+    if (!Number.isInteger(presetDisplayId)) {
+        throw new Error("Display virtuel non detecte apres lancement scrcpy");
+    }
+
+    const streamOptions = {
+        stayAwake: true,
+        turnScreenOff: true
     };
 
-    setStatus("Lancement en cours...");
+    const payload = {
+        serial,
+        packageName,
+        userId: normalizedUserId,
+        tabLabel,
+        streamOptions,
+        presetDisplayId,
+        skipPackageLaunch: true,
+        externalLaunchId: scrcpyLaunch.launchId || null
+    };
 
     const created = await window.electronAPI.newInstanceCreate(payload);
     if (!created?.success || !created?.session?.sessionId) {
-        setStatus(`Erreur lancement: ${created?.error || "creation session impossible"}`, true);
-        return;
+        throw new Error(created?.error || "creation session impossible");
     }
 
     const session = created.session;
@@ -381,115 +787,208 @@ async function launchNewInstanceSession() {
         stage.appendChild(canvas);
     }
 
-    const tab = createNewInstanceTab(sessionId, selectedApp.displayName || selectedApp.package);
     const pipeline = window.createNewInstanceVideoPipeline(sessionId, canvas);
 
     newInstanceSessions.set(sessionId, {
         sessionId,
-        label: selectedApp.displayName || selectedApp.package,
-        tab,
+        label: tabLabel,
         canvas,
         pipeline,
-        serial: selectedDevice.serial,
-        packageName: selectedApp.package
+        serial,
+        packageName
     });
 
-    activateNewInstanceSession(sessionId);
-
     try {
+        if (window.sessionAPI) {
+            await window.sessionAPI.registerView(sessionId, "B", {
+                label: tabLabel,
+                deviceId: serial,
+                packageName,
+                userId: normalizedUserId,
+                stayAwakeActive: true
+            });
+        }
+
         const started = await pipeline.start();
         if (!started?.success) {
             throw new Error(started?.error || "demarrage session echoue");
         }
 
-        // Input Controller (identique au bouton Mirroring - utilise input-controller.js)
-        if (typeof window.installInputHandlers === "function") {
-            window.installInputHandlers(canvas, sessionId, selectedDevice.serial, "portrait");
+        if (typeof finalizeSessionUI === "function") {
+            await finalizeSessionUI(sessionId, { label: tabLabel });
+        } else if (typeof onSessionLaunched === "function") {
+            await onSessionLaunched(sessionId, "B", { label: tabLabel });
+        } else {
+            activateNewInstanceSession(sessionId);
         }
 
         launchPipeline = createLaunchPipeline(sessionId);
-        renderLaunchPipelineStatus(`Instance lancee pour ${selectedApp.displayName}`);
+        renderLaunchPipelineStatus(`Instance lancee pour ${appLabel || tabLabel}`);
+
+        scheduleLaunchHistoryRefresh();
     } catch (err) {
         await closeNewInstanceSession(sessionId);
+        throw err;
+    }
+}
+
+async function selectFromHistory(entry) {
+    const { deviceId, packageName, appName, userId, iconPath, iconUrl } = entry;
+    const devices = await fetchConnectedDevices();
+    connectedDevicesCache = devices;
+
+    const device = devices.find((d) => d.serial === deviceId && d.connected !== false);
+    if (!device) {
+        setStatus("L'appareil de cette entree n'est pas connecte.", true);
+        return;
+    }
+
+    const previousSerial = selectedDevice?.serial;
+    selectedDevice = { serial: device.serial, name: device.name || deviceId };
+    selectedApp = {
+        package: packageName,
+        displayName: appName || packageName,
+        labelName: appName || packageName,
+        userId: Number.isInteger(userId) ? userId : null,
+        appKey: buildAppKey({ package: packageName, userId }),
+        iconPath: iconPath || null,
+        iconUrl: iconUrl || null
+    };
+
+    renderDeviceList(devices);
+    updateLaunchState();
+
+    if (previousSerial !== device.serial || !launcherApps.length) {
+        await loadAppsForSelectedDevice();
+    } else {
+        const { appSearchInput } = getNewInstanceElements();
+        filterLauncherAppsAndRender(appSearchInput?.value || "");
+    }
+
+    setStatus(`Pret a lancer : ${appName || packageName} — cliquez « Lancer instance » ou double-cliquez dans l'historique`);
+}
+
+async function launchFromHistory(entry) {
+    const { deviceId, packageName, appName, userId, iconPath } = entry;
+    if (!deviceId || !packageName) {
+        setStatus("Entree historique incomplete.", true);
+        return;
+    }
+
+    const devices = await fetchConnectedDevices();
+    const device = devices.find((d) => d.serial === deviceId && d.connected !== false);
+    if (!device) {
+        setStatus("L'appareil de cette entree n'est pas connecte.", true);
+        return;
+    }
+
+    const appLabel = appName || getAppLabel({ package: packageName, displayName: appName, labelName: appName });
+
+    setStatus(`Lancement : ${appLabel}...`);
+    await launchTypeBSession({
+        serial: device.serial,
+        deviceName: device.name || deviceId,
+        packageName,
+        appLabel,
+        userId: Number.isInteger(userId) ? userId : null,
+        iconPath: iconPath || null
+    });
+}
+
+async function launchNewInstanceSession() {
+    if (!selectedDevice) {
+        updateLaunchState();
+        return;
+    }
+    if (!selectedApp) {
+        updateLaunchState();
+        return;
+    }
+
+    const appLabel = getAppLabel(selectedApp);
+
+    try {
+        await launchTypeBSession({
+            serial: selectedDevice.serial,
+            deviceName: selectedDevice.name,
+            packageName: selectedApp.package,
+            appLabel,
+            userId: Number.isInteger(selectedApp.userId) ? selectedApp.userId : null,
+            iconPath: selectedApp.iconPath || null
+        });
+    } catch (err) {
         setStatus(`Erreur lancement: ${err.message}`, true);
     }
 }
 
-async function launchMirrorSession() {
-    if (!selectedDevice) {
+async function launchMirrorSession(options = {}) {
+    if (isHubModalChildWindow()) {
+        const serial = options.serial || selectedDevice?.serial;
+        const deviceName = options.deviceName || selectedDevice?.name || serial;
+        if (!serial) {
+            setStatus("Selectionnez d'abord un appareil", true);
+            return;
+        }
+        dismissHubModalPanel();
+        try {
+            await invokeMainAction("launchMirrorSession", [{ serial, deviceName }]);
+        } catch (err) {
+            setStatus(`Erreur mirroring: ${err.message}`, true);
+        }
+        return;
+    }
+
+    dismissHubModalPanel();
+
+    if (!options.serial && !selectedDevice) {
         setStatus("Selectionnez d'abord un appareil", true);
         return;
     }
 
-    const serial = selectedDevice.serial;
-    const deviceName = selectedDevice.name || serial;
-    const sessionId = "mirror-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
-    const stage = document.getElementById("video-stage");
-
-    const canvas = document.createElement("canvas");
-    canvas.id = `canvas-${sessionId}`;
-    canvas.dataset.sessionId = sessionId;
-    canvas.dataset.kind = "mirror";
-    canvas.style.display = "none";
-
-    if (stage) {
-        stage.appendChild(canvas);
-    }
-
-    const tab = createNewInstanceTab(sessionId, deviceName + " (Mirror)");
-
-    // Utilise le pipeline new-instance existant pour le flux vidéo
-    const pipeline = window.createNewInstanceVideoPipeline(sessionId, canvas);
-
-    newInstanceSessions.set(sessionId, {
-        sessionId,
-        label: deviceName + " (Mirror)",
-        tab,
-        canvas,
-        pipeline,
-        serial,
-        packageName: null
-    });
-
-    activateNewInstanceSession(sessionId);
+    const serial = options.serial || selectedDevice?.serial;
+    const deviceName = options.deviceName || selectedDevice?.name || serial;
+    const mirrorLabel = `${deviceName} (Mirror)`;
 
     setStatus("Lancement du mirroring...");
 
-    // Utilise le système de player existant (identique à instance-manager.js)
-    const player = createVideoPlayer(sessionId, canvas);
-
     try {
-        const result = await player.start(serial, null, {});
-        if (!result?.success) {
-            throw new Error(result?.error || "echec demarrage stream video");
+        if (typeof createInstance !== "function") {
+            throw new Error("Gestionnaire d'instances indisponible");
         }
 
-        // Installe l'Input Controller complet (identique à instance-manager.js)
-        if (typeof window.installInputHandlers === "function") {
-            window.installInputHandlers(canvas, sessionId, serial, "portrait");
-        }
+        const scrcpyOpts = typeof StreamParams !== "undefined"
+            ? StreamParams.toScrcpyOptions(StreamParams.DEFAULT_STREAM_PARAMS, "A")
+            : {};
 
-        // Stocke le player pour pouvoir l'arrêter
-        newInstanceSessions.get(sessionId).player = player;
+        await createInstance(serial, deviceName, null, {
+            tabLabel: mirrorLabel,
+            ...scrcpyOpts
+        });
 
         setStatus(`Mirroring actif pour ${deviceName}`);
     } catch (err) {
-        await closeNewInstanceSession(sessionId);
         setStatus(`Erreur mirroring: ${err.message}`, true);
     }
 }
 
-async function openNewSessionPanel() {
-    showPage("page-new-session");
-    document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
-    document.getElementById("nav-new-session").classList.add("active");
+async function openNewSessionPanel(options = {}) {
+    if (!options.inChildWindow && !isHubModalChildWindow()) {
+        if (window.hubModalAPI) {
+            await window.hubModalAPI.open({ panel: "new-session" });
+        }
+        document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+        document.getElementById("nav-new-session")?.classList.add("active");
+        return;
+    }
+
     selectedDevice = null;
     selectedApp = null;
-    allApps = [];
     launchPipeline = null;
+    resetLauncherApps();
+    historyAppList?.resetSearch();
     setStatus("");
     updateLaunchState();
-    await loadConnectedDevices();
+    await Promise.all([loadConnectedDevices(), loadLaunchHistory()]);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -497,13 +996,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const appSearchInput = document.getElementById("new-instance-app-search-input");
     const launchBtn = document.getElementById("new-instance-launch-btn");
 
-    if (navNewSession) {
-        navNewSession.addEventListener("click", openNewSessionPanel);
+    resetLauncherApps();
+
+    if (window.electronAPI?.onNewInstanceDisplayReady) {
+        window.electronAPI.onNewInstanceDisplayReady(resolveDisplayIdWaiters);
+    }
+
+    if (navNewSession && !isHubModalChildWindow()) {
+        // Géré dans index.html
     }
 
     if (appSearchInput) {
         appSearchInput.addEventListener("input", (e) => {
-            filterAppsAndRender(e.target.value || "");
+            filterLauncherAppsAndRender(e.target.value || "");
         });
     }
 
@@ -524,6 +1029,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    if (window.electronAPI?.onVideoStreamState) {
+        window.electronAPI.onVideoStreamState((data) => {
+            if (!launchPipeline || !data || data.tabId !== launchPipeline.sessionId) return;
+            if (data.stage === "codec-meta") {
+                launchPipeline.decoderReady = true;
+                renderLaunchPipelineStatus("Pipeline Android -> Canvas");
+            }
+            if (data.stage === "h264-first-packet") {
+                launchPipeline.h264FirstPacket = true;
+                renderLaunchPipelineStatus("Pipeline Android -> Canvas");
+            }
+            if (data.stage === "adb-socket-connected") {
+                launchPipeline.adbSocketConnected = true;
+                renderLaunchPipelineStatus("Pipeline Android -> Canvas");
+            }
+        });
+    }
+
     if (window.electronAPI?.onNewInstanceState) {
         window.electronAPI.onNewInstanceState((data) => {
             if (!launchPipeline || !data || data.sessionId !== launchPipeline.sessionId) return;
@@ -538,26 +1061,18 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    if (window.electronAPI?.onNewInstanceVideoCodecMeta) {
-        window.electronAPI.onNewInstanceVideoCodecMeta((data) => {
-            if (!launchPipeline || !data || data.sessionId !== launchPipeline.sessionId) return;
-            launchPipeline.decoderReady = true;
-            renderLaunchPipelineStatus("Pipeline Android -> Canvas");
-        });
-    }
-
-    if (window.electronAPI?.onNewInstanceVideoPacket) {
-        window.electronAPI.onNewInstanceVideoPacket((data) => {
-            if (!launchPipeline || !data || data.sessionId !== launchPipeline.sessionId) return;
-            launchPipeline.h264FirstPacket = true;
-            renderLaunchPipelineStatus("Pipeline Android -> Canvas");
-        });
-    }
-
     if (window.electronAPI?.onNewInstanceVideoError) {
         window.electronAPI.onNewInstanceVideoError((data) => {
             if (!launchPipeline || !data || data.sessionId !== launchPipeline.sessionId) return;
             setStatus(`Erreur flux video: ${data.error || "inconnue"}`, true);
+        });
+    }
+
+    if (window.electronAPI?.onNewInstanceScrcpyClosed && !isHubModalChildWindow()) {
+        window.electronAPI.onNewInstanceScrcpyClosed(async ({ sessionId } = {}) => {
+            if (!sessionId) return;
+            console.log(`[NewSession] Scrcpy ferme, fermeture session ${sessionId}`);
+            await closeNewInstanceSession(sessionId);
         });
     }
 
@@ -568,15 +1083,18 @@ document.addEventListener("DOMContentLoaded", () => {
         renderLaunchPipelineStatus("Pipeline Android -> Canvas");
     });
 
-    window.addEventListener("devices-refreshed", async () => {
-        const panel = document.getElementById("page-new-session");
-        if (!panel || panel.classList.contains("hidden")) return;
+    window.addEventListener("devices-refreshed", async (event) => {
+        if (!isHubModalChildWindow()) return;
 
-        const connectedDevices = (Array.isArray(currentDevices) ? currentDevices : []).filter((d) => d.connected);
+        const allDevices = Array.isArray(event.detail)
+            ? event.detail
+            : (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : []);
+        const connectedDevices = allDevices.filter((d) => d?.connected !== false);
+        connectedDevicesCache = connectedDevices;
         if (selectedDevice && !connectedDevices.some((d) => d.serial === selectedDevice.serial)) {
             selectedDevice = null;
             selectedApp = null;
-            allApps = [];
+            resetLauncherApps();
             setStatus("L'appareil selectionne n'est plus connecte.", true);
             await loadConnectedDevices();
             updateLaunchState();
@@ -584,8 +1102,35 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         renderDeviceList(connectedDevices);
+        renderHistoryList();
         updateLaunchState();
     });
 
+    if (window.electronAPI?.onAppMetadataUpdated) {
+        window.electronAPI.onAppMetadataUpdated(({ serial, updates } = {}) => {
+            if (!selectedDevice || serial !== selectedDevice.serial) {
+                if (Array.isArray(updates) && updates.length) {
+                    applyMetadataUpdates(updates.map((update) => ({ ...update, deviceId: serial })));
+                }
+                return;
+            }
+            applyMetadataUpdates(updates);
+        });
+    }
+
     updateLaunchState();
 });
+
+function getAllNewInstanceSessions() {
+    return Array.from(newInstanceSessions.values());
+}
+
+window.getAllNewInstanceSessions = getAllNewInstanceSessions;
+
+if (!isHubModalChildWindow()) {
+    window.__hubModalMainActions = {
+        launchTypeBSession,
+        launchMirrorSession,
+        launchFromHistory
+    };
+}
