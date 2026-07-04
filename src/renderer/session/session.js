@@ -53,8 +53,44 @@ function normalizePointerPosition(canvasEl, event) {
     };
 }
 
+function createVideoFramePresenter(ctx, canvasEl) {
+    let pendingFrame = null;
+    let rafId = null;
+
+    function cancel() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        if (pendingFrame) {
+            pendingFrame.close();
+            pendingFrame = null;
+        }
+    }
+
+    function schedule(frame) {
+        if (pendingFrame) {
+            pendingFrame.close();
+        }
+        pendingFrame = frame;
+        if (rafId !== null) return;
+
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            const frameToDraw = pendingFrame;
+            pendingFrame = null;
+            if (!frameToDraw) return;
+            ctx.drawImage(frameToDraw, 0, 0, canvasEl.width, canvasEl.height);
+            frameToDraw.close();
+        });
+    }
+
+    return { schedule, cancel };
+}
+
 function initTypeAVideoPlayer(tabId, canvasElement) {
     const ctx = canvasElement.getContext("2d");
+    const framePresenter = createVideoFramePresenter(ctx, canvasElement);
     const MAX_PACKET_QUEUE = MAX_VIDEO_PACKET_QUEUE;
     const SYNTHETIC_FRAME_US = 16667;
 
@@ -178,8 +214,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
         const decoderConfig = await selectDecoderConfig(meta, format, avcDescription);
         state.decoder = new VideoDecoder({
             output: (frame) => {
-                ctx.drawImage(frame, 0, 0, canvasElement.width, canvasElement.height);
-                frame.close();
+                framePresenter.schedule(frame);
                 state.frameCount += 1;
             },
             error: (err) => {
@@ -198,6 +233,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
         state.decoderInitializing = true;
         try {
             const avcDescription = state.streamFormat === "avc" ? state.pendingConfigData : null;
+            framePresenter.cancel();
             if (state.decoder && state.decoder.state !== "closed") state.decoder.close();
             state.decoder = null;
             state.decoderReady = false;
@@ -291,6 +327,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
     });
 
     function resetDecoderState() {
+        framePresenter.cancel();
         if (state.decoder && state.decoder.state !== "closed") {
             state.decoder.close();
         }
@@ -334,6 +371,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
 
 function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
     const ctx = canvasElement.getContext("2d");
+    const framePresenter = createVideoFramePresenter(ctx, canvasElement);
     const state = {
         started: false,
         decoder: null,
@@ -402,8 +440,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         }
         state.decoder = new VideoDecoder({
             output: (frame) => {
-                ctx.drawImage(frame, 0, 0, canvasElement.width, canvasElement.height);
-                frame.close();
+                framePresenter.schedule(frame);
                 state.frameCount += 1;
             },
             error: (err) => {
@@ -425,6 +462,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
                     const detectedFormat = detectH264Format(cfg);
                     if (detectedFormat !== state.format) {
                         state.format = detectedFormat;
+                        framePresenter.cancel();
                         if (state.decoder && state.decoder.state !== "closed") state.decoder.close();
                         state.decoder = null;
                         state.decoderReady = false;
@@ -482,6 +520,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
     });
 
     function resetDecoderState() {
+        framePresenter.cancel();
         if (state.decoder && state.decoder.state !== "closed") {
             state.decoder.close();
         }
