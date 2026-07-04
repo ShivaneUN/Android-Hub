@@ -1,320 +1,66 @@
-# 🧠 ANDROID HUB — AI CONTEXT FILE
+# Android Hub — Contexte agent & zones verrouillées
 
-Ce fichier définit les règles fondamentales que toute IA (Claude Code, Copilot, Cline, etc.)
-DOIT respecter lorsqu'elle analyse, modifie ou génère du code pour Android Hub.
+> **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Toute violation de ces règles est considérée comme une erreur critique d'architecture.
-
----
-
-# 🚨 1. PRINCIPES FONDAMENTAUX
-
-## 1.1 Architecture générale
-
-Android Hub est une application Electron basée sur 4 couches :
-
-- MAIN PROCESS (logique métier)
-- RENDERER (interface utilisateur)
-- PRELOAD (sécurité IPC)
-- NATIVE (scrcpy / vidéo / input)
-
-Ces couches ne doivent JAMAIS être mélangées.
+Dernière mise à jour : 2026-07-04
 
 ---
 
-## 1.2 Règle centrale du projet
+## LOCK GÉNÉRAL (validé 2026-07-04)
 
-👉 La SESSION est l'unité centrale du système.
+### Audio — LOCK
 
-Tout le reste dépend des Sessions.
+- Capture audio, lancement Type A / Type B avec son PC, mute global OFF (silence).
+- Fichiers concernés (ne pas modifier sans accord) :
+  - `src/main/managers/global-audio-output-manager.js`
+  - `src/main/managers/session-audio-process-manager.js`
+  - `src/main/ipc/audioHandlers.js` (handlers IPC métier)
+  - `src/main/main.js` — fonctions `applyGlobalAudioMuteSideEffects`, `resolveHubSocketAudioEnabled`, `startSessionAudioPlayback`, `stopSessionAudioPlayback`
+  - `src/renderer/session-audio-hub.js`
+  - `src/renderer/session/session-audio-player.js`
 
-- Layout = affichage des Sessions
-- Canvas = rendu vidéo d'une Session
-- Focus = sélection d'une Session
-- Input = contrôle d'une Session
+**Comportement attendu (déjà validé) :**
 
-Une Session peut exister sans être affichée.
+- **Audio ON (global)** : processus scrcpy dédié `--no-video` par session → son PC ; device muet côté OS.
+- **Audio OFF (global)** : arrêt des processus audio + pas de capture socket Hub.
 
----
+### Input Type A — LOCK
 
-## 1.3 Séparation stricte des responsabilités
+- Commit : `c23e7cb` (multi-fenêtres).
+- Fallback ADB quand le socket contrôle scrcpy est absent (`main.js` handler `send-input`).
+- Vérification `result.success === false` côté renderer (`session.js`, `initTypeAInputHandlers`).
 
-- Renderer : UI uniquement (aucune logique métier)
-- Main Process : logique métier complète
-- Native : performance bas niveau (scrcpy)
-- Preload : API sécurisée entre Renderer et Main
+**Fichiers :** `src/main/main.js` (branche Type A de `send-input`), `src/renderer/session/session.js` (handlers Type A).
 
----
+### Input Type B — LOCK
 
-# 🧩 2. RÈGLES ARCHITECTURALES ABSOLUES
+- Commit : `c23e7cb`.
+- Routage touch display virtuel via hub ADB + `displayId` dans `main.js` (`resolveTypeBDisplayId`, `sendTypeBInputViaHubAdb`).
+- Fallback vers `routeInputToSession` conservé.
 
-## 2.1 Interdictions critiques
+**Fichiers core Type B (LOCK section 13 — ne jamais modifier sans accord) :**
 
-L'IA NE DOIT JAMAIS :
+- `src/native/scrcpy/scrcpy-socket.js`
+- `src/main/managers/new-instance-manager.js`
 
-- Faire communiquer Renderer directement avec Native
-- Mettre de la logique métier dans le Renderer
-- Faire dépendre scrcpy de l'UI
-- Créer une Session depuis un Layout
-- Lier le Focus à un onglet UI
-- Mélanger UI et gestion d'état global
-- Contourner IPC
+### Toggle Audio ON/OFF (bouton sidebar)
 
----
-
-## 2.2 Flux obligatoire
-
-Tout doit suivre ce flux :
-
-```text
-Renderer
-   ↓ (IPC)
-Main Process
-   ↓
-Core Managers
-   ↓
-Native (scrcpy)
-   ↓
-Android Device
-```
+- **Composant UI :** `src/renderer/sidebar/GlobalAudioToggle.js`
+- **Câblage IPC :** `src/preload/preload.js` (`audioAPI`), `src/main/ipc/audioHandlers.js` (broadcast uniquement)
+- Le bouton déclenche la logique audio **LOCK** ci-dessus ; ne pas réimplémenter le métier dans le composant.
 
 ---
 
-# 🎨 3. RÈGLES UI / DIRECTION ARTISTIQUE (DA)
+## Architecture session (rappel)
 
-## 3.1 DA figée
-
-La direction artistique actuelle est CONSIDÉRÉE COMME VALIDÉE.
-
-L'IA NE DOIT PAS :
-
-- Refaire l'interface
-- Changer les couleurs globales
-- Modifier la structure UI globale
-- Créer une nouvelle sidebar
-- Créer un nouveau système de navigation
-
-## 3.2 Ajout de fonctionnalités UI
-
-Toute nouvelle fonctionnalité doit être intégrée dans l'existant :
-
-- ✔ Sessions
-- ✔ Layouts
-- ✔ Control Center
-- ✔ Performance Panel
-- ✔ Settings
-
-## 3.3 Interdictions UI
-
-- Pas de refonte UI globale
-- Pas de duplication de menus
-- Pas de nouveaux systèmes de navigation sans demande explicite
+- Fenêtres session = `BrowserView` + `session.html` / `session.js`.
+- Type A : flux socket Hub vidéo ; Type B : `NewInstanceManager` + display virtuel.
+- Input : IPC `send-input` → main process.
 
 ---
 
-# 📱 4. SESSIONS
-
-## 4.1 Définition
-
-Une Session représente une connexion active à un appareil Android.
-
-Elle contient :
-
-- deviceId
-- stream vidéo
-- canal input
-- état
-- paramètres (FPS, bitrate)
-
-## 4.2 Règles
-
-- Une Session existe indépendamment de l'UI
-- Une Session peut être invisible
-- Une Session peut survivre à un changement de layout
-- Une Session ne doit jamais être recréée inutilement
-
-## 4.3 États possibles
-
-- Disconnected
-- Connecting
-- Connected
-- Reconnecting
-- Paused
-- Error
-
----
-
-# 🖥️ 5. LAYOUTS
-
-## 5.1 Définition
-
-Un Layout définit comment les Sessions sont affichées.
-
-## 5.2 Modes
-
-- SINGLE MODE : 1 Session affichée
-- MULTI MODE : plusieurs Sessions visibles
-
-## 5.3 Règles
-
-- Un Layout ne crée pas de Session
-- Un Layout n'affecte pas les données
-- Un Layout est uniquement visuel
-
----
-
-# 🎯 6. FOCUS
-
-## 6.1 Définition
-
-Le Focus détermine quelle Session reçoit :
-
-- clavier
-- souris
-- commandes utilisateur
-
-## 6.2 Règles
-
-- Un seul Focus actif à la fois
-- Le Focus est indépendant des onglets
-- Le Focus est indépendant du Layout
-
----
-
-# 🔌 7. IPC (COMMUNICATION)
-
-## 7.1 Règle obligatoire
-
-Toutes les communications passent par IPC.
-
-## 7.2 Interdiction
-
-- Pas d'appel direct Renderer → Main logic
-- Pas de logique dans les events UI
-
----
-
-# 🎥 8. VIDEO / SCRCPY
-
-## 8.1 Règle
-
-Le module scrcpy :
-
-- ne connaît pas l'UI
-- ne connaît pas les Layouts
-- ne connaît pas les Tabs
-
-Il gère uniquement :
-
-- stream vidéo
-- input clavier/souris
-- encoding
-- performance
-
----
-
-# 📂 9. TRANSFERTS
-
-## 9.1 Règle
-
-Les transferts de fichiers :
-
-- passent uniquement par Main Process
-- utilisent une queue
-- sont indépendants de l'UI
-
----
-
-# ⚡ 10. PERFORMANCE
-
-## 10.1 Règles
-
-Le système doit pouvoir :
-
-- ajuster FPS automatiquement
-- réduire bitrate en mode éco
-- maintenir stabilité multi-session
-
----
-
-# 🤖 11. AUTOMATIONS
-
-## 11.1 Définition
-
-Système SI / ALORS basé sur événements système.
-
-## 11.2 Exemple
-
-SI batterie < 20%
-ALORS activer mode éco
-
-## 11.3 Règle
-
-Les automations ne doivent jamais :
-
-- casser une Session
-- supprimer une Session
-- modifier la structure UI
-
----
-
-# 🧹 12. CLEANUP / OPTIMISATION
-
-## 12.1 Mode cleanup autorisé
-
-L'IA peut proposer la suppression de :
-
-- fichiers non utilisés
-- doublons
-- tests obsolètes
-
-## 12.2 Interdiction
-
-L'IA NE DOIT JAMAIS supprimer :
-
-- SessionManager
-- LayoutManager
-- FocusManager
-- IPC core
-- scrcpy bridge
-- documentation /docs
-- AI_CONTEXT.md
-
-## 12.3 Procédure obligatoire
-
-Avant suppression :
-
-1. Vérifier les imports
-2. Vérifier les dépendances
-3. Générer un rapport
-4. Attendre validation utilisateur
-
----
-
-# 📊 13. RÈGLE DE STABILITÉ
-
-Toute modification doit respecter :
-
-- compatibilité sessions existantes
-- non-régression UI
-- conservation des flux vidéo actifs
-
----
-
-# 🧠 14. COMPORTEMENT IA ATTENDU
-
-L'IA doit :
-
-- respecter l'architecture existante
-- éviter les refontes inutiles
-- privilégier l'ajout plutôt que la modification
-- maintenir séparation des couches
-- suivre strictement les flux définis
-
----
-
-# 🚀 15. RÈGLE FINALE
-
-Si une instruction entre en conflit avec ce fichier :
-
-👉 CE FICHIER A PRIORITÉ ABSOLUE
+## Avant toute modification
+
+1. Vérifier si la zone touchée est **LOCK**.
+2. Si oui → **STOP** et demander accord explicite.
+3. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
