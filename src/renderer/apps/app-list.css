@@ -1,0 +1,149 @@
+.app-list-search-input {
+  margin-bottom: 8px;
+}
+
+.app-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: #0a0e14;
+}
+
+.app-list-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.app-list-item:last-child {
+  border-bottom: none;
+}
+
+.app-list-item:hover {
+  background: #1a1f29;
+}
+
+.app-list-item.selected {
+  background: var(--accent-blue-soft);
+}
+
+.app-list-item-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #1a1f29;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.app-list-item-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-list-item-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: #5b6373;
+  fill: none;
+}
+
+.app-list-item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.app-list-item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-list-item-package {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-list-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-list-item.app-variant-clone {
+  border-left: 2px solid #4a9eff;
+}
+
+.app-list-item.app-variant-clone .app-list-item-name {
+  color: #9ecaff;
+}
+
+.app-list-item.app-variant-duplicate {
+  border-left: 2px solid #f5a623;
+}
+
+.app-list-item.app-variant-duplicate .app-list-item-name {
+  color: #ffd28a;
+}
+
+.app-list-action-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.app-list-action-btn:hover {
+  background: #1a1f29;
+  color: #ff7b7b;
+}
+
+.app-list-action-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.new-instance-app-results.app-list,
+.new-instance-history-list.app-list {
+  max-height: 200px;
+}
+
+.new-instance-history-list.app-list {
+  max-height: 160px;
+}

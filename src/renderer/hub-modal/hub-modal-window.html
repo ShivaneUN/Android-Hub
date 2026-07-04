@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Android Hub</title>
+<link rel="stylesheet" href="../styles/style.css">
+<link rel="stylesheet" href="../styles/hub-panel.css">
+<link rel="stylesheet" href="../styles/control-panel.css">
+<link rel="stylesheet" href="../apps/app-list.css">
+<link rel="stylesheet" href="../help/help-panel.css">
+<link rel="stylesheet" href="hub-modal-window.css">
+</head>
+<body>
+
+<div id="panel-new-session" class="hub-modal-panel">
+  <div class="hub-modal hub-modal--session" role="dialog" aria-labelledby="new-session-modal-title">
+    <div class="hub-panel-header">
+      <div class="hub-panel-title-row">
+        <div class="hub-panel-icon" aria-hidden="true">+</div>
+        <h2 class="hub-panel-title" id="new-session-modal-title">Nouvelle instance</h2>
+      </div>
+      <button type="button" class="hub-panel-close" data-hub-modal-close id="close-new-session-panel" title="Fermer">&#10005;</button>
+    </div>
+    <div class="hub-panel-body">
+      <div class="settings-section-label">Appareils connectés</div>
+      <div class="new-instance-device-list" id="new-instance-device-list">
+        <p class="apps-loading">Chargement des appareils...</p>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-section-label">Applications installées</div>
+      <p class="new-instance-launcher-hint" id="new-instance-app-launcher-hint">Sélectionnez un appareil pour afficher ses applications.</p>
+      <input type="text" class="side-panel-input app-list-search-input" id="new-instance-app-search-input" placeholder="Rechercher une application à lancer...">
+      <div class="new-instance-app-results" id="new-instance-app-results">
+        <p class="apps-loading">Aucun appareil sélectionné</p>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-section-label">Historique</div>
+      <input type="text" class="side-panel-input app-list-search-input" id="new-instance-history-search-input" placeholder="Rechercher dans l'historique...">
+      <div class="new-instance-history-list" id="new-instance-history-list">
+        <p class="apps-loading">Chargement de l'historique...</p>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="new-instance-command-preview" id="new-instance-command-preview">
+        scrcpy --new-display=1920x1080 --stay-awake --turn-screen-off --start-app=
+      </div>
+      <div class="settings-divider"></div>
+      <button class="btn-launch-session" id="new-instance-launch-btn">Lancer instance</button>
+      <button class="btn-launch-session" id="new-instance-mirror-btn">Mirroring</button>
+      <p class="new-instance-launch-hint" id="new-instance-launch-hint">Sélectionnez un appareil</p>
+      <p class="new-instance-status" id="new-instance-status"></p>
+    </div>
+  </div>
+</div>
+
+<div id="panel-control" class="hub-modal-panel">
+  <div class="hub-modal hub-modal--control" role="dialog" aria-labelledby="control-modal-title">
+    <div class="hub-panel-header">
+      <div class="hub-panel-title-row">
+        <div class="hub-panel-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="3" rx="1"/><rect x="3" y="11" width="18" height="3" rx="1"/><rect x="3" y="17" width="18" height="3" rx="1"/><circle cx="8" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="18.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <h2 class="hub-panel-title" id="control-modal-title">Contrôle session</h2>
+      </div>
+      <button type="button" class="hub-panel-close" data-hub-modal-close id="close-control-panel" title="Fermer">&#10005;</button>
+    </div>
+    <div class="hub-panel-body">
+      <div class="control-panel-body">
+        <div class="control-loading-overlay hidden" id="control-loading-overlay">
+          <div class="control-spinner"></div>
+          <span>Application en cours…</span>
+        </div>
+        <div>
+          <div class="control-section-label">Instances ouvertes</div>
+          <div class="control-session-list" id="control-session-list"></div>
+        </div>
+        <div class="control-divider"></div>
+        <div id="control-params-section">
+          <div class="control-section-label">Instance sélectionnée</div>
+          <div class="control-session-meta" id="control-session-meta">Aucune instance sélectionnée</div>
+          <div class="control-current-values" id="control-current-values">Sélectionnez une instance pour afficher ses paramètres actifs</div>
+          <div class="control-section-label">Paramètres</div>
+          <div class="control-param-groups" id="control-param-groups"></div>
+        </div>
+        <div class="control-divider"></div>
+        <div id="control-actions-section">
+          <div class="control-actions">
+            <button type="button" class="control-btn control-btn-primary" id="control-btn-apply">Appliquer</button>
+            <button type="button" class="control-btn" id="control-btn-cancel">Annuler</button>
+            <button type="button" class="control-btn control-btn-danger" id="control-btn-reset">Réinitialiser</button>
+          </div>
+          <div class="control-status" id="control-status-message"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="panel-help" class="hub-modal-panel"></div>
+
+<script src="../../shared/app-name.js"></script>
+<script src="../../shared/app-display.js"></script>
+<script src="../../shared/stream-params.js"></script>
+<script src="../devices.js"></script>
+<script src="../apps/AppList.js"></script>
+<script src="../new-instance/new-instance-pipeline.js"></script>
+<script src="../new-session.js"></script>
+<script src="../control-panel/ControlPanel.js"></script>
+<script src="../help/HelpPanel.js"></script>
+<script src="hub-modal-window.js"></script>
+</body>
+</html>

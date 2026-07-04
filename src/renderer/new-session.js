@@ -754,7 +754,8 @@ async function launchTypeBSession({ serial, deviceName, packageName, appLabel, u
 
     const streamOptions = {
         stayAwake: true,
-        turnScreenOff: true
+        turnScreenOff: true,
+        audio: true
     };
 
     const payload = {

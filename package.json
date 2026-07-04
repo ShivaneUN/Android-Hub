@@ -1,27 +1,85 @@
 {
-  "name": "Android Hub",
-  "version": "1.30.0",
+  "name": "android-hub",
+  "version": "1.30.21",
+  "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
+  "author": "Shivane",
+  "license": "UNLICENSED",
+  "private": true,
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder --win --config electron-builder.config.js",
+    "build:dir": "electron-builder --win --dir --config electron-builder.config.js",
+    "icons": "node scripts/generate-icons.js",
+    "build:perso": "node scripts/ma-mise-a-jour.js --no-bump",
+    "update:perso": "node scripts/ma-mise-a-jour.js",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.shivane.Android Hub",
+    "appId": "com.shivane.androidhub",
     "productName": "Android Hub",
+    "copyright": "Copyright © ${author}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.bak",
+      "!**/_deprecated*",
+      "!**/test-connection.js"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
     "win": {
-      "target": "portable"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Android Hub",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": true
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     }
   },
   "devDependencies": {
     "electron": "^30.5.1",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.1"
   },
   "dependencies": {
     "@yume-chan/adb": "^2.6.0",
     "@yume-chan/adb-scrcpy": "^2.3.2",
     "@yume-chan/scrcpy": "^2.3.0",
     "@yume-chan/scrcpy-decoder-webcodecs": "^2.5.3",
+    "electron-updater": "^6.6.2",
     "jmuxer": "^2.1.0"
   }
 }

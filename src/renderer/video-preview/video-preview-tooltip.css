@@ -1,0 +1,104 @@
+:root {
+  --z-video-preview-tooltip: 2147483647;
+}
+
+.video-preview-tooltip {
+  position: fixed !important;
+  width: 300px;
+  height: 170px;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: var(--z-video-preview-tooltip) !important;
+  isolation: isolate;
+  top: 0;
+  left: 0;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease, visibility 150ms ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-subtle);
+  background: #0d1117;
+}
+
+.video-preview-tooltip--overlay {
+  position: absolute !important;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  transform: translateZ(0);
+}
+
+.video-preview-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.video-preview-tooltip__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: none;
+}
+
+.video-preview-tooltip__frame.is-active {
+  display: block;
+}
+
+.video-preview-tooltip__skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    #151a22 0%,
+    #1a2030 40%,
+    #151a22 80%
+  );
+  background-size: 200% 100%;
+  animation: video-preview-shimmer 1.4s ease-in-out infinite;
+}
+
+.video-preview-tooltip.is-live .video-preview-tooltip__skeleton {
+  display: none;
+}
+
+.video-preview-tooltip__unavailable {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0d1117;
+  color: #5b6373;
+  font-size: 12px;
+  font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+}
+
+.video-preview-tooltip.is-unavailable .video-preview-tooltip__unavailable {
+  display: flex;
+}
+
+.video-preview-tooltip.is-unavailable .video-preview-tooltip__skeleton,
+.video-preview-tooltip.is-unavailable .video-preview-tooltip__frame {
+  display: none !important;
+}
+
+.video-preview-tooltip__camera-icon {
+  width: 28px;
+  height: 28px;
+  color: #8b93a3;
+  opacity: 0.7;
+}
+
+@keyframes video-preview-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

@@ -1,0 +1,124 @@
+:root {
+  --border-subtle: #1d232d;
+  --accent-blue: #4f8cff;
+  --text-primary: #f1f3f7;
+  --text-secondary: #8b93a3;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 2147483646;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 10px;
+  background: #161b24;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.context-menu.hidden {
+  display: none;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.context-menu-item:hover {
+  background: #232a36;
+}
+
+.context-menu-item.is-muted {
+  color: var(--text-secondary);
+}
+
+.rename-dialog {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 22px;
+  border-radius: 14px;
+  background: #161b24;
+  border: 1px solid #1d232d;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
+.rename-dialog--window {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.rename-dialog-title {
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rename-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: #0a0e14;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.rename-dialog-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.rename-dialog-error {
+  min-height: 18px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f07178;
+}
+
+.rename-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.rename-dialog-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: #1a1f29;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rename-dialog-btn:hover {
+  background: #232a36;
+}
+
+.rename-dialog-btn-primary {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.rename-dialog-btn-primary:hover {
+  background: #3d7aef;
+}

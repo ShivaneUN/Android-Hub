@@ -1,0 +1,117 @@
+/* --- Modales déportées (Aide, Nouvelle instance, Contrôle) --- */
+
+.hub-modal-overlay,
+.help-modal-overlay {
+  display: none;
+}
+
+.hub-modal-overlay.hidden,
+.help-modal-overlay.hidden {
+  display: none;
+}
+
+.hub-modal,
+.help-modal {
+  background: #141820;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  margin-top: calc(var(--chrome-top-height, 80px) + 8px);
+  margin-left: calc(var(--sidebar-width, 208px) + 8px);
+  width: min(920px, calc(100vw - var(--sidebar-width, 208px) - 24px));
+  max-height: min(680px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
+}
+
+.hub-modal--session {
+  width: min(460px, calc(100vw - var(--sidebar-width, 208px) - 24px));
+  max-height: min(760px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
+}
+
+.hub-modal--control {
+  width: min(420px, calc(100vw - var(--sidebar-width, 208px) - 24px));
+  max-height: min(680px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
+}
+
+.hub-panel-header,
+.help-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.hub-panel-title-row,
+.help-modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hub-panel-icon,
+.help-modal-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.hub-panel-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hub-panel-title,
+.help-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.hub-panel-close,
+.help-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.hub-panel-close:hover,
+.help-modal-close:hover {
+  background: #1a1f29;
+  color: var(--text-primary);
+}
+
+.hub-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 22px 22px;
+  min-height: 0;
+}

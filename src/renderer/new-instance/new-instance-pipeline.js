@@ -158,31 +158,13 @@ function createNewInstanceVideoPipeline(sessionId, canvasElement) {
         }
     }
 
-    function onCodecMeta(data) {
-        if (!data || data.sessionId !== sessionId) return;
-        initDecoder(data).catch((err) => {
-            console.error(`[NewInstancePipeline ${sessionId}] Erreur init decodeur:`, err);
+    if (window.sessionAPI?.onStreamRestarting) {
+        window.sessionAPI.onStreamRestarting((data) => {
+            if (data?.sessionId !== sessionId) return;
+            resetDecoder();
+            state.started = true;
         });
     }
-
-    function onPacket(data) {
-        if (!data || data.sessionId !== sessionId) return;
-        if (!state.decoderReady || !state.decoder || state.decoder.state === "closed") {
-            state.queue.push(data);
-            if (state.queue.length > 240) state.queue.shift();
-            return;
-        }
-        decodePacket(data);
-    }
-
-    function onError(data) {
-        if (!data || data.sessionId !== sessionId) return;
-        console.error(`[NewInstancePipeline ${sessionId}] Erreur stream:`, data.error);
-    }
-
-    window.electronAPI.onNewInstanceVideoCodecMeta(onCodecMeta);
-    window.electronAPI.onNewInstanceVideoPacket(onPacket);
-    window.electronAPI.onNewInstanceVideoError(onError);
 
     return {
         async start() {

@@ -25,7 +25,6 @@ function createVideoPlayer(tabId, canvasElement) {
         firstPts: null,
         lastTimestampUs: -1,
         syntheticTimestampUs: 0,
-        firstFrameWatchdog: null,
         recoveryAttempted: false,
         serial: null,
         packageName: null,
@@ -33,11 +32,6 @@ function createVideoPlayer(tabId, canvasElement) {
     };
 
     function resetRuntime() {
-        if (state.firstFrameWatchdog) {
-            clearTimeout(state.firstFrameWatchdog);
-            state.firstFrameWatchdog = null;
-        }
-
         if (state.decoder && state.decoder.state !== "closed") {
             state.decoder.close();
         }
@@ -53,57 +47,6 @@ function createVideoPlayer(tabId, canvasElement) {
         state.firstPts = null;
         state.lastTimestampUs = -1;
         state.syntheticTimestampUs = 0;
-    }
-
-    async function recoverFromBlackScreen() {
-        if (!state.started || state.frameCount > 0 || state.recoveryAttempted) return;
-        if (!state.serial) return;
-
-        state.recoveryAttempted = true;
-
-        const safeOptions = {
-            ...state.startOptions,
-            openScrcpyWindow: false,
-            captureCompanionDisplay: false,
-            newDisplay: state.startOptions.newDisplay || "1920x1080",
-            startApp: state.startOptions.startApp || state.packageName,
-            displayId: undefined,
-            skipPackageLaunch: false
-        };
-
-        try {
-            console.warn(`[VideoPlayer ${tabId}] Aucune frame rendue, redemarrage en mode safe.`);
-            window.dispatchEvent(new CustomEvent("video:recovery", {
-                detail: { tabId, reason: "no-first-frame" }
-            }));
-
-            await window.electronAPI.stopVideoStream(tabId);
-            resetRuntime();
-
-            const retry = await window.electronAPI.startVideoStream(
-                state.serial,
-                tabId,
-                state.packageName,
-                safeOptions
-            );
-
-            if (!retry?.success) {
-                console.error(`[VideoPlayer ${tabId}] Echec reprise safe:`, retry?.error || "inconnu");
-            }
-        } catch (err) {
-            console.error(`[VideoPlayer ${tabId}] Erreur reprise safe:`, err);
-        }
-    }
-
-    function armFirstFrameWatchdog() {
-        if (state.firstFrameWatchdog) {
-            clearTimeout(state.firstFrameWatchdog);
-        }
-
-        state.firstFrameWatchdog = setTimeout(() => {
-            state.firstFrameWatchdog = null;
-            recoverFromBlackScreen();
-        }, 8000);
     }
 
     function ensureCanvasSize(width, height) {
@@ -253,10 +196,6 @@ function createVideoPlayer(tabId, canvasElement) {
                 state.frameCount += 1;
 
                 if (state.frameCount === 1) {
-                    if (state.firstFrameWatchdog) {
-                        clearTimeout(state.firstFrameWatchdog);
-                        state.firstFrameWatchdog = null;
-                    }
                     window.dispatchEvent(new CustomEvent("video:first-frame", {
                         detail: { tabId }
                     }));
@@ -366,30 +305,16 @@ function createVideoPlayer(tabId, canvasElement) {
         }
     }
 
-    async function onCodecMeta(eventData) {
-        if (eventData.tabId !== tabId) return;
-        await initDecoder(eventData);
+    // Le décodage vidéo est assuré par BrowserView (session.js) — pas de listeners IPC ici.
+
+    if (window.sessionAPI?.onStreamRestarting) {
+        window.sessionAPI.onStreamRestarting((data) => {
+            if (data?.sessionId !== tabId) return;
+            resetRuntime();
+            state.started = true;
+            state.recoveryAttempted = false;
+        });
     }
-
-    function onVideoPacket(eventData) {
-        if (eventData.tabId !== tabId) return;
-
-        if (!state.decoderReady || !state.decoder || state.decoder.state === "closed" || state.decoderInitializing) {
-            enqueuePacket(eventData);
-            return;
-        }
-
-        decodePacket(eventData);
-    }
-
-    function onVideoError(eventData) {
-        if (eventData.tabId !== tabId) return;
-        console.error(`[VideoPlayer ${tabId}] Erreur stream:`, eventData.error);
-    }
-
-    window.electronAPI.onVideoCodecMeta(onCodecMeta);
-    window.electronAPI.onVideoPacket(onVideoPacket);
-    window.electronAPI.onVideoError(onVideoError);
 
     return {
         async start(serial, packageName, options = {}) {
@@ -401,7 +326,6 @@ function createVideoPlayer(tabId, canvasElement) {
             state.packageName = packageName;
             state.startOptions = { ...options };
             state.frameCount = 0;
-            armFirstFrameWatchdog();
 
             if (typeof window.VideoDecoder === "undefined" || typeof window.EncodedVideoChunk === "undefined") {
                 const result = { success: false, error: "WebCodecs non disponible dans ce runtime" };
@@ -414,10 +338,6 @@ function createVideoPlayer(tabId, canvasElement) {
             if (!result.success) {
                 console.error(`[VideoPlayer ${tabId}] Echec demarrage stream:`, result.error);
                 state.started = false;
-                if (state.firstFrameWatchdog) {
-                    clearTimeout(state.firstFrameWatchdog);
-                    state.firstFrameWatchdog = null;
-                }
             }
             return result;
         },
@@ -428,6 +348,26 @@ function createVideoPlayer(tabId, canvasElement) {
 
             await window.electronAPI.stopVideoStream(tabId);
             resetRuntime();
+        },
+
+        async restart(serial, packageName, options = {}) {
+            state.startOptions = { ...options };
+            state.serial = serial;
+            state.packageName = packageName;
+            resetRuntime();
+            state.started = true;
+            state.recoveryAttempted = false;
+            state.frameCount = 0;
+
+            const result = await window.electronAPI.startVideoStream(serial, tabId, packageName, options);
+            if (!result?.success) {
+                state.started = false;
+            }
+            return result;
+        },
+
+        getStartOptions() {
+            return { ...state.startOptions };
         },
 
         getFrameCount() {

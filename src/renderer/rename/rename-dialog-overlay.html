@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="./rename.css">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #161b24;
+    overflow: hidden;
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+  }
+</style>
+</head>
+<body>
+  <div id="rename-root" class="rename-dialog rename-dialog--window" role="dialog" aria-modal="true">
+    <div class="rename-dialog-title">Renommer</div>
+    <input id="rename-input" class="rename-dialog-input" type="text" maxlength="50" autocomplete="off">
+    <div id="rename-error" class="rename-dialog-error"></div>
+    <div class="rename-dialog-actions">
+      <button type="button" class="rename-dialog-btn" data-action="cancel">Annuler</button>
+      <button type="button" class="rename-dialog-btn rename-dialog-btn-primary" data-action="save">Enregistrer</button>
+    </div>
+  </div>
+  <script src="./rename-dialog-overlay.js"></script>
+</body>
+</html>

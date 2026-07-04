@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="./video-preview-tooltip.css">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+  <div id="tooltip-root" class="video-preview-tooltip video-preview-tooltip--overlay" aria-hidden="true">
+    <img class="video-preview-tooltip__frame" alt="" draggable="false">
+    <div class="video-preview-tooltip__skeleton" aria-hidden="true"></div>
+    <div class="video-preview-tooltip__unavailable">
+      <svg class="video-preview-tooltip__camera-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path d="M4 7h4l2-2h4l2 2h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/>
+        <circle cx="12" cy="13" r="3.5"/>
+      </svg>
+      <span>Aperçu indisponible</span>
+    </div>
+  </div>
+  <script src="./tooltip-overlay.js"></script>
+</body>
+</html>

@@ -22,7 +22,7 @@ async function createInstance(deviceId, deviceName, packageName = null, options 
     const id = "instance-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 
     const label = options.tabLabel || (packageName
-        ? `${deviceName} - ${packageName.split(".").pop()}`
+        ? (window.AppDisplay?.humanizePackageName?.(packageName) || packageName.split(".").pop())
         : deviceName);
 
     return await setupInstance(id, deviceId, deviceName, packageName, label, options);
@@ -52,20 +52,43 @@ async function setupInstance(id, deviceId, deviceName, packageName, label, optio
 
     instances[id] = instance;
 
-    createTab(id, label);
-    activateInstance(id);
-
-    const result = await player.start(deviceId, packageName, options);
-
-    instance.status = result.success ? "active" : "error";
-    if (result.success) {
-        if (typeof installInputHandlers === "function") {
-            installInputHandlers(canvas, id, deviceId, options.orientation);
+    try {
+        if (window.sessionAPI) {
+            await window.sessionAPI.registerView(id, "A", {
+                deviceId,
+                label,
+                packageName: packageName || null
+            });
         }
-    }
 
-    if (!result.success) {
-        console.error(`[InstanceManager] Échec démarrage instance ${id}:`, result.error);
+        const result = await player.start(deviceId, packageName, options);
+        instance.status = result.success ? "active" : "error";
+
+        if (result.success && window.__sessionStreamBridge) {
+            window.__sessionStreamBridge.registerSessionStreamHandle(id, {
+                type: "A",
+                stop: () => player.stop(),
+                restart: (serial, pkg, opts) => player.restart(serial, pkg, opts)
+            });
+        }
+
+        if (result.success) {
+            if (typeof finalizeSessionUI === "function") {
+                await finalizeSessionUI(id, { label });
+            } else {
+                activateInstance(id);
+            }
+        } else {
+            console.error(`[InstanceManager] Échec démarrage instance ${id}:`, result.error);
+            if (window.sessionAPI) await window.sessionAPI.close(id);
+            instance.canvas.remove();
+            delete instances[id];
+        }
+    } catch (err) {
+        console.error(`[InstanceManager] Erreur instance ${id}:`, err);
+        if (window.sessionAPI) await window.sessionAPI.close(id);
+        instance.canvas.remove();
+        delete instances[id];
     }
 
     return id;
@@ -75,28 +98,18 @@ async function setupInstance(id, deviceId, deviceName, packageName, label, optio
  * Active une instance : affiche son canvas, cache les autres,
  * cache les pages classiques (accueil, panneaux).
  */
-function activateInstance(id) {
+async function activateInstance(id) {
     const instance = instances[id];
     if (!instance) return;
 
-    const stage = document.getElementById("video-stage");
-    stage.classList.add("active");
-
-    Object.values(instances).forEach(inst => {
-        inst.canvas.style.display = (inst.id === id) ? "block" : "none";
-    });
-
     document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
 
-    setActiveTab(id);
-    activeInstanceId = id;
-
-    // Mettre à jour le Focus
-    if (window.electronAPI.focusSet) {
-        window.electronAPI.focusSet(id).catch(err => {
-            console.error(`[InstanceManager] Erreur focus:`, err);
-        });
+    if (window.sessionAPI) {
+        await window.sessionAPI.switchTo(id);
+        if (typeof renderSidebar === "function") renderSidebar();
     }
+
+    activeInstanceId = id;
 }
 
 /**
@@ -108,27 +121,29 @@ async function closeInstance(id) {
     const instance = instances[id];
     if (!instance) return;
 
-    if (typeof removeInputHandlers === "function") {
-        removeInputHandlers(id);
-    }
-
     await instance.player.stop();
     instance.canvas.remove();
     delete instances[id];
 
-    removeTab(id);
+    if (window.__sessionStreamBridge) {
+        window.__sessionStreamBridge.unregisterSessionStreamHandle(id);
+    }
+
+    if (window.sessionAPI) {
+        await window.sessionAPI.close(id);
+    }
 
     const remainingIds = Object.keys(instances);
-    const stage = document.getElementById("video-stage");
 
     if (remainingIds.length === 0) {
-        stage.classList.remove("active");
         activeInstanceId = null;
         showPage("page-new");
         document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
     } else {
-        activateInstance(remainingIds[remainingIds.length - 1]);
+        await activateInstance(remainingIds[remainingIds.length - 1]);
     }
+
+    if (typeof renderSidebar === "function") renderSidebar();
 }
 
 /**
@@ -138,9 +153,8 @@ function getInstancesForDevice(deviceId) {
     return Object.values(instances).filter(inst => inst.deviceId === deviceId);
 }
 
-/**
- * Retourne l'instance actuellement active, ou null.
- */
-function getActiveInstance() {
-    return activeInstanceId ? instances[activeInstanceId] : null;
+function getAllInstances() {
+    return Object.values(instances);
 }
+
+window.getAllInstances = getAllInstances;

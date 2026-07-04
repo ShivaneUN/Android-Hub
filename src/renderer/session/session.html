@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><style>
+html,body{margin:0;padding:0;overflow:hidden;background:#000;width:100%;height:100%;}
+body{display:flex;align-items:stretch;justify-content:stretch;}
+.session-zoom-viewport{width:100%;height:100%;position:relative;background:#000;}
+.session-zoom-viewport.portrait-centered{
+  display:flex;align-items:center;justify-content:center;
+}
+#video-canvas{display:block;object-fit:contain;}
+html:not([data-portrait-display="1"]) #video-canvas{width:100%;height:100%;}
+html[data-portrait-display="1"] #video-canvas{
+  width:auto;height:auto;max-width:100%;max-height:100%;margin:auto;
+}
+html[data-portrait-display="1"] #video-canvas.portrait-interim{
+  width:auto!important;height:auto!important;max-width:100%;max-height:100%;
+  transform:rotate(90deg);transform-origin:center center;
+}
+</style></head>
+<body>
+  <canvas id="video-canvas"></canvas>
+  <script src="./session-wheel-zoom.js"></script>
+  <script src="./session.js"></script>
+</body>
+</html>

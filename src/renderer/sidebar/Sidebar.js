@@ -237,6 +237,7 @@ async function finalizeSessionUI(sessionId, options = {}) {
     }
 
     await window.sessionAPI.switchTo(sessionId);
+    window.__sessionAudioHub?.setActiveSession?.(sessionId);
 
     if (sessionId.startsWith("instance-") && typeof activateInstance === "function") {
         await activateInstance(sessionId);
