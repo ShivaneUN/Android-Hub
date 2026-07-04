@@ -8,7 +8,7 @@
 function createVideoPlayer(tabId, canvasElement) {
     const ctx = canvasElement.getContext("2d");
 
-    const MAX_PACKET_QUEUE = 240;
+    const MAX_PACKET_QUEUE = 60;
     const SYNTHETIC_FRAME_US = 16667;
 
     const state = {

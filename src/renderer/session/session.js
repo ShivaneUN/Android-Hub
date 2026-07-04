@@ -4,6 +4,9 @@ const type = params.get("type");
 const deviceId = params.get("deviceId") || "";
 const canvas = document.getElementById("video-canvas");
 
+/** ~1s de buffer à 60 fps — privilégie la latence sur la tolérance aux stalls. */
+const MAX_VIDEO_PACKET_QUEUE = 60;
+
 const KEYCODE_MAP = {
     Enter: true,
     Backspace: true,
@@ -52,7 +55,7 @@ function normalizePointerPosition(canvasEl, event) {
 
 function initTypeAVideoPlayer(tabId, canvasElement) {
     const ctx = canvasElement.getContext("2d");
-    const MAX_PACKET_QUEUE = 240;
+    const MAX_PACKET_QUEUE = MAX_VIDEO_PACKET_QUEUE;
     const SYNTHETIC_FRAME_US = 16667;
 
     const state = {
@@ -467,7 +470,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         if (!data || data.sessionId !== sessionIdParam) return;
         if (!state.decoderReady || !state.decoder || state.decoder.state === "closed") {
             state.queue.push(data);
-            if (state.queue.length > 240) state.queue.shift();
+            if (state.queue.length > MAX_VIDEO_PACKET_QUEUE) state.queue.shift();
             return;
         }
         decodePacket(data);
