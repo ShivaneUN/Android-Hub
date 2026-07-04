@@ -4,56 +4,104 @@ const type = params.get("type");
 const deviceId = params.get("deviceId") || "";
 const canvas = document.getElementById("video-canvas");
 
+/** Portrait ON = rotation canvas +90° horaire (tablette paysage → barre de statut en haut). */
+const PORTRAIT_DISPLAY_ROTATION = Math.PI / 2;
 /** ~1s de buffer à 60 fps — privilégie la latence sur la tolérance aux stalls. */
 const MAX_VIDEO_PACKET_QUEUE = 60;
 
-const KEYCODE_MAP = {
-    Enter: true,
-    Backspace: true,
-    Escape: true,
-    Tab: true,
-    ArrowUp: true,
-    ArrowDown: true,
-    ArrowLeft: true,
-    ArrowRight: true,
-    Home: true,
-    Back: true,
-    Menu: true,
-    Delete: true,
-    VolumeUp: true,
-    VolumeDown: true,
-    Power: true
-};
+const portraitDisplayBySession = new Map();
+/** true = flux paysage affiché via rotation canvas → remap input requis */
+const portraitInputRemapBySession = new Map();
 
-function attachRightClickBackHandler(canvasEl, sendBackKey) {
-    if (!canvasEl || typeof sendBackKey !== "function") return;
+function setPortraitDisplay(sessionIdParam, portrait) {
+    if (!sessionIdParam) return;
+    portraitDisplayBySession.set(sessionIdParam, Boolean(portrait));
+    if (!portrait) {
+        portraitInputRemapBySession.set(sessionIdParam, false);
+    }
+}
 
-    canvasEl.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void sendBackKey();
+function setPortraitInputRemap(sessionIdParam, needsRemap) {
+    if (!sessionIdParam) return;
+    portraitInputRemapBySession.set(sessionIdParam, Boolean(needsRemap));
+}
+
+function needsPortraitInputRemap(sessionIdParam) {
+    return isPortraitDisplay(sessionIdParam) && portraitInputRemapBySession.get(sessionIdParam) === true;
+}
+
+function isPortraitDisplay(sessionIdParam) {
+    return portraitDisplayBySession.get(sessionIdParam) === true;
+}
+
+function initSessionDisplayOrientation(sessionIdParam, initialOrientation) {
+    setPortraitDisplay(sessionIdParam, initialOrientation === "portrait");
+    syncPortraitLayout(sessionIdParam);
+    window.videoAPI?.onOrientationChanged?.((data) => {
+        if (data?.sessionId !== sessionIdParam) return;
+        setPortraitDisplay(sessionIdParam, data.orientation === "portrait");
+        syncPortraitLayout(sessionIdParam);
     });
 }
 
-function normalizePointerPosition(canvasEl, event) {
-    const rect = canvasEl.getBoundingClientRect();
-    const localX = typeof event.offsetX === "number" ? event.offsetX : event.clientX - rect.left;
-    const localY = typeof event.offsetY === "number" ? event.offsetY : event.clientY - rect.top;
+function syncPortraitLayout(sessionIdParam) {
+    const portrait = isPortraitDisplay(sessionIdParam);
+    document.documentElement.dataset.portraitDisplay = portrait ? "1" : "0";
+    if (!canvas) return;
 
-    const renderedWidth = rect.width;
-    const renderedHeight = rect.height;
-    const streamX = Math.round(localX * (canvasEl.width / renderedWidth));
-    const streamY = Math.round(localY * (canvasEl.height / renderedHeight));
+    canvas.classList.toggle("portrait-interim", portrait && canvas.width > canvas.height);
 
-    return {
-        streamX: Math.min(Math.max(streamX, 0), canvasEl.width - 1),
-        streamY: Math.min(Math.max(streamY, 0), canvasEl.height - 1),
-        canvasWidth: canvasEl.width,
-        canvasHeight: canvasEl.height
-    };
+    const viewport = canvas.closest(".session-zoom-viewport");
+    if (viewport) {
+        viewport.classList.toggle("portrait-centered", portrait);
+    }
+
+    if (portrait) {
+        canvas.style.transformOrigin = "center center";
+        canvas.style.margin = "auto";
+    } else {
+        canvas.style.transformOrigin = "0 0";
+        canvas.style.margin = "";
+    }
+
+    window.__sessionWheelZoom?.[sessionIdParam]?.reset?.();
 }
 
-function createVideoFramePresenter(ctx, canvasEl) {
+function drawVideoFrame(ctx, canvasEl, frame, sessionIdParam) {
+    const frameW = frame.displayWidth;
+    const frameH = frame.displayHeight;
+    const landscapeFrame = frameW > frameH;
+    const portraitDisplay = isPortraitDisplay(sessionIdParam);
+
+    if (portraitDisplay && landscapeFrame) {
+        setPortraitInputRemap(sessionIdParam, true);
+        const cw = frameH;
+        const ch = frameW;
+        if (canvasEl.width !== cw || canvasEl.height !== ch) {
+            canvasEl.width = cw;
+            canvasEl.height = ch;
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.save();
+        ctx.translate(cw / 2, ch / 2);
+        ctx.rotate(PORTRAIT_DISPLAY_ROTATION);
+        ctx.drawImage(frame, -frameW / 2, -frameH / 2, frameW, frameH);
+        ctx.restore();
+    } else {
+        setPortraitInputRemap(sessionIdParam, false);
+        if (canvasEl.width !== frameW || canvasEl.height !== frameH) {
+            canvasEl.width = frameW;
+            canvasEl.height = frameH;
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(frame, 0, 0, frameW, frameH);
+    }
+    frame.close();
+    syncPortraitLayout(sessionIdParam);
+}
+
+function createVideoFramePresenter(ctx, canvasEl, sessionIdParam) {
     let pendingFrame = null;
     let rafId = null;
 
@@ -80,17 +128,167 @@ function createVideoFramePresenter(ctx, canvasEl) {
             const frameToDraw = pendingFrame;
             pendingFrame = null;
             if (!frameToDraw) return;
-            ctx.drawImage(frameToDraw, 0, 0, canvasEl.width, canvasEl.height);
-            frameToDraw.close();
+            drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
         });
     }
 
     return { schedule, cancel };
 }
 
+/** Remappe les coords canvas portrait (rotation client) vers le flux paysage source. */
+function mapDisplayCoordsToStream(sessionIdParam, coords) {
+    if (!coords || !needsPortraitInputRemap(sessionIdParam)) return coords;
+
+    const { streamX, streamY, canvasWidth, canvasHeight } = coords;
+    const streamW = canvasHeight;
+    const streamH = canvasWidth;
+
+    return {
+        ...coords,
+        streamX: Math.min(Math.max(streamY, 0), streamW - 1),
+        streamY: Math.min(Math.max(canvasHeight - 1 - streamX, 0), streamH - 1),
+        canvasWidth: streamW,
+        canvasHeight: streamH
+    };
+}
+
+function resolveTouchOrientationForSession(sessionIdParam, captureOrientation) {
+    if (!isPortraitDisplay(sessionIdParam)) return captureOrientation;
+    return needsPortraitInputRemap(sessionIdParam) ? "landscape" : "portrait";
+}
+
+const KEYCODE_MAP = {
+    Enter: true,
+    Backspace: true,
+    Escape: true,
+    Tab: true,
+    ArrowUp: true,
+    ArrowDown: true,
+    ArrowLeft: true,
+    ArrowRight: true,
+    Home: true,
+    Back: true,
+    Menu: true,
+    Delete: true,
+    VolumeUp: true,
+    VolumeDown: true,
+    Power: true
+};
+
+function attachSessionInputActivation(canvasEl, sessionIdParam, onActivate) {
+    if (!canvasEl || !sessionIdParam) return;
+
+    let inputActive = true;
+
+    function focusCanvas() {
+        try {
+            canvasEl.focus({ preventScroll: true });
+        } catch (_err) {
+            canvasEl.focus();
+        }
+    }
+
+    window.videoAPI?.onSessionInputActive?.((data) => {
+        inputActive = Boolean(data?.active);
+        if (inputActive) {
+            if (typeof onActivate === "function") {
+                onActivate();
+            }
+            focusCanvas();
+        }
+    });
+
+    window.__sessionInputReady = true;
+    window.__sessionInputActive = () => inputActive;
+    window.__sessionFocusCanvas = focusCanvas;
+
+    return {
+        isActive: () => inputActive,
+        focusCanvas
+    };
+}
+
+function attachRightClickBackHandler(canvasEl, sendBackKey) {
+    if (!canvasEl || typeof sendBackKey !== "function") return;
+
+    canvasEl.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void sendBackKey();
+    });
+}
+
+function getCanvasContentRect(canvasEl) {
+    const rect = canvasEl.getBoundingClientRect();
+    const contentWidth = Math.max(canvasEl.width || 1, 1);
+    const contentHeight = Math.max(canvasEl.height || 1, 1);
+    const contentAspect = contentWidth / contentHeight;
+    const containerAspect = rect.width / Math.max(rect.height, 1);
+
+    let displayWidth;
+    let displayHeight;
+    let offsetX;
+    let offsetY;
+
+    if (contentAspect > containerAspect) {
+        displayWidth = rect.width;
+        displayHeight = rect.width / contentAspect;
+        offsetX = 0;
+        offsetY = (rect.height - displayHeight) / 2;
+    } else {
+        displayHeight = rect.height;
+        displayWidth = rect.height * contentAspect;
+        offsetX = (rect.width - displayWidth) / 2;
+        offsetY = 0;
+    }
+
+    return {
+        rect,
+        offsetX,
+        offsetY,
+        displayWidth,
+        displayHeight,
+        contentWidth,
+        contentHeight
+    };
+}
+
+function normalizePointerPosition(canvasEl, event) {
+    const layout = getCanvasContentRect(canvasEl);
+    const {
+        rect,
+        offsetX,
+        offsetY,
+        displayWidth,
+        displayHeight,
+        contentWidth,
+        contentHeight
+    } = layout;
+
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const localX = pointerX - offsetX;
+    const localY = pointerY - offsetY;
+
+    const streamX = displayWidth > 0
+        ? Math.round((localX / displayWidth) * (contentWidth - 1))
+        : 0;
+    const streamY = displayHeight > 0
+        ? Math.round((localY / displayHeight) * (contentHeight - 1))
+        : 0;
+
+    return {
+        streamX: Math.min(Math.max(streamX, 0), contentWidth - 1),
+        streamY: Math.min(Math.max(streamY, 0), contentHeight - 1),
+        canvasWidth: contentWidth,
+        canvasHeight: contentHeight,
+        outOfBounds: localX < 0 || localY < 0 || localX > displayWidth || localY > displayHeight
+    };
+}
+
 function initTypeAVideoPlayer(tabId, canvasElement) {
     const ctx = canvasElement.getContext("2d");
-    const framePresenter = createVideoFramePresenter(ctx, canvasElement);
+    const framePresenter = createVideoFramePresenter(ctx, canvasElement, tabId);
     const MAX_PACKET_QUEUE = MAX_VIDEO_PACKET_QUEUE;
     const SYNTHETIC_FRAME_US = 16667;
 
@@ -371,7 +569,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
 
 function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
     const ctx = canvasElement.getContext("2d");
-    const framePresenter = createVideoFramePresenter(ctx, canvasElement);
+    const framePresenter = createVideoFramePresenter(ctx, canvasElement, sessionIdParam);
     const state = {
         started: false,
         decoder: null,
@@ -559,39 +757,83 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
     };
 }
 
-function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait") {
-    if (!canvasEl || !tabId || !serial) {
-        console.warn(`[SessionView ${tabId}] input Type A ignoré — deviceId/serial manquant`);
+function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "landscape") {
+    if (!canvasEl || !tabId) {
+        console.warn(`[SessionView ${tabId}] input Type A ignoré — canvas ou tabId manquant`);
         return;
+    }
+
+    let captureOrientation = orientation === "landscape" ? "landscape" : "portrait";
+
+    window.videoAPI?.onOrientationChanged?.((data) => {
+        if (data?.sessionId !== tabId) return;
+        captureOrientation = data.orientation === "landscape" ? "landscape" : "portrait";
+    });
+
+    let resolvedSerial = serial || "";
+
+    async function ensureDeviceId() {
+        if (resolvedSerial) return resolvedSerial;
+        if (!window.videoAPI?.getInputContext) return "";
+        try {
+            const ctx = await window.videoAPI.getInputContext(tabId);
+            if (ctx?.success && ctx.deviceId) {
+                resolvedSerial = ctx.deviceId;
+            }
+        } catch (err) {
+            console.warn(`[SessionView ${tabId}] deviceId:`, err?.message || err);
+        }
+        return resolvedSerial;
     }
 
     let isDragging = false;
     let activePointerId = null;
     let lastMoveSentAt = 0;
     let lastSentCoords = null;
+    let pointerStartCoords = null;
+    let touchSequenceStarted = false;
     let pendingInput = Promise.resolve();
 
-    async function sendTouchAction(event, action) {
-        const coords = normalizePointerPosition(canvasEl, event);
-        await window.videoAPI.sendInput({
+    const inputActivation = attachSessionInputActivation(canvasEl, tabId, () => {
+        void ensureDeviceId();
+    });
+
+    async function sendTouchAction(event, action, coordsOverride = null) {
+        const deviceId = await ensureDeviceId();
+        if (!deviceId) {
+            console.warn(`[SessionView ${tabId}] touch ignoré — deviceId manquant`);
+            return;
+        }
+        const coords = mapDisplayCoordsToStream(
             tabId,
-            sessionId: tabId,
-            deviceId: serial,
-            type: "touch",
-            action,
-            x: coords.streamX,
-            y: coords.streamY,
-            isStreamPixel: true,
-            orientation,
-            streamWidth: coords.canvasWidth,
-            streamHeight: coords.canvasHeight
-        });
+            coordsOverride || normalizePointerPosition(canvasEl, event)
+        );
+        try {
+            await window.videoAPI.sendInput({
+                tabId,
+                sessionId: tabId,
+                deviceId,
+                type: "touch",
+                action,
+                x: coords.streamX,
+                y: coords.streamY,
+                isStreamPixel: true,
+                orientation: resolveTouchOrientationForSession(tabId, captureOrientation),
+                streamWidth: coords.canvasWidth,
+                streamHeight: coords.canvasHeight
+            });
+        } catch (err) {
+            console.warn(`[SessionView ${tabId}] touch:`, err?.message || err);
+        }
     }
 
-    function queueTouchAction(event, action) {
+    function queueTouchAction(event, action, coordsOverride = null) {
         pendingInput = pendingInput
-            .catch(() => undefined)
-            .then(() => sendTouchAction(event, action));
+            .catch((err) => {
+                console.warn(`[SessionView ${tabId}] touch queue:`, err?.message || err);
+            })
+            .then(() => sendTouchAction(event, action, coordsOverride));
+        return pendingInput;
     }
 
     function clearPointerListeners() {
@@ -603,20 +845,26 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
     function onPointerDown(event) {
         if (event.pointerType !== "mouse" && event.pointerType !== "touch" && event.pointerType !== "pen") return;
         if (event.button !== 0) return;
+        const downCoords = normalizePointerPosition(canvasEl, event);
+        if (downCoords.outOfBounds) return;
         event.preventDefault();
         if (window.videoAPI?.activateSession) {
             void window.videoAPI.activateSession(tabId);
         }
+        if (inputActivation && !inputActivation.isActive()) {
+            inputActivation.focusCanvas?.();
+        }
         isDragging = true;
         activePointerId = event.pointerId;
         lastMoveSentAt = 0;
-        lastSentCoords = normalizePointerPosition(canvasEl, event);
+        touchSequenceStarted = false;
+        pointerStartCoords = downCoords;
+        lastSentCoords = pointerStartCoords;
         if (canvasEl.setPointerCapture) canvasEl.setPointerCapture(event.pointerId);
-        canvasEl.focus();
+        inputActivation?.focusCanvas?.() ?? canvasEl.focus();
         canvasEl.addEventListener("pointermove", onPointerMove, { passive: false });
         canvasEl.addEventListener("pointerup", onPointerUp);
         canvasEl.addEventListener("pointercancel", onPointerCancel);
-        queueTouchAction(event, "down");
     }
 
     async function onPointerUp(event) {
@@ -625,7 +873,13 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
         activePointerId = null;
         if (canvasEl.releasePointerCapture) canvasEl.releasePointerCapture(event.pointerId);
         clearPointerListeners();
-        await queueTouchAction(event, "up");
+        const coords = normalizePointerPosition(canvasEl, event);
+        if (!touchSequenceStarted) {
+            await queueTouchAction(event, "tap", coords);
+        } else {
+            await queueTouchAction(event, "up", coords);
+        }
+        pointerStartCoords = null;
         lastSentCoords = null;
     }
 
@@ -638,9 +892,13 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
             || Math.abs(coords.streamX - lastSentCoords.streamX) >= 2
             || Math.abs(coords.streamY - lastSentCoords.streamY) >= 2;
         if (!movedEnough && now - lastMoveSentAt < 16) return;
+        if (!touchSequenceStarted && pointerStartCoords) {
+            touchSequenceStarted = true;
+            queueTouchAction(event, "down", pointerStartCoords);
+        }
         lastMoveSentAt = now;
         lastSentCoords = coords;
-        queueTouchAction(event, "move");
+        queueTouchAction(event, "move", coords);
     }
 
     function onPointerCancel(event) {
@@ -648,7 +906,11 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
         isDragging = false;
         activePointerId = null;
         clearPointerListeners();
-        queueTouchAction(event, "up");
+        const coords = normalizePointerPosition(canvasEl, event);
+        if (touchSequenceStarted) {
+            queueTouchAction(event, "up", coords);
+        }
+        pointerStartCoords = null;
         lastSentCoords = null;
     }
 
@@ -659,7 +921,13 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
         if (key.length === 1 || KEYCODE_MAP[key]) {
             event.preventDefault();
             event.stopPropagation();
-            await window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId: serial, type: "key", key });
+            const deviceId = await ensureDeviceId();
+            if (!deviceId) return;
+            try {
+                await window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId, type: "key", key });
+            } catch (err) {
+                console.warn(`[SessionView ${tabId}] key:`, err?.message || err);
+            }
         }
     }
 
@@ -668,14 +936,17 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "portrait
     canvasEl.style.touchAction = "none";
     canvasEl.style.userSelect = "none";
     canvasEl.addEventListener("pointerdown", onPointerDown);
-    canvasEl.addEventListener("click", () => canvasEl.focus());
-    document.addEventListener("keydown", onKeyDown, true);
-    attachRightClickBackHandler(canvasEl, () => {
+    canvasEl.addEventListener("keydown", onKeyDown);
+    canvasEl.addEventListener("click", () => inputActivation?.focusCanvas?.() ?? canvasEl.focus());
+    attachRightClickBackHandler(canvasEl, async () => {
         if (window.videoAPI?.activateSession) {
             void window.videoAPI.activateSession(tabId);
         }
-        return window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId: serial, type: "key", key: "Back" });
+        const deviceId = await ensureDeviceId();
+        if (!deviceId) return;
+        return window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId, type: "key", key: "Back" });
     });
+    inputActivation?.focusCanvas?.();
 }
 
 function initTypeBInputHandlers(canvasEl, sessionIdParam) {
@@ -685,12 +956,18 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
     let activePointerId = null;
     let lastMoveSentAt = 0;
     let lastSentCoords = null;
+    let pointerStartCoords = null;
+    let touchSequenceStarted = false;
     let pendingInput = Promise.resolve();
 
-    async function sendTouchAction(event, action) {
-        const coords = normalizePointerPosition(canvasEl, event);
-        const result = await window.videoAPI.newInstanceSendInput({
+    const inputActivation = attachSessionInputActivation(canvasEl, sessionIdParam);
+
+    async function sendTouchAction(event, action, coordsOverride = null) {
+        const rawCoords = coordsOverride || normalizePointerPosition(canvasEl, event);
+        const coords = mapDisplayCoordsToStream(sessionIdParam, rawCoords);
+        const result = await window.videoAPI.sendInput({
             sessionId: sessionIdParam,
+            tabId: sessionIdParam,
             type: "touch",
             action,
             x: coords.streamX,
@@ -704,12 +981,13 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
         }
     }
 
-    function queueTouchAction(event, action) {
+    function queueTouchAction(event, action, coordsOverride = null) {
         pendingInput = pendingInput
             .catch((err) => {
                 console.warn(`[SessionView ${sessionIdParam}] Erreur input touch:`, err?.message || err);
             })
-            .then(() => sendTouchAction(event, action));
+            .then(() => sendTouchAction(event, action, coordsOverride));
+        return pendingInput;
     }
 
     function clearPointerListeners() {
@@ -721,20 +999,28 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
     function onPointerDown(event) {
         if (event.pointerType !== "mouse" && event.pointerType !== "touch" && event.pointerType !== "pen") return;
         if (event.button !== 0) return;
+        const downCoords = normalizePointerPosition(canvasEl, event);
+        if (downCoords.outOfBounds) return;
         event.preventDefault();
-        if (window.videoAPI?.activateSession) {
-            void window.videoAPI.activateSession(sessionIdParam);
-        }
+        void (async () => {
+            if (window.videoAPI?.activateSession) {
+                await window.videoAPI.activateSession(sessionIdParam);
+            }
+            if (inputActivation && !inputActivation.isActive()) {
+                inputActivation.focusCanvas?.();
+            }
+        })();
         isDragging = true;
         activePointerId = event.pointerId;
         lastMoveSentAt = 0;
-        lastSentCoords = normalizePointerPosition(canvasEl, event);
+        touchSequenceStarted = false;
+        pointerStartCoords = downCoords;
+        lastSentCoords = pointerStartCoords;
         if (canvasEl.setPointerCapture) canvasEl.setPointerCapture(event.pointerId);
-        canvasEl.focus();
+        inputActivation?.focusCanvas?.() ?? canvasEl.focus();
         canvasEl.addEventListener("pointermove", onPointerMove, { passive: false });
         canvasEl.addEventListener("pointerup", onPointerUp);
         canvasEl.addEventListener("pointercancel", onPointerCancel);
-        queueTouchAction(event, "down");
     }
 
     async function onPointerUp(event) {
@@ -743,7 +1029,13 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
         activePointerId = null;
         if (canvasEl.releasePointerCapture) canvasEl.releasePointerCapture(event.pointerId);
         clearPointerListeners();
-        await queueTouchAction(event, "up");
+        const coords = normalizePointerPosition(canvasEl, event);
+        if (!touchSequenceStarted) {
+            await queueTouchAction(event, "tap", coords);
+        } else {
+            await queueTouchAction(event, "up", coords);
+        }
+        pointerStartCoords = null;
         lastSentCoords = null;
     }
 
@@ -756,9 +1048,13 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
             || Math.abs(coords.streamX - lastSentCoords.streamX) >= 2
             || Math.abs(coords.streamY - lastSentCoords.streamY) >= 2;
         if (!movedEnough && now - lastMoveSentAt < 16) return;
+        if (!touchSequenceStarted && pointerStartCoords) {
+            touchSequenceStarted = true;
+            queueTouchAction(event, "down", pointerStartCoords);
+        }
         lastMoveSentAt = now;
         lastSentCoords = coords;
-        queueTouchAction(event, "move");
+        queueTouchAction(event, "move", coords);
     }
 
     function onPointerCancel(event) {
@@ -766,7 +1062,11 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
         isDragging = false;
         activePointerId = null;
         clearPointerListeners();
-        queueTouchAction(event, "up");
+        const coords = normalizePointerPosition(canvasEl, event);
+        if (touchSequenceStarted) {
+            queueTouchAction(event, "up", coords);
+        }
+        pointerStartCoords = null;
         lastSentCoords = null;
     }
 
@@ -778,7 +1078,12 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
             event.preventDefault();
             event.stopPropagation();
             try {
-                const result = await window.videoAPI.newInstanceSendInput({ sessionId: sessionIdParam, type: "key", key });
+                const result = await window.videoAPI.sendInput({
+                    sessionId: sessionIdParam,
+                    tabId: sessionIdParam,
+                    type: "key",
+                    key
+                });
                 if (result && result.success === false) {
                     console.warn(`[SessionView ${sessionIdParam}] Erreur input key:`, result.error);
                 }
@@ -793,15 +1098,16 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
     canvasEl.style.touchAction = "none";
     canvasEl.style.userSelect = "none";
     canvasEl.addEventListener("pointerdown", onPointerDown);
-    canvasEl.addEventListener("click", () => canvasEl.focus());
-    document.addEventListener("keydown", onKeyDown, true);
+    canvasEl.addEventListener("keydown", onKeyDown);
+    canvasEl.addEventListener("click", () => inputActivation?.focusCanvas?.() ?? canvasEl.focus());
     attachRightClickBackHandler(canvasEl, async () => {
         if (window.videoAPI?.activateSession) {
             void window.videoAPI.activateSession(sessionIdParam);
         }
         try {
-            const result = await window.videoAPI.newInstanceSendInput({
+            const result = await window.videoAPI.sendInput({
                 sessionId: sessionIdParam,
+                tabId: sessionIdParam,
                 type: "key",
                 key: "Back"
             });
@@ -812,6 +1118,7 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
             console.warn(`[SessionView ${sessionIdParam}] Erreur input Back (clic droit):`, err?.message || err);
         }
     });
+    inputActivation?.focusCanvas?.();
 }
 
 async function resolveSessionDeviceId(fallbackDeviceId) {
@@ -838,14 +1145,36 @@ async function bootstrapSessionView() {
     }
 
     if (sessionType === "B") {
+        const initialOrientation = params.get("orientation") || "landscape";
+        initSessionDisplayOrientation(sessionId, initialOrientation);
         window.__sessionVideoHandle = initTypeBVideoPipeline(sessionId, canvas);
         initTypeBInputHandlers(canvas, sessionId);
+        if (typeof attachCanvasWheelZoom === "function") {
+            attachCanvasWheelZoom(canvas, sessionId);
+        }
+        if (window.videoAPI?.activateSession) {
+            await window.videoAPI.activateSession(sessionId);
+        }
+        if (canvas) canvas.focus();
+        if (!window.__sessionInputReady) {
+            window.__sessionInputReady = true;
+        }
         return;
     }
 
     const resolvedDeviceId = await resolveSessionDeviceId(deviceId);
+    const initialOrientation = params.get("orientation") || "landscape";
+    initSessionDisplayOrientation(sessionId, initialOrientation);
     window.__sessionVideoHandle = initTypeAVideoPlayer(sessionId, canvas);
-    initTypeAInputHandlers(canvas, sessionId, resolvedDeviceId, "portrait");
+    initTypeAInputHandlers(canvas, sessionId, resolvedDeviceId, initialOrientation);
+    if (typeof attachCanvasWheelZoom === "function") {
+        attachCanvasWheelZoom(canvas, sessionId);
+    }
+    if (canvas) canvas.focus();
+
+    if (!window.__sessionInputReady) {
+        window.__sessionInputReady = true;
+    }
 }
 
 bootstrapSessionView();
