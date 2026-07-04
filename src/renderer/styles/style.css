@@ -368,6 +368,21 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.sidebar-device-card:hover {
+  background: #1c2230;
+  border-color: rgba(79, 140, 255, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.sidebar-device-card:active {
+  background: #12161e;
+  border-color: var(--border-subtle);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .sidebar-device-header {

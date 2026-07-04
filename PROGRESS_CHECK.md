@@ -68,8 +68,23 @@ Zones LOCK non touchées (`scrcpy-socket.js`, `new-instance-manager.js`).
 
 ---
 
+## Style visuel bouton — carte device sidebar (2026-07-04)
+
+| Élément | Détail |
+|---------|--------|
+| **Fichier modifié** | `src/renderer/styles/style.css` (`.sidebar-device-card`) |
+| **Trigger mirroring** | Double-clic uniquement — inchangé (`DevicePanel.js`, handler `onMirrorButtonClick`) |
+| **Clic simple** | Aucun handler ajouté — inchangé |
+| **Clic droit** | Menu contextuel renommage / couleur — inchangé |
+| **Style appliqué** | `cursor: pointer`, hover (fond + bordure + ombre), `:active` (effet pressed) |
+
+Aucune modification JS, tooltip, texte ou logique métier.
+
+---
+
 ## Historique récent
 
+- **2026-07-04** — Style visuel bouton sur `.sidebar-device-card` (CSS only, double-clic seul trigger).
 - **2026-07-04** — Double-clic carte device sidebar → `onMirrorButtonClick()` (`DevicePanel.js`).
 - **2026-07-04** — Fix input multi-fenêtres Type A + Type B (`c23e7cb`).
 - **2026-07-04** — Documentation LOCK général + audit toggle audio (aucun patch requis).
