@@ -922,6 +922,16 @@ async function launchNewInstanceSession() {
     }
 }
 
+function onMirrorButtonClick() {
+    launchMirrorSession().catch((err) => {
+        setStatus(`Erreur mirroring: ${err.message}`, true);
+    });
+}
+
+function setSelectedDeviceForMirror(serial, name) {
+    selectedDevice = { serial, name };
+}
+
 async function launchMirrorSession(options = {}) {
     if (isHubModalChildWindow()) {
         const serial = options.serial || selectedDevice?.serial;
@@ -1023,11 +1033,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const mirrorBtn = document.getElementById("new-instance-mirror-btn");
     if (mirrorBtn) {
-        mirrorBtn.addEventListener("click", () => {
-            launchMirrorSession().catch((err) => {
-                setStatus(`Erreur mirroring: ${err.message}`, true);
-            });
-        });
+        mirrorBtn.addEventListener("click", onMirrorButtonClick);
     }
 
     if (window.electronAPI?.onVideoStreamState) {
@@ -1132,6 +1138,8 @@ if (!isHubModalChildWindow()) {
     window.__hubModalMainActions = {
         launchTypeBSession,
         launchMirrorSession,
-        launchFromHistory
+        launchFromHistory,
+        onMirrorButtonClick,
+        setSelectedDeviceForMirror
     };
 }

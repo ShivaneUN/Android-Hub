@@ -104,6 +104,12 @@
             ]
         },
         {
+            title: "Appareils connectés (sidebar)",
+            items: [
+                { keys: ["Double-clic"], desc: "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)." }
+            ]
+        },
+        {
             title: "Clic droit — Appareils connectés (sidebar)",
             items: [
                 { keys: ["Renommer"], desc: "Ouvrir le dialogue pour personnaliser le nom affiché dans la liste des appareils." },

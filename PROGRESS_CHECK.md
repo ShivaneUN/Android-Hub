@@ -53,7 +53,23 @@ Dernière mise à jour : 2026-07-04
 
 ---
 
+## Double-clic sidebar → bouton Mirroring (2026-07-04)
+
+| Élément | Détail |
+|---------|--------|
+| **Fichiers modifiés** | `src/renderer/sidebar/DevicePanel.js`, `src/renderer/new-session.js` |
+| **Handler ponté** | `onMirrorButtonClick()` — même handler que `#new-instance-mirror-btn` |
+| **Préparation device** | `setSelectedDeviceForMirror(serial, name)` puis `onMirrorButtonClick()` (équivalent sélection + clic Mirroring) |
+| **Clic simple (sidebar)** | Aucun handler — inchangé |
+| **Clic droit (sidebar)** | Menu contextuel renommage / couleur — inchangé |
+| **Double-clic (sidebar)** | Mirroring Type A direct, sans confirmation |
+
+Zones LOCK non touchées (`scrcpy-socket.js`, `new-instance-manager.js`).
+
+---
+
 ## Historique récent
 
+- **2026-07-04** — Double-clic carte device sidebar → `onMirrorButtonClick()` (`DevicePanel.js`).
 - **2026-07-04** — Fix input multi-fenêtres Type A + Type B (`c23e7cb`).
 - **2026-07-04** — Documentation LOCK général + audit toggle audio (aucun patch requis).

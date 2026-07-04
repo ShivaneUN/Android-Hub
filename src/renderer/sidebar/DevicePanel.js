@@ -88,13 +88,25 @@ function renderDevicePanel(devices) {
 
     container.querySelectorAll(".sidebar-device-card").forEach((card) => {
         const serial = card.dataset.serial;
-        if (!serial || !window.renameActions?.attachDeviceContextMenu) return;
-        window.renameActions.attachDeviceContextMenu(card, {
-            serial,
-            name: card.querySelector(".sidebar-device-name")?.textContent?.trim() || serial,
-            originalName: card.dataset.originalName || serial,
-            hasCustomName: card.dataset.hasCustom === "1",
-            connected: true
+        if (!serial) return;
+
+        const deviceName = card.querySelector(".sidebar-device-name")?.textContent?.trim() || serial;
+
+        if (window.renameActions?.attachDeviceContextMenu) {
+            window.renameActions.attachDeviceContextMenu(card, {
+                serial,
+                name: deviceName,
+                originalName: card.dataset.originalName || serial,
+                hasCustomName: card.dataset.hasCustom === "1",
+                connected: true
+            });
+        }
+
+        card.addEventListener("dblclick", () => {
+            const actions = window.__hubModalMainActions;
+            if (!actions?.setSelectedDeviceForMirror || !actions?.onMirrorButtonClick) return;
+            actions.setSelectedDeviceForMirror(serial, deviceName);
+            actions.onMirrorButtonClick();
         });
     });
 }
