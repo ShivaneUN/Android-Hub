@@ -128,13 +128,14 @@ class DeviceColorsManager {
         if (!Array.isArray(devices)) return devices;
 
         const connectedIds = devices
-            .filter((device) => device?.serial && device.connected !== false)
-            .map((device) => device.serial);
+            .filter((device) => (device?.deviceId || device?.serial) && device.connected !== false)
+            .map((device) => device.deviceId || device.serial);
 
         return devices.map((device) => {
-            if (!device?.serial || device.connected === false) return device;
+            const deviceKey = device?.deviceId || device?.serial;
+            if (!deviceKey || device.connected === false) return device;
 
-            const deviceColor = this.ensureColorOnConnect(device.serial, connectedIds);
+            const deviceColor = this.ensureColorOnConnect(deviceKey, connectedIds);
             return deviceColor ? { ...device, deviceColor } : device;
         });
     }

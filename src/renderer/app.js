@@ -1,6 +1,7 @@
 const HUB_PANEL_MAP = {
     "page-new-session": "new-session",
-    "page-control-panel": "control"
+    "page-control-panel": "control",
+    "page-devices-panel": "devices"
 };
 
 function showPage(pageId) {

@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electronAPI", {
     // --- Devices ---
     getDevices: () => ipcRenderer.invoke("get-devices"),
+    onDevicesRefreshRequest: (callback) =>
+        ipcRenderer.on("devices:refresh-request", () => callback()),
     getApps: (serial) => ipcRenderer.invoke("get-apps", serial),
     getDeviceInfo: (serial) => ipcRenderer.invoke("device:info", serial),
 
@@ -143,6 +145,15 @@ contextBridge.exposeInMainWorld("namesAPI", {
     onContextMenuAction: (callback) =>
         ipcRenderer.on("context-menu:action", (_event, data) => callback(data)),
     onUpdated: (callback) => ipcRenderer.on("names:updated", () => callback())
+});
+
+contextBridge.exposeInMainWorld("wifiAPI", {
+    toggle: (payload) => ipcRenderer.invoke("wifi:toggle", payload),
+    getPanelData: () => ipcRenderer.invoke("wifi:panel-data"),
+    rename: (payload) => ipcRenderer.invoke("wifi:rename", payload),
+    remove: (payload) => ipcRenderer.invoke("wifi:remove", payload),
+    reconnect: (payload) => ipcRenderer.invoke("wifi:reconnect", payload),
+    resolveSerial: (payload) => ipcRenderer.invoke("device:resolve-serial", payload)
 });
 
 contextBridge.exposeInMainWorld("launchHistoryAPI", {

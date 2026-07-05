@@ -2,6 +2,7 @@
     const PANELS = {
         "new-session": "panel-new-session",
         control: "panel-control",
+        devices: "panel-devices",
         help: "panel-help"
     };
 
@@ -31,6 +32,8 @@
             await openNewSessionPanel({ inChildWindow: true });
         } else if (panel === "control" && typeof openControlPanel === "function") {
             await openControlPanel({ inChildWindow: true });
+        } else if (panel === "devices" && typeof openDevicesPanel === "function") {
+            await openDevicesPanel({ inChildWindow: true });
         } else if (panel === "help" && typeof openHelpPanel === "function") {
             openHelpPanel(payload.tab || "shortcuts");
         }

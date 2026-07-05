@@ -95,12 +95,39 @@
   </div>
 </div>
 
+<div id="panel-devices" class="hub-modal-panel">
+  <div class="hub-modal hub-modal--devices" role="dialog" aria-labelledby="devices-modal-title">
+    <div class="hub-panel-header">
+      <div class="hub-panel-title-row">
+        <div class="hub-panel-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M2 8.5a16 16 0 0 1 20 0"/><path d="M5 12.5a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <h2 class="hub-panel-title" id="devices-modal-title">Appareils</h2>
+      </div>
+      <button type="button" class="hub-panel-close" data-hub-modal-close id="close-devices-panel" title="Fermer">&#10005;</button>
+    </div>
+    <div class="hub-panel-body">
+      <div class="settings-section-label">USB</div>
+      <div class="devices-panel-list" id="devices-panel-usb-list">
+        <p class="apps-loading">Chargement...</p>
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-section-label">WiFi</div>
+      <div class="devices-panel-list" id="devices-panel-wifi-list">
+        <p class="apps-loading">Chargement...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="panel-help" class="hub-modal-panel"></div>
 
 <script src="../../shared/app-name.js"></script>
 <script src="../../shared/app-display.js"></script>
 <script src="../../shared/stream-params.js"></script>
+<script src="../toast.js"></script>
 <script src="../devices.js"></script>
+<script src="../devices-panel/DevicesPanel.js"></script>
 <script src="../apps/AppList.js"></script>
 <script src="../new-instance/new-instance-pipeline.js"></script>
 <script src="../new-session.js"></script>

@@ -1746,3 +1746,181 @@ html, body {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.05);
 }
+
+/* --- WiFi toggle sidebar --- */
+.sidebar-device-header {
+  gap: 6px;
+}
+
+.sidebar-wifi-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sidebar-wifi-toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sidebar-wifi-toggle-ui {
+  display: block;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: #3a4150;
+  position: relative;
+  transition: background 0.18s ease;
+}
+
+.sidebar-wifi-toggle-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #c8ceda;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.sidebar-wifi-toggle-input:checked + .sidebar-wifi-toggle-ui {
+  background: #3d6df0;
+}
+
+.sidebar-wifi-toggle-input:checked + .sidebar-wifi-toggle-ui::after {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+.sidebar-wifi-toggle-input:disabled + .sidebar-wifi-toggle-ui {
+  opacity: 0.45;
+}
+
+.sidebar-device-stat.transport-usb { color: #8b93a3; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.sidebar-device-stat.transport-wifi-connected { color: #4f8cff; font-size: 11px; font-weight: 600; }
+.sidebar-device-stat.transport-unknown { color: #5b6373; font-size: 11px; }
+
+/* --- Toasts --- */
+.hub-toast-container {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.hub-toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #1e2430;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e8ecf4;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.hub-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hub-toast-success { border-color: rgba(62, 207, 111, 0.45); }
+.hub-toast-error { border-color: rgba(229, 72, 77, 0.5); color: #ffd5d7; }
+.hub-toast-info { border-color: rgba(79, 140, 255, 0.35); }
+
+/* --- Panneau Appareils --- */
+.devices-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.devices-panel-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "main status"
+    "actions actions";
+  gap: 6px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.devices-panel-main { grid-area: main; min-width: 0; }
+.devices-panel-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.devices-panel-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.devices-panel-status {
+  grid-area: status;
+  align-self: start;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #8b93a3;
+}
+
+.devices-panel-status.online {
+  color: #3ecf6f;
+  background: rgba(62, 207, 111, 0.12);
+}
+
+.devices-panel-status.offline {
+  color: #8b93a3;
+}
+
+.devices-panel-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.devices-panel-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.devices-panel-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.devices-panel-btn.danger:hover {
+  color: #ffb4b6;
+  border-color: rgba(229, 72, 77, 0.35);
+}

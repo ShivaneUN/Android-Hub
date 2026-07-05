@@ -171,9 +171,9 @@ class CustomNamesManager {
     applyDeviceNames(devices) {
         if (!Array.isArray(devices)) return devices;
         return devices.map((device) => {
-            const serial = device.serial;
+            const serial = device.deviceId || device.serial;
             if (!serial) return device;
-            const adbName = device.name || serial;
+            const adbName = device.name || device.serial || serial;
             this.ensureDeviceOriginal(serial, adbName);
             const originalName = this.getDeviceOriginalName(serial, adbName);
             const displayName = this.getDeviceDisplayName(serial, adbName);

@@ -1,135 +1,387 @@
 /**
- * Panneau sidebar : liste des appareils connectés (nom, batterie, WiFi).
- * Données dédupliquées par serial, mises à jour via devices-refreshed.
+
+ * Panneau sidebar : liste unifiée des appareils (USB / WiFi fusionnés).
+
  */
 
-function dedupeConnectedDevices(devices) {
-    const bySerial = new Map();
 
-    for (const device of devices) {
-        if (!device?.connected) continue;
 
-        const key = device.serial || device.name;
-        if (!key) continue;
+const WIFI_ERROR_MESSAGES = {
 
-        const existing = bySerial.get(key);
-        if (!existing || (device.status === "green" && existing.status !== "green")) {
-            bySerial.set(key, device);
-        }
-    }
+    tcpip: "Impossible d'activer le mode WiFi sur cet appareil",
 
-    return Array.from(bySerial.values());
+    ip: "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
+
+    connect: "Connexion impossible — vérifie que le téléphone est sur le même réseau"
+
+};
+
+
+
+function getConnectedOnly(devices) {
+
+    return (Array.isArray(devices) ? devices : []).filter((device) => device?.connected !== false);
+
 }
+
+
 
 function formatBattery(battery) {
+
     if (battery === null || battery === undefined || Number.isNaN(battery)) {
+
         return "—";
+
     }
+
     return `${Math.round(battery)}%`;
+
 }
+
+
 
 function batteryClass(battery) {
+
     if (battery === null || battery === undefined) return "unknown";
+
     if (battery <= 20) return "low";
+
     if (battery <= 50) return "medium";
+
     return "good";
+
 }
 
-function wifiClass(wifiStatus) {
-    if (!wifiStatus) return "unknown";
-    const normalized = wifiStatus.toLowerCase();
-    if (normalized.includes("connect")) return "connected";
-    if (normalized.includes("activ")) return "enabled";
-    if (normalized.includes("désactiv") || normalized.includes("desactiv")) return "disabled";
+
+
+function transportClass(device) {
+
+    if (device.transport === "wifi") return "wifi-connected";
+
+    if (device.transport === "usb") return "usb-connected";
+
     return "unknown";
+
 }
 
-function renderDevicePanel(devices) {
-    const container = document.getElementById("sidebar-devices-panel");
-    if (!container) return;
 
-    const connected = dedupeConnectedDevices(devices);
 
-    if (connected.length === 0) {
-        container.innerHTML = `
-            <div class="sidebar-devices-empty">Aucun appareil connecté</div>
-        `;
-        return;
+async function handleWifiToggle(device, enabled, toggleInput) {
+
+    if (!window.wifiAPI?.toggle) return;
+
+
+
+    if (toggleInput) toggleInput.disabled = true;
+
+
+
+    try {
+
+        const result = await window.wifiAPI.toggle({
+
+            deviceId: device.deviceId,
+
+            enabled,
+
+            usbSerial: device.usbSerial
+                || (device.transport === "usb" ? device.serial : null)
+                || null,
+
+            name: device.name
+
+        });
+
+
+
+        if (Array.isArray(result?.progress)) {
+
+            for (const step of result.progress) {
+
+                if (step?.message) window.showHubToast?.(step.message, "info", 2800);
+
+            }
+
+        }
+
+
+
+        if (result?.success) {
+
+            window.showHubToast?.(
+                result.message || (enabled ? "WiFi activé" : "WiFi déconnecté"),
+                "success"
+            );
+
+            if (result.firstSetup && window.namesAPI?.openRenameDialog) {
+
+                await window.namesAPI.openRenameDialog({
+
+                    kind: "device",
+
+                    serial: result.deviceId,
+
+                    name: device.name,
+
+                    originalName: device.originalName || device.name
+
+                });
+
+            }
+
+            await window.refreshDevices?.();
+
+            return;
+
+        }
+
+
+
+        const message = WIFI_ERROR_MESSAGES[result?.step] || result?.error || "Échec connexion WiFi";
+
+        window.showHubToast?.(message, "error", 5500);
+
+        if (toggleInput) toggleInput.checked = false;
+
+        await window.refreshDevices?.();
+
+    } catch (err) {
+
+        window.showHubToast?.(err.message || "Erreur WiFi", "error", 5500);
+
+        if (toggleInput) toggleInput.checked = false;
+
+    } finally {
+
+        if (toggleInput) toggleInput.disabled = false;
+
     }
 
+}
+
+
+
+function renderDevicePanel(devices) {
+
+    const container = document.getElementById("sidebar-devices-panel");
+
+    if (!container) return;
+
+
+
+    const connected = getConnectedOnly(devices);
+
+
+
+    if (connected.length === 0) {
+
+        container.innerHTML = `
+
+            <div class="sidebar-devices-empty">Aucun appareil connecté</div>
+
+        `;
+
+        return;
+
+    }
+
+
+
     container.innerHTML = connected.map((device) => {
+
         const name = device.name || device.serial || "Appareil";
+
         const originalName = device.originalName || name;
+
         const battery = formatBattery(device.battery);
-        const wifi = device.wifiStatus || "Inconnu";
+
+        const transport = device.transportLabel || (device.transport === "wifi" ? "WiFi connecté" : "USB");
+
         const statusDot = device.status === "green" ? "online" : "offline";
+
         const colorStyle = device.deviceColor?.hex ? ` style="background:${device.deviceColor.hex}"` : "";
 
+        const canToggleWifi = Boolean(
+            device.usbSerial
+            || device.wifiConfigured
+            || (device.transport === "wifi" && device.connected !== false)
+        );
+
+        const wifiChecked = Boolean(
+            device.wifiActive
+            ?? (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
+        );
+
+        const showUsbBadge = device.usbAvailable && !(wifiChecked && device.transport === "wifi");
+
+        const transportBadge = showUsbBadge && device.transport !== "wifi"
+
+            ? `<span class="sidebar-device-stat transport-usb" title="USB">USB</span>`
+
+            : `<span class="sidebar-device-stat transport-${transportClass(device)}" title="Transport ADB">${transport}</span>`;
+
+
+
         return `
-            <div class="sidebar-device-card" data-serial="${device.serial || ""}" data-original-name="${originalName}" data-has-custom="${device.hasCustomName ? "1" : "0"}" title="${name}">
+
+            <div class="sidebar-device-card" data-device-id="${device.deviceId || ""}" data-serial="${device.serial || ""}" data-original-name="${originalName}" data-has-custom="${device.hasCustomName ? "1" : "0"}" title="${name}">
+
                 <div class="sidebar-device-header">
+
                     <span class="sidebar-device-color device-color-pill"${colorStyle} aria-hidden="true"></span>
+
                     <span class="sidebar-device-status ${statusDot}"></span>
+
                     <span class="sidebar-device-name">${name}</span>
+
+                    ${canToggleWifi ? `
+
+                    <label class="sidebar-wifi-toggle" title="Connexion WiFi ADB">
+
+                        <input type="checkbox" class="sidebar-wifi-toggle-input" data-device-id="${device.deviceId || ""}" ${wifiChecked ? "checked" : ""}>
+
+                        <span class="sidebar-wifi-toggle-ui"></span>
+
+                    </label>` : ""}
+
                 </div>
+
                 <div class="sidebar-device-meta">
+
                     <span class="sidebar-device-stat battery-${batteryClass(device.battery)}" title="Batterie">
+
                         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="0.5"/></svg>
+
                         ${battery}
+
                     </span>
-                    <span class="sidebar-device-stat wifi-${wifiClass(wifi)}" title="WiFi">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.5a16 16 0 0 1 20 0"/><path d="M5 12.5a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
-                        ${wifi}
-                    </span>
+
+                    ${transportBadge}
+
                 </div>
+
             </div>
+
         `;
+
     }).join("");
 
+
+
     container.querySelectorAll(".sidebar-device-card").forEach((card) => {
+
+        const deviceId = card.dataset.deviceId;
+
         const serial = card.dataset.serial;
+
         if (!serial) return;
+
+
+
+        const device = connected.find((d) => d.deviceId === deviceId || d.serial === serial);
+
+        if (!device) return;
+
+
 
         const deviceName = card.querySelector(".sidebar-device-name")?.textContent?.trim() || serial;
 
+
+
         if (window.renameActions?.attachDeviceContextMenu) {
+
             window.renameActions.attachDeviceContextMenu(card, {
-                serial,
+
+                serial: device.deviceId || serial,
+
                 name: deviceName,
+
                 originalName: card.dataset.originalName || serial,
+
                 hasCustomName: card.dataset.hasCustom === "1",
+
                 connected: true
+
             });
+
         }
 
+
+
+        const toggleInput = card.querySelector(".sidebar-wifi-toggle-input");
+
+        if (toggleInput) {
+
+            toggleInput.addEventListener("change", () => {
+
+                void handleWifiToggle(device, toggleInput.checked, toggleInput);
+
+            });
+
+        }
+
+
+
         card.addEventListener("dblclick", () => {
+
             const actions = window.__hubModalMainActions;
+
             if (!actions?.setSelectedDeviceForMirror || !actions?.onMirrorButtonClick) return;
-            actions.setSelectedDeviceForMirror(serial, deviceName);
+
+            actions.setSelectedDeviceForMirror(serial, deviceName, device.deviceId);
+
             actions.onMirrorButtonClick();
+
         });
+
     });
+
 }
+
+
 
 function initDevicePanel() {
+
     const container = document.getElementById("sidebar-devices-panel");
+
     if (!container) return;
 
+
+
     const refresh = () => {
+
         const devices = typeof window.getCurrentDevices === "function"
+
             ? window.getCurrentDevices()
+
             : [];
+
         renderDevicePanel(devices);
+
     };
 
+
+
     window.addEventListener("devices-refreshed", refresh);
+
     refresh();
+
 }
+
+
 
 if (document.readyState === "loading") {
+
     document.addEventListener("DOMContentLoaded", initDevicePanel);
+
 } else {
+
     initDevicePanel();
+
 }
 
+
+
 window.renderDevicePanel = renderDevicePanel;
+
+

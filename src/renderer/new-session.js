@@ -514,24 +514,33 @@ function renderDeviceList(devices) {
     const { deviceList } = getNewInstanceElements();
     if (!deviceList) return;
 
-    if (!devices.length) {
+    const connected = (Array.isArray(devices) ? devices : []).filter((d) => d?.connected !== false);
+
+    if (!connected.length) {
         deviceList.innerHTML = '<p class="apps-loading">Aucun appareil connecte</p>';
         return;
     }
 
-    deviceList.innerHTML = devices.map((d) => `
-        <button type="button" class="new-instance-device-item ${selectedDevice && selectedDevice.serial === d.serial ? "selected" : ""}" data-serial="${d.serial}" data-name="${d.name}">
+    deviceList.innerHTML = connected.map((d) => {
+        const isSelected = selectedDevice && (
+            selectedDevice.deviceId === d.deviceId
+            || selectedDevice.serial === d.serial
+        );
+        const transport = d.transportLabel || (d.transport === "wifi" ? "WiFi" : "USB");
+        return `
+        <button type="button" class="new-instance-device-item ${isSelected ? "selected" : ""}" data-serial="${d.serial}" data-device-id="${d.deviceId || d.serial}" data-name="${d.name}">
             <span class="status-dot status-${d.status}"></span>
             <span class="new-instance-device-main">
                 <span class="new-instance-device-name">${d.name}</span>
-                <span class="new-instance-device-serial">${d.serial}</span>
+                <span class="new-instance-device-serial">${d.serial} · ${transport}</span>
             </span>
         </button>
-    `).join("");
+    `;
+    }).join("");
 
     deviceList.querySelectorAll(".new-instance-device-item").forEach((btn) => {
         btn.addEventListener("click", () => {
-            selectDevice(btn.dataset.serial, btn.dataset.name);
+            selectDevice(btn.dataset.serial, btn.dataset.name, btn.dataset.deviceId);
         });
     });
 }
@@ -587,9 +596,9 @@ async function fetchConnectedDevices() {
         await window.refreshDevices();
     }
 
-    const source = typeof window.getCurrentDevices === "function"
-        ? window.getCurrentDevices()
-        : [];
+    const source = typeof window.getConnectedDevices === "function"
+        ? window.getConnectedDevices()
+        : (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : []);
 
     if (source.length > 0) {
         return source.filter((d) => d?.connected !== false);
@@ -608,8 +617,8 @@ async function fetchConnectedDevices() {
     }
 }
 
-async function selectDevice(serial, name) {
-    selectedDevice = { serial, name };
+async function selectDevice(serial, name, deviceId) {
+    selectedDevice = { serial, name, deviceId: deviceId || serial };
     selectedApp = null;
 
     const devices = await fetchConnectedDevices();
@@ -928,8 +937,8 @@ function onMirrorButtonClick() {
     });
 }
 
-function setSelectedDeviceForMirror(serial, name) {
-    selectedDevice = { serial, name };
+function setSelectedDeviceForMirror(serial, name, deviceId) {
+    selectedDevice = { serial, name, deviceId: deviceId || serial };
 }
 
 async function launchMirrorSession(options = {}) {
@@ -1098,7 +1107,9 @@ document.addEventListener("DOMContentLoaded", () => {
             : (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : []);
         const connectedDevices = allDevices.filter((d) => d?.connected !== false);
         connectedDevicesCache = connectedDevices;
-        if (selectedDevice && !connectedDevices.some((d) => d.serial === selectedDevice.serial)) {
+        if (selectedDevice && !connectedDevices.some((d) =>
+            d.serial === selectedDevice.serial || d.deviceId === selectedDevice.deviceId
+        )) {
             selectedDevice = null;
             selectedApp = null;
             resetLauncherApps();

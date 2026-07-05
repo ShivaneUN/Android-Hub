@@ -174,8 +174,12 @@ const { getAdbPath, getScrcpyBinaryPath, getServerJarPath } = require("./paths")
 const { initAutoUpdater } = require("./auto-updater");
 const { registerUpdateHandlers } = require("./ipc/updateHandlers");
 const { DeviceManager } = require("./managers/device-manager");
+const { DeviceRegistry } = require("./managers/device-registry");
+const { WifiDevicesManager } = require("./managers/wifi-devices-manager");
+const { WifiAdbService } = require("./managers/wifi-adb-service");
 const { DevicePowerManager } = require("./managers/device-power-manager");
 const { DeviceOrientationManager } = require("./managers/device-orientation-manager");
+const { registerWifiHandlers } = require("./ipc/wifiHandlers");
 
 const adbPath = getAdbPath();
 const serverJarPath = getServerJarPath();
@@ -183,6 +187,10 @@ const scrcpyBinaryPath = getScrcpyBinaryPath();
 
 let historyPath;
 let deviceManager;
+let deviceRegistry;
+let wifiDevicesManager;
+let wifiAdbService;
+let wifiStartupPromise = null;
 let appMetadataManager;
 let newInstanceManager;
 let launchHistoryManager;
@@ -248,7 +256,11 @@ function loadHistoryFromDisk() {
     if (!historyPath) return {};
     try {
         if (fs.existsSync(historyPath)) {
-            return JSON.parse(fs.readFileSync(historyPath, "utf-8"));
+            const parsed = JSON.parse(fs.readFileSync(historyPath, "utf-8"));
+            if (global.wifiAdbService && migrateDeviceHistoryKeys(parsed, global.wifiAdbService)) {
+                saveHistory(parsed);
+            }
+            return parsed;
         }
     } catch (e) {
         console.error("Erreur lecture historique:", e);
@@ -303,6 +315,49 @@ function updateDeviceInHistory(serial, name) {
     return history;
 }
 
+function migrateDeviceHistoryKeys(history, wifiService) {
+    if (!history || typeof history !== "object" || !wifiService) return false;
+
+    let changed = false;
+    for (const key of Object.keys({ ...history })) {
+        const entry = history[key];
+        if (!entry || typeof entry !== "object") continue;
+
+        const wifiKey = wifiService.isWifiSerial(key)
+            ? key
+            : (wifiService.isWifiSerial(entry.serial) ? entry.serial : null);
+
+        if (!wifiKey) continue;
+
+        const config = wifiService.findConfigByWifiSerial(wifiKey);
+        const targetId = config?.deviceId || entry.deviceId;
+        if (!targetId || targetId === wifiKey) {
+            delete history[key];
+            changed = true;
+            continue;
+        }
+
+        const existing = history[targetId] || {};
+        history[targetId] = {
+            deviceId: targetId,
+            name: existing.name || entry.name || targetId,
+            usbSerial: existing.usbSerial || config?.usbSerialHint || null,
+            wifiSerial: wifiKey,
+            serial: existing.usbSerial || config?.usbSerialHint || targetId,
+            lastSeen: entry.lastSeen || existing.lastSeen,
+            lastUsbSeen: existing.lastUsbSeen || null,
+            lastWifiSeen: entry.lastSeen || existing.lastWifiSeen
+        };
+
+        if (key !== targetId) {
+            delete history[key];
+            changed = true;
+        }
+    }
+
+    return changed;
+}
+
 function updateDevicesInHistory(devices) {
     if (!Array.isArray(devices) || devices.length === 0) {
         return loadHistory();
@@ -310,17 +365,50 @@ function updateDevicesInHistory(devices) {
 
     const history = loadHistory();
     const now = new Date().toISOString();
+    const wifiService = global.wifiAdbService;
+
     for (const device of devices) {
-        if (!device?.serial) continue;
-        history[device.serial] = {
-            serial: device.serial,
-            name: device.name || device.serial,
-            lastSeen: now
+        if (!device?.serial && !device?.deviceId) continue;
+
+        const deviceId = device.deviceId || device.serial;
+        const isWifiSerial = wifiService?.isWifiSerial?.(device.serial);
+        const existing = history[deviceId] || {};
+
+        const usbSerial = device.usbSerial
+            || existing.usbSerial
+            || (!isWifiSerial ? device.serial : null);
+        const wifiSerial = device.wifiSerial
+            || existing.wifiSerial
+            || (isWifiSerial ? device.serial : null);
+
+        history[deviceId] = {
+            deviceId,
+            name: device.name || existing.name || deviceId,
+            usbSerial,
+            wifiSerial,
+            serial: usbSerial || deviceId,
+            lastSeen: now,
+            lastUsbSeen: usbSerial && rawUsbOnline(device, isWifiSerial) ? now : existing.lastUsbSeen,
+            lastWifiSeen: wifiSerial || isWifiSerial ? now : existing.lastWifiSeen
         };
+
+        if (wifiSerial && history[wifiSerial]) {
+            delete history[wifiSerial];
+        }
     }
+
+    if (wifiService) {
+        migrateDeviceHistoryKeys(history, wifiService);
+    }
+
     deviceHistoryDirty = true;
     scheduleDeviceHistoryFlush();
     return history;
+}
+
+function rawUsbOnline(device, isWifiSerial) {
+    if (isWifiSerial) return false;
+    return Boolean(device.usbSerial || device.serial);
 }
 
 function getConnectedDevices() {
@@ -685,6 +773,29 @@ app.whenReady().then(() => {
     global.customNamesManager = new CustomNamesManager(app.getPath("userData"));
     global.deviceColorsManager = new DeviceColorsManager(app.getPath("userData"));
     deviceManager = new DeviceManager(adbPath);
+    wifiDevicesManager = new WifiDevicesManager(app.getPath("userData"));
+    global.wifiDevicesManager = wifiDevicesManager;
+    wifiAdbService = new WifiAdbService(adbPath, wifiDevicesManager);
+    global.wifiAdbService = wifiAdbService;
+    deviceRegistry = new DeviceRegistry({
+        deviceManager,
+        wifiDevicesManager,
+        wifiAdbService,
+        getConnectedDevicesFallback: getConnectedDevices,
+        getConnectedDevicesSimpleFallback: getConnectedDevicesSimple
+    });
+    global.deviceRegistry = deviceRegistry;
+    deviceHistoryCache = null;
+    const historyOnInit = loadHistory();
+    if (migrateDeviceHistoryKeys(historyOnInit, wifiAdbService)) {
+        deviceHistoryDirty = true;
+        flushDeviceHistoryNow();
+    }
+    wifiStartupPromise = deviceRegistry.startupAutoConnect().catch((err) => {
+        console.warn("[DeviceRegistry] startupAutoConnect:", err?.message || err);
+    }).finally(() => {
+        requestRendererDeviceRefresh();
+    });
     devicePowerManager = new DevicePowerManager(adbPath);
     global.devicePowerManager = devicePowerManager;
     deviceOrientationManager = new DeviceOrientationManager(adbPath);
@@ -738,89 +849,71 @@ app.whenReady().then(() => {
 
     // --- IPC Handlers ---
 
+function requestRendererDeviceRefresh() {
+    if (win && !win.isDestroyed()) {
+        win.webContents.send("devices:refresh-request");
+    }
+}
+
+async function listDevicesForUI() {
+    if (wifiStartupPromise) {
+        await wifiStartupPromise;
+    }
+
+    let connected = [];
+    try {
+        connected = await deviceRegistry.listUnifiedDevices();
+    } catch (err) {
+        console.error("[listDevicesForUI] registry error:", err.message);
+        connected = [];
+    }
+
+    if (connected.length > 0 && deviceManager?.enrichDevicesWithStatus) {
+        try {
+            connected = await deviceManager.enrichDevicesWithStatus(connected);
+        } catch (err) {
+            console.warn("[listDevicesForUI] enrich status error:", err.message);
+        }
+    }
+
+    const history = updateDevicesInHistory(connected);
+    connected = global.customNamesManager.applyDeviceNames(connected);
+    connected = applyDeviceColorMetadata(connected);
+    syncDevicePowerPolicy(connected);
+
+    const connectedKeys = new Set();
+    for (const device of connected) {
+        if (device?.deviceId) connectedKeys.add(device.deviceId);
+        if (device?.serial) connectedKeys.add(device.serial);
+    }
+
+    const historicalOnly = Object.entries(history)
+        .filter(([key, h]) => !connectedKeys.has(key) && !connectedKeys.has(h.serial))
+        .map(([key, h]) => ({
+            deviceId: key,
+            serial: h.serial || key,
+            name: h.name,
+            status: "red",
+            connected: false,
+            lastSeen: h.lastSeen,
+            transport: "none",
+            transportLabel: "Hors ligne",
+            wifiEnabled: false,
+            wifiActive: false,
+            wifiConfigured: false
+        }));
+
+    return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
+}
+
     ipcMain.handle("get-devices", async () => {
-        let connected = [];
-        try {
-            connected = await deviceManager.getConnectedDevices();
-        } catch (err) {
-            console.error("[get-devices] DeviceManager error:", err.message);
-        }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await getConnectedDevices();
-            } catch (err) {
-                console.error("[get-devices] fallback adb error:", err.message);
-                connected = [];
-            }
-        }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await getConnectedDevicesSimple();
-            } catch (err) {
-                console.error("[get-devices] simple adb fallback error:", err.message);
-                connected = [];
-            }
-        }
-
-        console.log(`[get-devices] connected count=${connected.length}`);
-
-        if (connected.length > 0 && deviceManager?.enrichDevicesWithStatus) {
-            try {
-                connected = await deviceManager.enrichDevicesWithStatus(connected);
-            } catch (err) {
-                console.warn("[get-devices] enrich status error:", err.message);
-            }
-        }
-
-        const history = updateDevicesInHistory(connected);
-        connected = global.customNamesManager.applyDeviceNames(connected);
-        connected = applyDeviceColorMetadata(connected);
-        syncDevicePowerPolicy(connected);
-        const connectedSerials = connected.map(d => d.serial);
-        const historicalOnly = Object.values(history)
-            .filter(h => !connectedSerials.includes(h.serial))
-            .map(h => ({ serial: h.serial, name: h.name, status: "red", connected: false, lastSeen: h.lastSeen }));
-        return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
+        const devices = await listDevicesForUI();
+        const connectedCount = devices.filter((d) => d.connected !== false).length;
+        console.log(`[get-devices] connected count=${connectedCount}`);
+        return devices;
     });
 
-    ipcMain.handle("device:list", async () => {
-        let connected = [];
-        try {
-            connected = await deviceManager.getConnectedDevices();
-        } catch (err) {
-            console.error("[device:list] DeviceManager error:", err.message);
-        }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await getConnectedDevices();
-            } catch (err) {
-                console.error("[device:list] fallback adb error:", err.message);
-                connected = [];
-            }
-        }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await getConnectedDevicesSimple();
-            } catch (err) {
-                console.error("[device:list] simple adb fallback error:", err.message);
-                connected = [];
-            }
-        }
-
-        const history = updateDevicesInHistory(connected);
-        connected = global.customNamesManager.applyDeviceNames(connected);
-        connected = applyDeviceColorMetadata(connected);
-        syncDevicePowerPolicy(connected);
-        const connectedSerials = connected.map(d => d.serial);
-        const historicalOnly = Object.values(history)
-            .filter(h => !connectedSerials.includes(h.serial))
-            .map(h => ({ serial: h.serial, name: h.name, status: "red", connected: false, lastSeen: h.lastSeen }));
-        return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
-    });
+    ipcMain.handle("device:list", async () => listDevicesForUI());
 
     ipcMain.handle("get-apps", async (event, serial) => {
         try {
@@ -1891,6 +1984,19 @@ app.whenReady().then(() => {
     });
     registerUpdateHandlers(ipcMain);
     initAutoUpdater(win);
+
+    registerWifiHandlers({
+        ipcMain,
+        getDeviceRegistry: () => deviceRegistry,
+        getWifiAdbService: () => wifiAdbService,
+        getWifiDevicesManager: () => wifiDevicesManager,
+        getCustomNamesManager: () => global.customNamesManager,
+        getMainWindow: () => win,
+        loadHistory,
+        refreshDeviceList: async () => {
+            requestRendererDeviceRefresh();
+        }
+    });
 
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

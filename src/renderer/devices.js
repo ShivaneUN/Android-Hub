@@ -1,29 +1,12 @@
 /**
- * Service de polling ADB partagé (backend pour "Nouvelle instance").
- * N'affiche aucune UI — émet devices-refreshed et expose getCurrentDevices / refreshDevices.
+ * Service de polling ADB partagé — source de vérité renderer pour la liste devices.
  */
 let currentDevices = [];
 let pollingInterval = null;
 
-function dedupeDevices(devices) {
-    const byKey = new Map();
-
-    for (const device of devices) {
-        const key = device?.serial || device?.name;
-        if (!key) continue;
-
-        const existing = byKey.get(key);
-        if (!existing) {
-            byKey.set(key, device);
-            continue;
-        }
-
-        if (device.connected && !existing.connected) {
-            byKey.set(key, device);
-        }
-    }
-
-    return Array.from(byKey.values());
+function normalizeDevices(devices) {
+    if (!Array.isArray(devices)) return [];
+    return devices.filter((device) => device && (device.deviceId || device.serial));
 }
 
 async function refreshDevices() {
@@ -35,8 +18,8 @@ async function refreshDevices() {
                 ? response.devices
                 : [];
 
-        currentDevices = dedupeDevices(devices);
-        window.dispatchEvent(new CustomEvent("devices-refreshed", { detail: currentDevices }));
+        currentDevices = normalizeDevices(devices);
+        window.dispatchEvent(new CustomEvent("devices-refreshed", { detail: currentDevices.slice() }));
     } catch (e) {
         console.error("Erreur recuperation appareils:", e);
     }
@@ -52,8 +35,24 @@ function getCurrentDevices() {
     return currentDevices.slice();
 }
 
+function getConnectedDevices() {
+    return currentDevices.filter((device) => device?.connected !== false);
+}
+
+function findDeviceById(deviceId) {
+    return currentDevices.find((device) => device.deviceId === deviceId || device.serial === deviceId) || null;
+}
+
 window.getCurrentDevices = getCurrentDevices;
+window.getConnectedDevices = getConnectedDevices;
+window.findDeviceById = findDeviceById;
 window.refreshDevices = refreshDevices;
+
+if (window.electronAPI?.onDevicesRefreshRequest) {
+    window.electronAPI.onDevicesRefreshRequest(() => {
+        void refreshDevices();
+    });
+}
 
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", startDevicePolling);

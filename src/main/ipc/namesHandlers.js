@@ -17,6 +17,9 @@ function performDeviceRename(manager, mainWindow, { serial, name, originalName }
     }
 
     manager.setDeviceCustomName(serial, originalName, validation.name);
+    if (global.wifiDevicesManager?.getByDeviceId?.(serial)) {
+        global.wifiDevicesManager.rename(serial, validation.name);
+    }
     notifyNamesUpdated(mainWindow);
     return { success: true, name: validation.name };
 }
