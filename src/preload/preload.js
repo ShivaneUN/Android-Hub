@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld("wifiAPI", {
     getPanelData: () => ipcRenderer.invoke("wifi:panel-data"),
     rename: (payload) => ipcRenderer.invoke("wifi:rename", payload),
     remove: (payload) => ipcRenderer.invoke("wifi:remove", payload),
+    removeFromPanel: (payload) => ipcRenderer.invoke("devices:panel-remove", payload),
     reconnect: (payload) => ipcRenderer.invoke("wifi:reconnect", payload),
     resolveSerial: (payload) => ipcRenderer.invoke("device:resolve-serial", payload)
 });

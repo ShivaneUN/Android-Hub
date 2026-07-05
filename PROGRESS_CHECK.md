@@ -1243,9 +1243,111 @@ Actions locales (rename, reconnect, remove) appelaient déjà `renderPanel()` �
 
 ---
 
+## TÂCHE — Panneau Appareils : Renommer / USB / couleurs / sync toggle (2026-07-05)
+
+**Statut : corrigé (2026-07-05).**
+
+### Correctifs appliqués
+
+| P | Fichier | Correction |
+|---|---------|------------|
+| P0 | `DevicesPanel.js` | Renommer → `namesAPI.openRenameDialog` (plus `window.prompt`) |
+| P0 | `wifiHandlers.js` | `wifi:reconnect` → `setWifiEnabled(true)` avant connect |
+| P1 | `DevicesPanel.js` | Actions USB Renommer / Supprimer (même handlers) |
+| P1 | `wifiHandlers.js` | `devices:panel-remove` unifié + enrichissement noms/couleurs panel |
+| P1 | `DevicesPanel.js` | Pill `device-color-pill` via `getColorForDevice` |
+| P1 | `namesHandlers.js` | `refreshDeviceList` après renommage device |
+
+---
+
+| Vérification | Résultat |
+|--------------|----------|
+| `onClick` attaché ? | ✅ Oui — `bindWifiRowActions` → `handleWifiAction` sur `[data-action]` |
+| Handler déclenché ? | ✅ Probable — pas d'erreur JS bloquante avant `prompt` |
+| Popup modal existante ? | ✅ **Oui** — `RenameDialogManager` + `namesAPI.openRenameDialog` (sidebar, clic droit) |
+| Ce que fait le panneau | ❌ **`window.prompt()`** — API bloquée / invisible dans la fenêtre overlay Electron (`hub-modal-window`) |
+| Scripts rename dans modal ? | ❌ `rename-actions.js` non chargé dans `hub-modal-window.html` (inutile si on utilise `namesAPI` via preload) |
+
+**Cause racine :** le panneau n'utilise **pas** le dialogue de renommage partagé ; `window.prompt` ne fonctionne pas dans le BrowserWindow modal enfant.
+
+**Fix prévu :** `namesAPI.openRenameDialog({ kind: "device", serial: deviceId, ... })` — même chemin que `rename-actions.openDeviceRename`.
+
+---
+
+### 2. Couleur device — où c'est implémenté
+
+| Couche | Fichier | Rôle |
+|--------|---------|------|
+| Persistance | `device-colors-manager.js` | `device-colors.json`, `getColorForDevice(deviceId)` |
+| Liste UI | `main.js` → `applyDeviceColorMetadata()` | `applyDeviceColors()` sur devices connectés |
+| Sidebar | `DevicePanel.js` | `device.deviceColor.hex` → pill `.device-color-pill` |
+| Clic droit couleur | `contextMenuHandlers.js` + `deviceColorsAPI` | setManual / setAuto |
+| Panneau Appareils | ❌ **Absent** — `buildDevicesPanelData()` ne lit pas `DeviceColorsManager` |
+
+**Fix prévu :** enrichir `wifi:panel-data` avec `getColorForDevice(deviceId)` + pill dans le template (même classe CSS).
+
+---
+
+### 3. Sync toggle sidebar ↔ Reconnecter
+
+| Source | Toggle sidebar | Bouton Reconnecter |
+|--------|----------------|-------------------|
+| Lecture état | `listUnifiedDevices()` → `wifiActive` | `wifi:reconnect` → `reconnectSaved()` |
+| Écriture `wifiEnabled` | `wifi:toggle` ON/OFF | ❌ **Ne met pas** `wifiEnabled: true` avant reconnect |
+| Refresh après action | `refreshDeviceList()` → `devices:refresh-request` | Appelle `refreshDeviceList()` mais JSON reste `wifiEnabled: false` |
+
+**Cause racine Reconnecter :** connexion ADB WiFi réussie mais **`wifiEnabled` reste false** → `wifiActive` false → toggle OFF.
+
+**Fix prévu :** `wifi:reconnect` → `setWifiEnabled(deviceId, true)` avant `reconnectSaved` ; `syncAfterPanelAction()` → `refreshDevices()` + `renderPanel()`.
+
+---
+
+### 4. Plan implémentation
+
+| P | Action |
+|---|--------|
+| P0 | Renommer panneau → `namesAPI.openRenameDialog` + écoute `names:updated` |
+| P0 | `wifi:reconnect` → `setWifiEnabled(true)` |
+| P1 | Actions USB Renommer / Supprimer (handler `devices:panel-remove` unifié) |
+| P1 | Couleurs via `getColorForDevice` dans `wifi:panel-data` |
+| P1 | `performDeviceRename` + panel actions → `refreshDeviceList()` (sidebar + panneau) |
+
+**Zones LOCK :** aucune.
+
+---
+
+## BUG — ReferenceError notifyDeviceViewsUpdated (2026-07-05)
+
+**Erreur :** `ReferenceError: notifyDeviceViewsUpdated is not defined` à `performDeviceRename` (namesHandlers.js:23).
+
+**Statut : corrigé (2026-07-05).**
+
+### Correctif
+
+`notifyDeviceViewsUpdated(mainWindow, refreshDeviceList)` déplacée au **niveau module** ; `performDeviceRename` et `names:resetDevice` reçoivent `refreshDeviceList` depuis `registerNamesHandlers`.
+
+---
+
+| Point | Détail |
+|-------|--------|
+| Appel | `performDeviceRename()` (module-level, l.23) → `notifyDeviceViewsUpdated()` |
+| Définition | `notifyDeviceViewsUpdated` déclarée **à l'intérieur** de `registerNamesHandlers()` (l.71) — closure locale |
+| Export global ? | ❌ Non — n'existe pas dans `main.js`, `device-registry`, ni ailleurs |
+| Rôle attendu | `notifyNamesUpdated(mainWindow)` + `refreshDeviceList()` (= `requestRendererDeviceRefresh` dans main.js) |
+| Autres fichiers | `wifiHandlers.js` appelle directement `refreshDeviceList` — pas d'usage de `notifyDeviceViewsUpdated` |
+| `names:resetDevice` | N'appelle que `notifyNamesUpdated` — pas de refresh devices (mineur) |
+
+**Cause racine :** refactor incomplet — helper de refresh multi-vues défini dans la mauvaise portée (closure `registerNamesHandlers` inaccessible depuis `performDeviceRename` module-level).
+
+**Fix prévu :** helper module-level `notifyDeviceViewsUpdated(mainWindow, refreshDeviceList)` ; passer `refreshDeviceList` depuis `registerNamesHandlers` aux appels `performDeviceRename`.
+
+**Zones LOCK :** aucune.
+
+---
+
 ## Historique récent
 
-- **2026-07-05** — Panneau Appareils : refresh auto (poll 4 s, events, bouton Rafraîchir).
+- **2026-07-05** — Fix ReferenceError `notifyDeviceViewsUpdated` (portée namesHandlers).
 - **2026-07-05** — Diagnostic toggle WiFi ne reflète pas l'état réel (stockage vs connexion active, race auto-connect, fusion identité).
 - **2026-07-05** — Diagnostic séparation USB/WiFi panneau (21051182G / e176518f / ip:port).
 - **2026-07-05** — Diagnostic bug toggle WiFi absent (connexion WiFi seule).

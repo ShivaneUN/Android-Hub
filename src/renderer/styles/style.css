@@ -1851,15 +1851,21 @@ html, body {
 
 .devices-panel-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   grid-template-areas:
-    "main status"
-    "actions actions";
+    "color main status"
+    "color actions actions";
   gap: 6px 10px;
   padding: 10px 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.devices-panel-color {
+  grid-area: color;
+  align-self: start;
+  margin-top: 2px;
 }
 
 .devices-panel-main { grid-area: main; min-width: 0; }

@@ -1,3 +1,26 @@
+function enrichPanelEntries(entries, { namesManager, colorsManager } = {}) {
+    if (!Array.isArray(entries)) return [];
+
+    let list = entries.map((entry) => ({
+        ...entry,
+        serial: entry.usbSerial || entry.serial || entry.deviceId,
+        deviceId: entry.deviceId || entry.serial
+    }));
+
+    if (namesManager?.applyDeviceNames) {
+        list = namesManager.applyDeviceNames(list);
+    }
+
+    if (colorsManager?.getColorForDevice) {
+        list = list.map((entry) => ({
+            ...entry,
+            deviceColor: colorsManager.getColorForDevice(entry.deviceId) || null
+        }));
+    }
+
+    return list;
+}
+
 function registerWifiHandlers(deps) {
     const {
         ipcMain,
@@ -6,6 +29,8 @@ function registerWifiHandlers(deps) {
         getWifiDevicesManager,
         getCustomNamesManager,
         getMainWindow,
+        loadHistory,
+        removeDeviceFromHistory,
         refreshDeviceList
     } = deps;
 
@@ -36,9 +61,16 @@ function registerWifiHandlers(deps) {
             return { success: true, wifi: [], usb: [] };
         }
 
-        const history = deps.loadHistory?.() || {};
+        const history = loadHistory?.() || {};
         const panel = await registry.buildDevicesPanelData(history);
-        return { success: true, wifi: panel.wifi, usb: panel.usb };
+        const namesManager = getCustomNamesManager();
+        const colorsManager = global.deviceColorsManager;
+
+        return {
+            success: true,
+            usb: enrichPanelEntries(panel.usb, { namesManager, colorsManager }),
+            wifi: enrichPanelEntries(panel.wifi, { namesManager, colorsManager })
+        };
     });
 
     async function resolveToggleUsbSerial(registry, { deviceId, usbSerial, config } = {}) {
@@ -48,6 +80,27 @@ function registerWifiHandlers(deps) {
             deviceId: targetDeviceId,
             preferredSerial: usbSerial || config?.usbSerialHint || null
         });
+    }
+
+    async function removeDevicePanelEntry(deviceId) {
+        removeDeviceFromHistory?.(deviceId);
+
+        const wifiManager = getWifiDevicesManager();
+        const wifiService = getWifiAdbService();
+        const entry = wifiManager.getByDeviceId(deviceId);
+
+        if (entry) {
+            wifiManager.setWifiEnabled(deviceId, false);
+            if (entry.ip) {
+                await wifiService.disconnect(
+                    wifiService.buildWifiSerial(entry.ip, entry.port || 5555)
+                );
+            }
+            wifiManager.remove(deviceId);
+        }
+
+        await refreshDeviceList();
+        return { success: true };
     }
 
     ipcMain.handle("wifi:toggle", async (_event, { deviceId, enabled, usbSerial, name } = {}) => {
@@ -185,16 +238,28 @@ function registerWifiHandlers(deps) {
         return result;
     });
 
-    ipcMain.handle("wifi:remove", async (_event, { deviceId } = {}) => {
-        const wifiManager = getWifiDevicesManager();
-        const wifiService = getWifiAdbService();
-        const entry = wifiManager.getByDeviceId(deviceId);
-        if (entry?.ip) {
-            await wifiService.disconnect(wifiService.buildWifiSerial(entry.ip, entry.port || 5555));
+    ipcMain.handle("devices:panel-remove", async (_event, { deviceId } = {}) => {
+        if (!deviceId) {
+            return { success: false, error: "deviceId requis." };
         }
-        const result = wifiManager.remove(deviceId);
-        await refreshDeviceList();
-        return result;
+
+        try {
+            return await removeDevicePanelEntry(deviceId);
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("wifi:remove", async (_event, { deviceId } = {}) => {
+        if (!deviceId) {
+            return { success: false, error: "deviceId requis." };
+        }
+
+        try {
+            return await removeDevicePanelEntry(deviceId);
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
     });
 
     ipcMain.handle("wifi:reconnect", async (_event, { deviceId } = {}) => {
@@ -203,17 +268,28 @@ function registerWifiHandlers(deps) {
         const wifiManager = getWifiDevicesManager();
         const config = wifiManager.getByDeviceId(deviceId);
 
+        if (!config) {
+            return { success: false, error: "Configuration WiFi introuvable." };
+        }
+
         try {
             const liveUsbSerial = await resolveToggleUsbSerial(registry, {
                 deviceId,
                 config
             });
+
+            wifiManager.setWifiEnabled(deviceId, true);
             const wifiSerial = await wifiService.reconnectSaved(deviceId, {
                 usbSerial: liveUsbSerial || undefined
             });
             wifiManager.touchLastSeen(deviceId);
             await refreshDeviceList();
-            return { success: true, wifiSerial };
+
+            return {
+                success: true,
+                wifiSerial,
+                message: `Connecté en WiFi — ${wifiManager.getByDeviceId(deviceId)?.ip || config.ip}`
+            };
         } catch (err) {
             return { success: false, error: err.message };
         }

@@ -6,7 +6,14 @@ function notifyNamesUpdated(mainWindow) {
     }
 }
 
-function performDeviceRename(manager, mainWindow, { serial, name, originalName }) {
+function notifyDeviceViewsUpdated(mainWindow, refreshDeviceList) {
+    notifyNamesUpdated(mainWindow);
+    if (typeof refreshDeviceList === "function") {
+        void refreshDeviceList();
+    }
+}
+
+function performDeviceRename(manager, mainWindow, { serial, name, originalName }, refreshDeviceList) {
     if (!manager || !serial) {
         return { success: false, error: "Paramètres invalides." };
     }
@@ -20,7 +27,7 @@ function performDeviceRename(manager, mainWindow, { serial, name, originalName }
     if (global.wifiDevicesManager?.getByDeviceId?.(serial)) {
         global.wifiDevicesManager.rename(serial, validation.name);
     }
-    notifyNamesUpdated(mainWindow);
+    notifyDeviceViewsUpdated(mainWindow, refreshDeviceList);
     return { success: true, name: validation.name };
 }
 
@@ -66,9 +73,10 @@ function registerNamesHandlers(deps) {
     const getBrowserViewManager = deps.getBrowserViewManager;
     const getMainWindow = deps.getMainWindow;
     const getRenameDialogManager = deps.getRenameDialogManager;
+    const refreshDeviceList = deps.refreshDeviceList;
 
     ipcMain.handle("names:renameDevice", (_event, payload) => {
-        return performDeviceRename(getManager(), getMainWindow(), payload);
+        return performDeviceRename(getManager(), getMainWindow(), payload, refreshDeviceList);
     });
 
     ipcMain.handle("names:resetDevice", (_event, { serial }) => {
@@ -78,7 +86,7 @@ function registerNamesHandlers(deps) {
         }
 
         const original = manager.resetDeviceName(serial);
-        notifyNamesUpdated(getMainWindow());
+        notifyDeviceViewsUpdated(getMainWindow(), refreshDeviceList);
         return { success: true, name: original };
     });
 
@@ -148,7 +156,7 @@ function registerNamesHandlers(deps) {
                 serial: pending.serial,
                 name,
                 originalName: pending.originalName
-            });
+            }, refreshDeviceList);
         } else if (pending.kind === "session") {
             result = performSessionRename(
                 getManager(),

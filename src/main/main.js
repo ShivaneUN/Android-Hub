@@ -406,6 +406,27 @@ function updateDevicesInHistory(devices) {
     return history;
 }
 
+function removeDeviceFromHistory(deviceId) {
+    if (!deviceId) return false;
+    const history = loadHistory();
+    let changed = false;
+
+    for (const key of Object.keys({ ...history })) {
+        const entry = history[key];
+        if (key === deviceId || entry?.deviceId === deviceId) {
+            delete history[key];
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        deviceHistoryDirty = true;
+        scheduleDeviceHistoryFlush();
+    }
+
+    return changed;
+}
+
 function rawUsbOnline(device, isWifiSerial) {
     if (isWifiSerial) return false;
     return Boolean(device.usbSerial || device.serial);
@@ -1969,7 +1990,8 @@ async function listDevicesForUI() {
         getCustomNamesManager: () => global.customNamesManager,
         getBrowserViewManager: () => global.browserViewManager,
         getMainWindow: () => win,
-        getRenameDialogManager: () => global.renameDialogManager
+        getRenameDialogManager: () => global.renameDialogManager,
+        refreshDeviceList: requestRendererDeviceRefresh
     });
     registerContextMenuHandlers({
         getCustomNamesManager: () => global.customNamesManager,
@@ -2004,6 +2026,7 @@ async function listDevicesForUI() {
         getCustomNamesManager: () => global.customNamesManager,
         getMainWindow: () => win,
         loadHistory,
+        removeDeviceFromHistory,
         refreshDeviceList: async () => {
             requestRendererDeviceRefresh();
         }
