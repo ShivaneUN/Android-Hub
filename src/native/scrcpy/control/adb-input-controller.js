@@ -1,4 +1,5 @@
 const { exec } = require("child_process");
+const { adbSerialArg } = require("../../../shared/adb-serial-arg");
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -32,7 +33,7 @@ const KEYCODE_MAP = {
 };
 
 function shellQuote(value) {
-    return `"${String(value ?? "").replace(/"/g, '\\"')}"`;
+    return adbSerialArg(value);
 }
 
 async function getDeviceSize(adbPath, serial) {
@@ -59,6 +60,7 @@ class AdbInputController {
         this.captureRotation = 0;
         this.displayId = null;
         this._activeTouch = null;
+        this._activeTouchAt = 0;
     }
 
     async init() {
@@ -137,9 +139,13 @@ class AdbInputController {
 
         if (streamLandscape !== deviceLandscape) {
             if (streamLandscape && !deviceLandscape) {
-                // Landscape stream from a portrait device (likely 90° rotation).
-                deviceX = Math.round((streamHeight - 1 - clampedY) * this.deviceWidth / streamHeight);
-                deviceY = Math.round(clampedX * this.deviceHeight / streamWidth);
+                if (this.captureRotation === 270) {
+                    deviceX = Math.round(clampedY * this.deviceWidth / streamHeight);
+                    deviceY = Math.round((streamWidth - 1 - clampedX) * this.deviceHeight / streamWidth);
+                } else {
+                    deviceX = Math.round((streamHeight - 1 - clampedY) * this.deviceWidth / streamHeight);
+                    deviceY = Math.round(clampedX * this.deviceHeight / streamWidth);
+                }
             } else {
                 // Portrait stream from a landscape device (rotation verrouillée).
                 if (this.captureRotation === 270) {
@@ -169,6 +175,7 @@ class AdbInputController {
 
         if (type === "down") {
             this._activeTouch = { x, y };
+            this._activeTouchAt = Date.now();
             return;
         }
 
@@ -181,8 +188,14 @@ class AdbInputController {
 
         if (type === "up") {
             const start = this._activeTouch || { x, y };
+            const heldMs = this._activeTouchAt > 0 ? Date.now() - this._activeTouchAt : 0;
             this._activeTouch = null;
+            this._activeTouchAt = 0;
             if (start.x === x && start.y === y) {
+                if (heldMs >= 400) {
+                    const duration = Math.min(Math.max(heldMs, 400), 3000);
+                    return this._runAdb(`shell input ${prefix}swipe ${x} ${y} ${x} ${y} ${duration}`);
+                }
                 return this._runAdb(`shell input ${prefix}tap ${x} ${y}`);
             }
             return this._runAdb(`shell input ${prefix}swipe ${start.x} ${start.y} ${x} ${y} 150`);

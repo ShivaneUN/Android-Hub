@@ -3,6 +3,7 @@ const { exec } = require("child_process");
 const { ScrcpySocketClient } = require("../../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../../native/scrcpy/control/adb-input-controller");
 const { DEFAULT_STREAM_PARAMS, toScrcpyOptions } = require("../../shared/stream-params");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const KEY_ACTION_DOWN = 0;
 const KEY_ACTION_UP = 1;
@@ -62,6 +63,7 @@ class NewInstanceManager extends EventEmitter {
 
     createNewInstanceSession({
         serial,
+        stableDeviceId = null,
         packageName,
         userId = null,
         tabLabel = "Nouvelle instance",
@@ -81,6 +83,7 @@ class NewInstanceManager extends EventEmitter {
         const session = {
             sessionId,
             serial,
+            stableDeviceId: stableDeviceId || null,
             packageName,
             userId: Number.isInteger(userId) ? userId : null,
             tabLabel,
@@ -106,6 +109,7 @@ class NewInstanceManager extends EventEmitter {
         return Array.from(this.sessions.values()).map((s) => ({
             sessionId: s.sessionId,
             serial: s.serial,
+            stableDeviceId: s.stableDeviceId || null,
             packageName: s.packageName,
             userId: s.userId,
             tabLabel: s.tabLabel,
@@ -159,7 +163,7 @@ class NewInstanceManager extends EventEmitter {
     async _ensureDeviceStayAwake(serial) {
         if (!serial) return;
         try {
-            await execPromise(`"${this.adbPath}" -s ${serial} shell svc power stayon true`);
+            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon true`);
         } catch (err) {
             console.warn(`[NewInstanceManager] stayon ${serial}:`, err.message);
         }
@@ -186,7 +190,7 @@ class NewInstanceManager extends EventEmitter {
         }
 
         try {
-            await execPromise(`"${this.adbPath}" -s ${session.serial} shell input keyevent 223`);
+            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(session.serial)} shell input keyevent 223`);
             session.physicalScreenOff = true;
             console.log(`[NewInstanceManager] Ecran physique eteint via keyevent (${session.sessionId})`);
         } catch (err) {
@@ -568,8 +572,8 @@ class NewInstanceManager extends EventEmitter {
         const label = sessionId ? ` (${sessionId})` : "";
 
         const commands = [
-            `"${this.adbPath}" -s ${serial} shell am force-stop${userArg} ${packageName}`,
-            `"${this.adbPath}" -s ${serial} shell am force-stop ${packageName}`
+            `"${this.adbPath}" -s ${adbSerialArg(serial)} shell am force-stop${userArg} ${packageName}`,
+            `"${this.adbPath}" -s ${adbSerialArg(serial)} shell am force-stop ${packageName}`
         ];
 
         for (const command of commands) {
@@ -583,7 +587,7 @@ class NewInstanceManager extends EventEmitter {
         }
 
         try {
-            await execPromise(`"${this.adbPath}" -s ${serial} shell svc power stayon false`);
+            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon false`);
         } catch (_err) {
             // noop
         }

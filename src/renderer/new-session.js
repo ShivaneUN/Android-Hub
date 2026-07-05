@@ -107,9 +107,22 @@ function formatHistoryDate(timestamp) {
     return date.toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-function resolveDeviceName(serial) {
-    const device = connectedDevicesCache.find((d) => d.serial === serial);
-    return device?.name || serial;
+function resolveDeviceName(historyDeviceId, devices = connectedDevicesCache) {
+    const device = findDeviceForHistory(devices, historyDeviceId);
+    return device?.name || historyDeviceId;
+}
+
+function findDeviceForHistory(devices, historyDeviceId) {
+    if (!historyDeviceId) return null;
+    const id = String(historyDeviceId).trim();
+    return (Array.isArray(devices) ? devices : []).find((device) =>
+        device?.connected !== false && (
+            device.deviceId === id
+            || device.serial === id
+            || device.usbSerial === id
+            || device.wifiSerial === id
+        )
+    ) || null;
 }
 
 function mapLauncherAppToSelection(app) {
@@ -641,7 +654,7 @@ async function loadConnectedDevices() {
     }
 
     if (devices.length === 1 && !selectedDevice) {
-        await selectDevice(devices[0].serial, devices[0].name);
+        await selectDevice(devices[0].serial, devices[0].name, devices[0].deviceId);
     }
 }
 
@@ -734,7 +747,15 @@ async function closeNewInstanceSession(sessionId) {
     if (typeof renderSidebar === "function") renderSidebar();
 }
 
-async function launchTypeBSession({ serial, deviceName, packageName, appLabel, userId = null, iconPath = null }) {
+async function launchTypeBSession({
+    serial,
+    deviceName,
+    packageName,
+    appLabel,
+    userId = null,
+    iconPath = null,
+    stableDeviceId = null
+}) {
     if (isHubModalChildWindow()) {
         dismissHubModalPanel();
         return invokeMainAction("launchTypeBSession", [{ serial, deviceName, packageName, appLabel, userId, iconPath }]);
@@ -767,8 +788,11 @@ async function launchTypeBSession({ serial, deviceName, packageName, appLabel, u
         audio: true
     };
 
+    const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
+
     const payload = {
         serial,
+        stableDeviceId: resolvedStableId,
         packageName,
         userId: normalizedUserId,
         tabLabel,
@@ -813,6 +837,7 @@ async function launchTypeBSession({ serial, deviceName, packageName, appLabel, u
             await window.sessionAPI.registerView(sessionId, "B", {
                 label: tabLabel,
                 deviceId: serial,
+                stableDeviceId: resolvedStableId,
                 packageName,
                 userId: normalizedUserId,
                 stayAwakeActive: true
@@ -847,14 +872,14 @@ async function selectFromHistory(entry) {
     const devices = await fetchConnectedDevices();
     connectedDevicesCache = devices;
 
-    const device = devices.find((d) => d.serial === deviceId && d.connected !== false);
+    const device = findDeviceForHistory(devices, deviceId);
     if (!device) {
         setStatus("L'appareil de cette entree n'est pas connecte.", true);
         return;
     }
 
     const previousSerial = selectedDevice?.serial;
-    selectedDevice = { serial: device.serial, name: device.name || deviceId };
+    selectedDevice = { serial: device.serial, name: device.name || deviceId, deviceId: device.deviceId || deviceId };
     selectedApp = {
         package: packageName,
         displayName: appName || packageName,
@@ -886,7 +911,7 @@ async function launchFromHistory(entry) {
     }
 
     const devices = await fetchConnectedDevices();
-    const device = devices.find((d) => d.serial === deviceId && d.connected !== false);
+    const device = findDeviceForHistory(devices, deviceId);
     if (!device) {
         setStatus("L'appareil de cette entree n'est pas connecte.", true);
         return;
@@ -897,6 +922,7 @@ async function launchFromHistory(entry) {
     setStatus(`Lancement : ${appLabel}...`);
     await launchTypeBSession({
         serial: device.serial,
+        stableDeviceId: device.deviceId,
         deviceName: device.name || deviceId,
         packageName,
         appLabel,
@@ -920,6 +946,7 @@ async function launchNewInstanceSession() {
     try {
         await launchTypeBSession({
             serial: selectedDevice.serial,
+            stableDeviceId: selectedDevice.deviceId,
             deviceName: selectedDevice.name,
             packageName: selectedApp.package,
             appLabel,
@@ -982,6 +1009,7 @@ async function launchMirrorSession(options = {}) {
 
         await createInstance(serial, deviceName, null, {
             tabLabel: mirrorLabel,
+            stableDeviceId: options.stableDeviceId || selectedDevice?.deviceId || null,
             ...scrcpyOpts
         });
 

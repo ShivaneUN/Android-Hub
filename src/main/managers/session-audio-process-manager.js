@@ -158,12 +158,22 @@ class SessionAudioProcessManager {
         for (const session of sessions) {
             const sessionId = session?.sessionId;
             const entry = browserViewManager.getSessionEntry?.(sessionId);
-            const serial = entry?.deviceId;
+            const niSession = entry?.type === "B"
+                ? this._getNewInstanceManager?.()?.getNewInstanceSession?.(sessionId)
+                : null;
+            let serial = entry?.deviceId || niSession?.serial;
             if (!sessionId || !serial) continue;
 
+            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                    deviceId: entry?.stableDeviceId || niSession?.stableDeviceId || null,
+                    serial
+                });
+                if (resolved) serial = resolved;
+            }
+
             let displayId = null;
-            if (entry.type === "B") {
-                const niSession = this._getNewInstanceManager?.()?.getNewInstanceSession?.(sessionId);
+            if (entry?.type === "B") {
                 displayId = Number.isInteger(niSession?.displayId) ? niSession.displayId : null;
             }
 

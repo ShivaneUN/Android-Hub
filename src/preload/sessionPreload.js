@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld("videoAPI", {
         ipcRenderer.on("stream-restarting", (_event, data) => callback(data)),
     onOrientationChanged: (callback) =>
         ipcRenderer.on("session:orientation-changed", (_event, data) => callback(data)),
+    onCaptureRotationChanged: (callback) =>
+        ipcRenderer.on("session:capture-rotation-changed", (_event, data) => callback(data)),
     onSessionInputActive: (callback) =>
         ipcRenderer.on("session:input-active", (_event, data) => callback(data)),
     onAudioCodecMeta: (callback) => ipcRenderer.on("audio-codec-meta", (_event, data) => callback(data)),

@@ -10,13 +10,75 @@ Dernière mise à jour : 2026-07-05
 |---------|--------|----------------|
 | Audio capture + son PC Type A/B | ✅ LOCK | Validé utilisateur |
 | Mute global OFF (silence) | ✅ LOCK | Validé utilisateur |
-| Input Type A multi-fenêtres | ✅ LOCK | `c23e7cb` |
-| Input Type B multi-fenêtres (display virtuel) | ✅ LOCK | `c23e7cb` |
-| `scrcpy-socket.js` | ✅ LOCK | Section 13 |
+| **Input global (Type A/B, USB/WiFi, portrait/paysage)** | ✅ **LOCK DÉFINITIF** | **2026-07-05** — voir § ci-dessous |
+| Input Type A multi-fenêtres | ✅ LOCK | `c23e7cb` (inclus dans lock définitif) |
+| Input Type B multi-fenêtres (display virtuel) | ✅ LOCK | `c23e7cb` (inclus dans lock définitif) |
+| `scrcpy-socket.js` | ✅ LOCK | Section 13 + orientation `capture_orientation` (2026-07-05) |
 | `new-instance-manager.js` | ✅ LOCK | Section 13 |
+| `adb-input-controller.js` | ✅ LOCK | Input ADB / display virtuel (2026-07-05) |
+| **Noms appareils & onglets (USB/WiFi)** | ✅ **LOCK** | **2026-07-05** — `custom-names-manager.js`, `namesHandlers.js` |
 | Toggle Audio ON/OFF (bouton) | ✅ OK | Voir section ci-dessous |
 
 **Aucune modification sur ces zones sans accord explicite.**
+
+---
+
+## ⚠️ INPUT LOCKÉ (2026-07-05)
+
+Ne plus modifier la logique d'input (Type A/B, USB/WiFi, portrait/paysage). Ce module a causé plusieurs régressions lors de l'ajout de l'orientation WiFi. Toute nouvelle feature doit passer par une **couche en amont**, jamais dans les fichiers input directement.
+
+**Si un bug d'input apparaît à l'avenir :** diagnostiquer avant toute correction et **valider avec l'utilisateur** avant de toucher à ce module.
+
+### Fichiers LOCK input (liste complète)
+
+| Fichier | Rôle |
+|---------|------|
+| `src/renderer/session/session.js` | Handlers pointer Type A/B, remap portrait, clic droit BACK, `getCanvasContentRect` |
+| `src/main/main.js` | `send-input`, `sendTypeBInputViaHubAdb`, contrôleurs ADB session |
+| `src/native/scrcpy/control/adb-input-controller.js` | Injection ADB tactile / clés / display virtuel |
+| `src/main/ipc/sessionHandlers.js` | `session:getInputContext` |
+| `src/preload/sessionPreload.js` | `videoAPI.sendInput`, `getInputContext` |
+
+### Comportements validés
+
+- Type A paysage + portrait (interim et flux natif) — USB/WiFi
+- Type B display virtuel — coords canvas, hub ADB `displayId` — USB/WiFi
+- Clic, drag, clic long, BACK clic droit, clavier
+
+Référence détaillée : `AI_CONTEXT.md` § Input LOCK DÉFINITIF.
+
+---
+
+## ⚠️ NOMS LOCKÉS (2026-07-05)
+
+Source de vérité unique pour noms appareils + onglets/fenêtres. Clé canonique = **`deviceId` stable**, pas serial transport (`ip:port`).
+
+| Fichier | Rôle |
+|---------|------|
+| `src/main/managers/custom-names-manager.js` | `custom-names.json` ; consolidation alias USB/WiFi |
+| `src/main/ipc/namesHandlers.js` | IPC rename/reset ; résolution stable ; sync sessions ouvertes |
+
+**Validé :** renommer depuis USB ou WiFi → panneau, sidebar, Nouvelle instance, onglets cohérents.
+
+Référence : `AI_CONTEXT.md` § Noms appareils & onglets — LOCK.
+
+---
+
+## Bugs corrigés & verrouillés — ne pas réouvrir sauf régression (2026-07-05)
+
+| Bug / domaine | Statut | Note |
+|---------------|--------|------|
+| Parité USB/WiFi Phase 1–2 (identité, `adbSerialArg`) | ✅ RÉSOLU | Ne pas réouvrir |
+| Flux vidéo à l'envers (orientation capture) | ✅ RÉSOLU LOCK | `scrcpy-socket.js` validé |
+| Bouton orientation portrait WiFi | ✅ RÉSOLU | Amont `stream-params-manager` / `session.js` |
+| Clic long + BACK Type B WiFi (F1–F4) | ✅ RÉSOLU | Ne pas réouvrir |
+| Input continu mode portrait WiFi/USB | ✅ RÉSOLU LOCK | `session.js` remap + drag guards (2026-07-05) |
+| Input cassé global post-orientation (R1) | ✅ RÉSOLU LOCK | Retrait pointerleave/lostpointercapture |
+| Input Type A portrait surface complète | ✅ RÉSOLU LOCK | Fix remap `canvasWidth` vs `canvasHeight` (2026-07-05) |
+| Input Type B display virtuel | ✅ RÉSOLU LOCK | Coords canvas directes + hub ADB (2026-07-05) |
+| Orientation Type B (paysage fixe) | ✅ RÉSOLU | Isolation Type A dans session + stream-params |
+
+**Instruction utilisateur :** ces items sont considérés réglés — ne revenir dessus que si un **nouveau symptôme** apparaît.
 
 ---
 
@@ -49,7 +111,7 @@ Dernière mise à jour : 2026-07-05
 
 ## En attente / hors scope LOCK
 
-- Commit documentation LOCK (fichiers `AI_CONTEXT.md`, `PROGRESS_CHECK.md`) — **en attente validation utilisateur**.
+- (aucun item documentation LOCK en attente — input + noms + contexte à jour 2026-07-05)
 
 ---
 
@@ -1506,9 +1568,876 @@ Actions locales (rename, reconnect, remove) appelaient déjà `renderPanel()` �
 
 ---
 
+**Zones LOCK :** aucune (`entry.deviceId` reste le serial ADB pour `runAdbShell`, `new-instance-manager`).
+
+---
+
+## TÂCHE — Parité USB/WiFi Session Type A/B (2026-07-05)
+
+**Statut : diagnostic terminé — en attente validation utilisateur avant toute correction.**
+
+Objectif : même pipeline Type A/B, seule la cible ADB change (`usbSerial` vs `ip:port`).
+
+### Modèle d'identité (rappel)
+
+| Concept | Exemple USB | Exemple WiFi | Où |
+|---------|-------------|--------------|-----|
+| **deviceId stable** | `e176518f` | `e176518f` | `device-colors.json`, noms, fusion registry |
+| **serial ADB effectif** | `a3acba7c` | `192.168.1.10:5555` | `listUnifiedDevices().serial`, scrcpy, `adb -s` |
+| **`entry.deviceId` session** | serial USB | `ip:port` | `browserViewManager` (nom trompeur = serial ADB au moment du lancement) |
+
+Le lancement session utilise **toujours** `device.serial` (transport effectif) — pas de branche `if (wifi)` dans `instance-manager.js`, `video-player.js`, `new-session.js`, `scrcpy-socket.js` (hors quoting serial).
+
+---
+
+### 1. Lancement Session Type A (mirroring complet)
+
+| | USB | WiFi |
+|---|-----|------|
+| **Chemin** | `DevicePanel` dblclick / `launchMirrorSession` → `createInstance(serial)` → `registerView(A)` → `start-video-stream` → `ScrcpySocketClient` | **Identique** — `serial` = `ip:port` depuis `resolveEffectiveTransport` |
+| **Fichiers** | `DevicePanel.js:325-333`, `new-session.js:968-986`, `instance-manager.js:57-64`, `main.js:1770+` | idem |
+| **Parité** | ✅ **Pipeline identique** si `adb devices` liste le `ip:port` en `device` |
+
+**Écarts potentiels (pas de chemin WiFi séparé) :**
+
+| ID | Problème | Impact WiFi | Zone fix |
+|----|----------|-------------|----------|
+| A1 | `selectDevice` auto (1 device) omet `deviceId` stable | `deviceId` = serial WiFi en UI | `new-session.js:643-644` — amont |
+| A2 | `entry.deviceId` figé au lancement, jamais mis à jour si bascule USB↔WiFi mid-session | Session ouverte avant toggle transport | `browserViewManager` — amont |
+| A3 | `scrcpyClientsBySerial[serial]` — clé = serial au moment du start | Reconnect autre transport = nouveau client | `main.js:1721` — amont |
+
+**Verdict point 1 :** le mirroring Type A **devrait** fonctionner en WiFi au lancement. Si échec observé → vérifier connexion ADB (`adb devices`), pas une branche code WiFi absente.
+
+---
+
+### 2. Lancement Session Type B (`--new-display`)
+
+| | USB | WiFi |
+|---|-----|------|
+| **Chemin** | `launchTypeBSession` → `launchNewInstance(serial)` → scrcpy externe `--serial` + `--new-display` → `newInstanceCreate` → `pipeline.start` → `registerView(B)` | **Identique** |
+| **Fichiers** | `new-session.js:737-819`, `main.js:538-552`, `new-instance-manager.js`, `new-instance-ipc.js` | idem |
+| **Parité** | ✅ **Pipeline identique** |
+
+**Écarts potentiels :**
+
+| ID | Problème | Impact WiFi | Zone fix |
+|----|----------|-------------|----------|
+| B1 | `buildNewInstanceExternalBaseArgs` : `--serial` passé à `spawn` (pas shell) | OK pour `ip:port` | — |
+| B2 | `waitForVirtualDisplayId` matche `waiter.serial === data.serial` exact | Bascule transport pendant attente | `new-session.js` — amont |
+| B3 | Commandes ADB package/display dans `main.js` (`resolveLaunchActivity`, `launchPackageOnDisplay`) : `-s ${serial}` **non quoté** | Risque shell Windows si serial mal formé ; `ip:port` sans espace souvent OK | `main.js:74-114` — amont |
+| B4 | `new-instance-manager.js` commandes `adb -s ${serial}` non quotées (l.162, 189, 571+) | Idem B3 | amont (hors LOCK si hors createSession core) |
+
+**Verdict point 2 :** Type B utilise le même pipeline. Échecs WiFi probables = latence ADB / display virtuel pas détecté à temps, ou commandes `adb -s` fragiles — pas d'option `--new-display` différente.
+
+**⚠️ LOCK :** `new-instance-manager.js` — ne pas modifier `_runClientStart` / create sans validation.
+
+---
+
+### 3. Orientation image (portrait/paysage)
+
+#### Où se prend la décision
+
+```
+┌─ Stream (re)start ─────────────────────────────────────────────┐
+│ stream-params.resolveCaptureOrientationLock(orientation, w, h) │
+│   → capture_orientation=@270|@90|null                          │
+│   → scrcpy-socket.js:295-300 (LOCK)                            │
+├─ Toggle sidebar (sans restart scrcpy) ───────────────────────┤
+│ StreamParamsManager.setOrientation()                           │
+│   → getDeviceDimensions(entry.deviceId) [cache input ctrl]     │
+│   → DeviceOrientationManager.applyOrientation(serial, …)       │
+│     → wm size + user_rotation via ADB (serial quoté)           │
+│   → browserViewManager.setSessionCaptureOrientation            │
+│   → session.js canvas rotation + remap touch                   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+| Couche | Fichier | Dépend du transport ? |
+|--------|---------|----------------------|
+| Lock scrcpy | `scrcpy-socket.js:295-300` | ❌ Non — `capture_orientation` depuis options |
+| Dims au démarrage stream | `main.js:1474-1483` | ❌ Non — cache input controller ; **dims souvent null** → assume appareil paysage natif |
+| Rotation physique | `device-orientation-manager.js:88-125` | ❌ Non — `shellQuote(serial)` OK pour `ip:port` |
+| Dims au toggle | `stream-params-manager.js:299` | ❌ Non — mais cache vide si pas encore de touch/input init |
+| UI canvas | `session.js`, `layout-metrics.js` | ❌ Non |
+
+| | USB | WiFi |
+|---|-----|------|
+| **Code orientation** | Même chemin | Même chemin |
+| **Parité théorique** | ✅ | ✅ |
+
+**Pourquoi l'orientation peut sembler « cassée » en WiFi :**
+
+| ID | Cause | USB | WiFi | Zone |
+|----|-------|-----|------|------|
+| O1 | `startVideoStreamLogic` : pas de dims au 1er start → `naturalLandscape=true` par défaut | Impacte si téléphone portrait-natif | **Idem** + latence `wm size` plus visible au toggle | `main.js:1474-1483` amont |
+| O2 | `getDeviceDimensions(entry.deviceId)` = cache input uniquement, pas ADB live au toggle | Cache vide avant 1er input | WiFi : `AdbInputController.init()` / `wm size` plus lent | `stream-params-manager.js:299`, `main.js:1967-1974` amont |
+| O3 | Toggle : si `applyPhysicalOrientation` échoue, UI tourne mais pas l'appareil → décalage visuel | Possible | **Plus fréquent** si ADB WiFi lent/timeout | `device-orientation-manager.js` OK ; échec silencieux `physical: false` |
+| O4 | `runAdbShell(entry.deviceId, …)` **sans quoting** (`sessionHandlers.js:14`) pour `toggleScreen` / `stayon` | Rare | Possible fragilité `ip:port` | `sessionHandlers.js` amont |
+| O5 | Restauration orientation à la fermeture : `entry.deviceId` comme serial | OK si serial correct | OK si `ip:port` | `sessionHandlers.js:140-143` amont |
+
+**⚠️ LOCK — scrcpy-socket.js :** la logique `capture_orientation` (l.295-300) est **identique** pour USB et WiFi. Si le flux scrcpy lui-même envoie une mauvaise orientation au démarrage, correction **dans LOCK** — **attendre validation**.
+
+**Verdict point 3 :** pas de branche WiFi dans le code orientation. Symptôme WiFi probablement = **timing/dims manquantes** (amont) ou **échec rotation physique ADB** (latence), pas une résolution d'écran « différente selon transport » dans scrcpy-socket.
+
+---
+
+### 4. Contrôle input (clic, drag, clavier)
+
+| | USB | WiFi |
+|---|-----|------|
+| **Type A** | `session.js` → `sendInput({ deviceId })` → `main.js:1113+` → `AdbInputController` / scrcpy control | **Identique** — `deviceId` payload = `entry.deviceId` = serial ADB |
+| **Type B** | `sendInput` sans deviceId → résolution `entry.deviceId` / `typeBSession.serial` | **Identique** |
+| **Quoting ADB input** | `adb-input-controller.js:95` `shellQuote(serial)` | ✅ `ip:port` géré |
+
+| ID | Problème | WiFi |
+|----|----------|------|
+| I1 | Pas d'appel `device:resolve-serial` avant input | OK au lancement ; KO si `entry.deviceId` obsolète après bascule transport |
+| I2 | `getOrCreateSessionInputController(deviceId)` — param = serial ADB, pas stable ID | Même règle USB/WiFi |
+| I3 | Scrcpy control socket routé par **sessionId** uniquement (`main.js:995-1008`) | ✅ Parité |
+
+**Verdict point 4 :** input **fonctionne en WiFi** si session lancée sur le bon `ip:port`. Pas d'écouteur USB-only. Échec = serial session ≠ serial ADB actuel.
+
+**⚠️ LOCK :** fichiers input natifs — ne pas modifier sans validation.
+
+---
+
+### 5. Clic droit → BACK
+
+| | USB | WiFi |
+|---|-----|------|
+| **Handler** | `session.js:211-218` contextmenu → Type A `sendInput({ key: "Back", deviceId })` / Type B sans deviceId | **Identique** |
+| **Parité** | ✅ Même pipeline que §4 | |
+
+**Verdict point 5 :** parité OK si input OK (§4).
+
+---
+
+### 6. Double-clic sidebar → lancement mirroring
+
+| | USB | WiFi |
+|---|-----|------|
+| **Flux** | `DevicePanel.js:325-333` → `setSelectedDeviceForMirror(serial, name, device.deviceId)` → `launchMirrorSession` → `selectedDevice.serial` | `serial` = `ip:port` quand transport WiFi actif |
+| **Parité** | ✅ | ✅ **Correct by design** |
+
+**Verdict point 6 :** parité OK — utilise `device.serial` effectif du registry.
+
+---
+
+### 7. Contrôle audio par fenêtre
+
+| | USB | WiFi |
+|---|-----|------|
+| **Démarrage** | `session-audio-process-manager.start(sessionId, { serial })` depuis serial du stream start | **Identique** au lancement |
+| **Resync global unmute** | `syncAllActiveSessions()` lit `entry?.deviceId` (`session-audio-process-manager.js:161`) | **Risque** si entry stale |
+| **Renderer** | `session-audio-hub.js` — clé `sessionId` seulement | ✅ Parité |
+
+| ID | Problème | WiFi |
+|----|----------|------|
+| AU1 | Resync utilise `entry.deviceId` sans `resolveAdbSerial` | Mauvais `--serial` si bascule transport |
+
+**Verdict point 7 :** audio **OK au lancement WiFi** ; resync après unmute/global toggle **peut diverger** (amont, pas LOCK).
+
+---
+
+### 8. Historique de lancement d'app (Type B)
+
+| | USB | WiFi |
+|---|-----|------|
+| **Enregistrement** | `new-instance-ipc.js:24-25` → `deviceId: session.serial` (**serial ADB**, pas stable ID) | Clé = `ip:port` |
+| **Relance** | `new-session.js:850, 889` → `devices.find(d => d.serial === deviceId)` | **Échoue** si historique USB et device maintenant WiFi (ou inverse) |
+| **Libellé** | `resolveDeviceName(serial)` — match `d.serial` only | Affiche `ip:port` si transport changé |
+
+| ID | Problème | Impact |
+|----|----------|--------|
+| H1 | Champ `deviceId` dans history = serial ADB | Entrées dupliquées USB + WiFi pour même appareil |
+| H2 | Relance ne matche pas `d.deviceId` stable | **KO WiFi** après lancement USB (et inverse) |
+| H3 | Pas de fusion comme `device-history.json` (stable ID + usbSerial/wifiSerial) | Parité historique device OK vs launch history KO |
+
+**Verdict point 8 :** ❌ **Parité cassée** — bug amont (`launch-history-manager` + `new-session.js`), pas LOCK.
+
+---
+
+### 9. Autres fonctions Type A/B existantes
+
+| Fonction | USB | WiFi | Statut | Notes |
+|----------|-----|------|--------|-------|
+| Toggle écran (Type A) | `session:toggleScreen` + scrcpy `setDisplayPower` | Idem | ⚠️ | `runAdbShell` non quoté (`sessionHandlers.js:14`) |
+| Stay-awake ADB | `runAdbShell(entry.deviceId, "svc power stayon true")` | Idem | ⚠️ | §O4 |
+| Fermeture session → restore orientation | `entry.deviceId` | Idem | ✅/⚠️ | Serial correct si session WiFi |
+| Restart stream (params) | `stream-params-manager` → `entry.deviceId` as serial | Idem | ✅ au lancement | KO si entry stale |
+| Pastille couleur onglet | Résolu `fa2f278` | ✅ après fix map serial→stable | ✅ | `session:list` + `buildAdbSerialToDeviceIdMap` |
+| Noms custom session/device | stable `deviceId` via context menu | ✅ cross-transport | ✅ | `DevicePanel.js:295` |
+| `device:resolve-serial` IPC | Existe | **Jamais appelé** renderer | ⚠️ | `preload.js:157` — opportunité amont |
+| App metadata / icônes cache | Clé = serial from history | Cache miss si transport change | ⚠️ | `app-metadata-manager.js` |
+| Hub modal délégation miroir | `hubModalHandlers` → main actions | ✅ | ✅ | Même serial passé |
+| Polling devices / toggle WiFi | Registry | N/A session | ✅ | Hors scope session ouverte |
+
+---
+
+### Synthèse — causes racines par zone
+
+| Priorité | Cause | Symptômes WiFi | Zone correction |
+|----------|-------|----------------|-----------------|
+| **P0** | Historique lancement clé sur serial ADB, relance `d.serial === deviceId` | Type B historique ne relance pas ; libellés `ip:port` | `new-instance-ipc.js`, `launch-history-manager.js`, `new-session.js` — **amont** |
+| **P0** | `entry.deviceId` = serial figé, pas de résolution live | Input/audio/orientation/restart après bascule USB↔WiFi | `browserViewManager` + helper `resolveAdbSerial` avant ADB — **amont** |
+| **P1** | Dims orientation null au 1er stream + cache input vide au toggle | Image mal orientée (surtout portrait / téléphones portrait-natifs) | `main.js` startVideoStreamLogic, `stream-params-manager` — **amont** |
+| **P1** | `adb -s ${serial}` non quoté (main.js, sessionHandlers) | Commandes shell fragiles | Helper `adbSerialArg` partagé (`wifi-adb-service` pattern) — **amont** |
+| **P1** | Audio resync `entry.deviceId` | Unmute global sur mauvais serial | `session-audio-process-manager.js` — **amont** |
+| **P2** | `device:resolve-serial` non branché | Code mort utile pour parité | Brancher en amont session/input |
+| **LOCK?** | `capture_orientation` dans scrcpy-socket | Bug flux scrcpy avéré | **✅ LOCK validé** (2026-07-05) |
+
+---
+
+### Plan correction proposé (après validation)
+
+| Phase | Actions | LOCK ? |
+|-------|---------|--------|
+| **1 — amont identité** | Canonicaliser launch history sur `deviceId` stable ; relance `d.deviceId \|\| d.serial` ; `resolveAdbSerial` avant ADB session | Non |
+| **2 — amont ADB** | `shellQuote` / `adbSerialArg` unifié dans `sessionHandlers`, `main.js` helpers | Non |
+| **3 — orientation amont** | Fetch `wm size` live au toggle si cache vide ; optionnel au stream start | **Implémentée** |
+| **4 — LOCK orientation scrcpy** | Fallback `resolveCaptureOrientationLock` ; fix `EventEmitter` | **✅ LOCK validé** |
+
+**Phase 1 — implémentée (2026-07-05).**
+
+| Fichier | Changement |
+|---------|------------|
+| `device-registry.js` | `resolveEffectiveAdbSerial()`, `resolveStableDeviceIdFromTransport()` |
+| `launch-history-manager.js` | `migrateDeviceIdsToStable()` ; clés sur deviceId stable |
+| `new-instance-ipc.js` | `recordLaunch` avec deviceId stable |
+| `new-session.js` | `findDeviceForHistory()` ; relance cross-transport ; `stableDeviceId` au lancement |
+| `browserViewManager.js` | `entry.stableDeviceId` |
+| `instance-manager.js` / `preload.js` | `stableDeviceId` dans `registerView` |
+| `new-instance-manager.js` | `session.stableDeviceId` |
+| `sessionHandlers.js` | `resolveEntryAdbSerial()` ; quoting `runAdbShell` ; toggle/close orientation |
+| `main.js` | `send-input` resolve ; `applyPhysicalOrientation` resolve ; history migration startup ; `getActiveTypeBHistoryKeys` stable |
+| `session-audio-process-manager.js` | resync avec serial résolu |
+| `stream-params-manager.js` | restart Type A avec serial résolu |
+
+**Zones LOCK :** non touchées.
+
+---
+
+## Diagnostic — input / curseur qui bouge tout seul (phase 1, 2026-07-05)
+
+**Symptôme rapporté :** pendant le mirroring (probablement WiFi), le curseur ou le point de contact sur l'appareil se déplace en continu sans action utilisateur.
+
+**Méthode :** analyse statique du code + corrélation avec Phase 1 (non commitée). Pas de reproduction matérielle dans cet environnement — tests USB vs WiFi à faire côté utilisateur avec les procédures ci-dessous.
+
+---
+
+### 1. WiFi uniquement ou aussi USB ?
+
+| Aspect | Constat |
+|--------|---------|
+| Chemin renderer | **Identique** USB / WiFi — `session.js` `initTypeAInputHandlers` / Type B, pas de branche `isWifiTransport` |
+| Chemin main `send-input` | **Identique** — même handler, même routage scrcpy puis fallback ADB |
+| Différence transport | Phase 1 ajoute `resolveEffectiveAdbSerial()` sur **chaque** `send-input` (USB et WiFi) |
+| Hypothèse WiFi plus visible | ADB sur WiFi plus lent → latence + contention daemon ADB plus marquées ; scrcpy tunnel partage le même serveur ADB |
+
+**Verdict :** le code n'isole pas le bug au WiFi. **Probable amplification WiFi**, pas exclusivité. À valider : même scénario en USB après Phase 1 (drag long, main immobile après tap).
+
+**Test utilisateur :**
+1. Session Type A USB — main sur canvas 10 s sans bouger → curseur device stable ?
+2. Même chose WiFi — drift apparaît-il ?
+3. Si les deux : cause commune (Phase 1). Si WiFi seul : ajouter trace latence `adb devices` + perte paquets.
+
+---
+
+### 2. Événements input parasites (polling / listeners) ?
+
+| Source recherchée | Résultat |
+|-------------------|----------|
+| `setInterval` + `sendInput` | **Aucun** dans le repo |
+| `pointermove` sans drag | Listener ajouté **uniquement** entre `pointerdown` et `pointerup`/`pointercancel` (`session.js` ~848–905) |
+| Throttle move | ≥ 2 px ou ≥ 16 ms entre envois |
+| `AdbInputController.sendTouch("move")` | **No-op** — ne lance pas de commande ADB (seuls down/up/tap/swipe envoient) |
+| Mouvement continu device | Nécessite **scrcpy** `sendTouchEvent(ACTION_MOVE)` (action `2`) ou rafale tap/swipe |
+| Wheel zoom | CSS only (`session-wheel-zoom.js`) — pas d'IPC touch |
+| FPS / preview timers | `FpsMonitor`, `useVideoPreview` — pas d'input |
+
+**Chemins qui envoient ACTION_MOVE :** uniquement `main.js` → `scrcpyClient.sendTouchEvent(2, …)` quand `action === "move"` et socket contrôle active.
+
+**Verdict :** pas de générateur logiciel continu évident. Causes plausibles sans « polling » :
+- **A** — `pointermove` fantômes (layout canvas / BrowserView qui bouge sous curseur fixe, `isDragging` bloqué à `true`) ;
+- **B** — file `pendingInput` + latence Phase 1 qui rejoue des moves en rafale après un drag ;
+- **C** — saturation ADB → messages contrôle scrcpy retardés / réordonnés (effet visuel de drift).
+
+---
+
+### 3. Check statut WiFi (`getAdbState` / ping) vs flux input ?
+
+| Mécanisme | Canal | Pendant mirroring session |
+|-----------|-------|---------------------------|
+| Panneau Appareils ouvert | `buildDevicesPanelData` → `getAdbState` par config WiFi | Poll 4 s (`DevicesPanel.js` `PANEL_POLL_MS`) — **pas le canal scrcpy** |
+| Sidebar devices | `refreshDevices` 8 s → IPC `get-devices` → `listUnifiedDevices` | Arrière-plan léger si panneau fermé |
+| **Phase 1 `send-input`** | `resolveEffectiveAdbSerial` → **`listUnifiedDevices()`** | **À chaque touch/key**, y compris chaque `move` (~ jusqu'à 60/s) |
+
+Chaîne `listUnifiedDevices` (par appel) :
+1. `getRawAdbDevices()` → `adb devices -l`
+2. `importDiscoveredWifiDevices`
+3. `attachStableIds` → `getStableDeviceId` / `getprop` si cache TTL expiré
+
+**Interférence :** pas sur le socket TCP contrôle scrcpy, mais **même daemon ADB** que le tunnel scrcpy. Sous charge (drag WiFi + Phase 1), risque de :
+- latence IPC `send-input` ;
+- réordonnancement file renderer `pendingInput` ;
+- dégradation tunnel → symptômes input erratiques.
+
+**Verdict :** le check WiFi panneau **n'explique pas seul** un drift continu si le panneau est fermé. **Phase 1 resolve sur chaque move** est le suspect principal d'interférence timing / ADB (introduit dans le même lot de changements que le bug rapporté).
+
+---
+
+### 4. Logs / événements bruts pendant le bug
+
+**Logs existants** (`main.js` ~1237–1245) — chaque `send-input` :
+```text
+[Input] device=<serial> session=<id> type=touch action=move x=… y=… stream=…x…
+```
+
+**Procédure diagnostic runtime :**
+1. Lancer l'app depuis terminal (`npm start`) pour voir stdout main.
+2. Reproduire drift **sans toucher** la souris.
+3. Observer :
+   - **Rafale `[Input] … action=move`** sans drag → bug renderer (pointer fantôme ou `isDragging` coincé) ;
+   - **Aucun log move** mais device bouge → hors Hub (app device, autre client scrcpy, ghost touch hardware) ;
+   - **Moves avec x/y qui dérivent lentement** alors que coords écran stables → remap portrait / `streamWidth` incohérent ;
+   - **Rafale moves après fin de drag** → file async Phase 1.
+
+**Log complémentaire suggéré (fix phase, pas encore appliqué) :** durée `resolveEffectiveAdbSerial` + flag `cached` pour confirmer charge ADB.
+
+---
+
+### Synthèse causes probables
+
+| Priorité | Cause | Mécanisme | Fix proposé (après validation) |
+|----------|-------|-----------|--------------------------------|
+| **P0** | `resolveEffectiveAdbSerial` dans `send-input` à chaque event | `adb devices -l` jusqu'à ~60×/s au drag ; pire en WiFi | **Cache par session** : serial résolu au lancement + invalidation sur `refreshDevices` / changement transport ; retirer `listUnifiedDevices` du hot path |
+| **P1** | `isDragging` / pointer capture perdue | `pointerup` manqué → micro-moves continus | `pointerleave` / `blur` → force `pointercancel` + `up` |
+| **P1** | Layout canvas / portrait `syncPortraitLayout` | Redimensionnement flux sous curseur → `pointermove` synthétiques | Débouncer resize ; ne pas reset wheel pendant stream actif |
+| **P2** | Panneau Appareils ouvert + WiFi poll | Charge ADB additive | Déjà isolé ; fermer panneau pendant test |
+| **P2** | `preferAdbTouch` (audio fallback) | Move ADB = no-op → **peu probable** pour drift continu | N/A sauf si socket contrôle absente |
+
+**Corrélation temporelle :** le handler `send-input` du commit `fa2f278` **n'appelait pas** `resolveEffectiveAdbSerial` ; l'appel n'existe que dans les changements Phase 1 non commités (`main.js:1141–1150`). **Fortement corrélé** au rapport de bug post-Phase 1.
+
+**Fichiers LOCK :** diagnostic ne propose **aucune** modification `scrcpy-socket.js` / `createSession` tant que P0 cache amont non testé.
+
+---
+
+### Plan validation avant patch
+
+1. Repro USB vs WiFi (main immobile).
+2. Compter logs `[Input] action=move` pendant drift sans toucher.
+3. Patch P0 cache serial session → retest WiFi.
+4. Si persiste : instrumenter `isDragging` + `pointerType` côté renderer.
+
+---
+
+## Diagnostic — clic long (infos app) + clic droit BACK WiFi (2026-07-05)
+
+**Symptômes :**
+1. **Clic long** sur l'écran mirrord (menu infos app Android) — OK USB, KO WiFi.
+2. **Clic droit → BACK** en session **Type B** — OK USB, KO WiFi.
+
+**Méthode :** analyse statique des chemins `session.js` → `send-input` → scrcpy / ADB. Pas de repro matérielle ici.
+
+---
+
+### 1. Chemin d'exécution USB vs WiFi — serial / cible
+
+| Étape | USB | WiFi | Branche transport ? |
+|-------|-----|------|-------------------|
+| Renderer touch / clic droit | `session.js` handlers | **Identique** | Non |
+| IPC | `videoAPI.sendInput` | **Identique** | Non |
+| Résolution serial | `getSessionAdbSerial()` (cache session) | **Identique** — doit donner `ip:port` si lancé WiFi | Non (même code) |
+| Type A touch | scrcpy control **ou** `AdbInputController` | Idem | Non |
+| Type B touch | `sendTypeBInputViaHubAdb` si `displayId` **ou** `routeInputToSession` | Idem | Non |
+| Type B **key** (BACK) | **`routeInputToSession` uniquement** — utilise `session.serial` du `NewInstanceManager`, **pas** `resolvedDeviceId` | Idem | Non |
+
+**Écart serial potentiel (Type B clés) :**
+
+- `main.js` résout `resolvedDeviceId` (WiFi `ip:port`) **avant** le bloc Type B.
+- Pour `type === "key"`, **`sendTypeBInputViaHubAdb` n'est jamais appelé** (`preferHubAdbTouch` = touch/scroll seulement).
+- `new-instance-manager.routeInputToSession` injecte via `session.serial` figé au lancement + `AdbInputController(this.adbPath, session.serial)`.
+
+→ Si session lancée en WiFi, `session.serial` = `ip:port` : **OK**.  
+→ Si session USB puis bascule transport sans relance : **serial stale** — casserait **toutes** les entrées, pas seulement long press / BACK.
+
+**Verdict point 1 :** pas de branche `if (wifi)` dédiée. Un mauvais serial expliquerait un échec global, pas ciblé. **Hypothèse secondaire** : décalage `resolvedDeviceId` (touch hub-adb) vs `session.serial` (clés scrcpy) si relance cross-transport — à vérifier en logs.
+
+**Logs à comparer WiFi vs USB :**
+
+```text
+# Type B clic droit — attendu :
+[Input] Type B session=<id> device=<serial> type=key key=Back path=scrcpy-key
+# ou
+[Input] Type B session=<id> device=<serial> type=key key=Back path=adb
+
+# Type A / instance clic long (après micro-mouvement) :
+[Input] device=<serial> session=<id> type=touch action=down ...
+[Input] device=<serial> session=<id> type=touch action=up ...
+```
+
+Si **aucun log** au clic droit → événement `contextmenu` pas déclenché ou handler bloqué côté renderer.  
+Si log `path=scrcpy-key` sans effet device → injection scrcpy ne cible pas le **display virtuel** Type B.
+
+---
+
+### 2. Clic long — timing / détection
+
+**Pas de handler « long press » dédié** dans le Hub. Le menu « Infos sur l'application » est le **long press Android natif** (launcher / icône), qui exige sur le device :
+
+1. `ACTION_DOWN`  
+2. maintien ~400–500 ms  
+3. `ACTION_UP` (ou maintien continu)
+
+**Comportement actuel `session.js` (`initTypeAInputHandlers` / Type B identique) :**
+
+| Gesture | IPC envoyé |
+|---------|------------|
+| Clic court **sans** bouger la souris | `pointerdown` → rien → `pointerup` → **`action=tap`** (`scrcpy.sendTap` = down+up instantané) |
+| Clic avec **micro-mouvement** (≥2 px stream) | 1er `pointermove` → **`action=down`** → … maintien … → `pointerup` → **`action=up`** |
+
+→ **Clic long immobile = tap court** : Android ne peut pas afficher « Infos app ».  
+→ **Clic long avec léger mouvement** : séquence down/hold/up via **scrcpy** (ou fallback ADB) — peut fonctionner.
+
+**WiFi / latence :**
+
+- Le maintien réel est côté **horloge locale** (entre down et up), pas entre l'envoi réseau des paquets — la latence WiFi **retarde** down/up mais ne raccourcit pas le maintien perçu par Android si les paquets arrivent dans l'ordre.
+- Correctifs récents **coalescence des `move`** + `isSyntheticLayoutPointerMove` (ignore `movementX/Y === 0` souris) : peuvent **empêcher** le premier `pointermove` synthétique (layout canvas / letterboxing) de déclencher `action=down` — utilisateur reste sur le chemin **tap** uniquement.
+
+**`preferAdbTouch` (`main.js` ~1311)** — si `controlFromFallback && hasAudio` :
+
+- Touch **contourné** vers `AdbInputController` au lieu de scrcpy.
+- `AdbInputController.sendTouch("down")` = **no-op device** (état local seulement) ; seul `up` envoie `input tap` ou `swipe 150ms`.
+- **Long press impossible** sur ce chemin, quel que soit le transport.
+
+WiFi peut basculer plus souvent en `controlFromFallback` (socket contrôle scrcpy dégradé) — **corrélé WiFi**, pas une branche code WiFi.
+
+**Verdict point 2 :** le bug « USB OK / WiFi KO » est **compatible** avec : (A) micro-mouvement habituel sur USB + chemin scrcpy stable ; (B) WiFi → `preferAdbTouch` ou moindre jitter layout → reste sur `tap` ou chemin ADB sans maintien. **Pas un seuil de durée explicite** dans le code — c'est l'absence de `down` au `pointerdown` qui est structurelle.
+
+---
+
+### 3. Clic droit → BACK — dépendance résolution / orientation
+
+**Handler :** `attachRightClickBackHandler` → `contextmenu` → `sendInput({ type: "key", key: "Back" })` (`session.js`).
+
+| Session | `deviceId` dans payload | Routage BACK |
+|---------|-------------------------|--------------|
+| **Type A** | Oui (`ensureDeviceId()`) | `main.js` → scrcpy `sendKeyCode` puis fallback `AdbInputController.sendKey` |
+| **Type B** | **Non** | `routeInputToSession` → scrcpy `sendKeyCode` **ou** `controller.sendKey` avec `setDisplayId(displayId)` si display virtuel |
+
+**Orientation / résolution :** BACK ne dépend **pas** des coords stream. Pas de mapping orientation pour les touches.
+
+**Dépendance display Type B :**
+
+- Scrcpy `sendKeyCode` = injection **globale** (pas de `-d displayId`).
+- Fallback ADB `input -d <displayId> keyevent 4` = **cible le display virtuel**.
+
+Si WiFi garde `hasLiveControl=true` et scrcpy-key « réussit » côté socket mais n'affecte **pas** l'app sur le display virtuel → **BACK silencieux** ; le fallback ADB avec `-d` n'est **jamais** tenté.
+
+**Verdict point 3 :** pas de bug orientation/résolution. **Suspect principal Type B** : priorité scrcpy-key sans `displayId` sur display virtuel ; USB peut masquer le bug si le tunnel contrôle est plus fiable ou si l'utilisateur teste un contexte display 0.
+
+---
+
+### 4. Logs / échec silencieux
+
+| Action | Log attendu (main) | Échec silencieux possible |
+|--------|-------------------|---------------------------|
+| Clic droit Type B | `[Input] Type B … type=key key=Back path=scrcpy-key` ou `path=adb` | scrcpy-key OK socket mais pas d'effet sur virtual display |
+| Clic long (avec move) | `[Input] … action=down` puis `action=up` (délai ≥500 ms entre les deux côté utilisateur) | `action=tap` seul → long press impossible |
+| Clic long (sans move) | `[Input] … action=tap` uniquement | **Normal** — pas un long press Android |
+| Résolution serial | `device=192.168.x.x:5555` dans les logs | `device=<usb-serial>` sur session WiFi = serial stale |
+
+**Procédure utilisateur :**
+
+1. Terminal `npm start`, session WiFi Type B, clic droit → noter la ligne `[Input] Type B …`.
+2. Session WiFi Type A (miroir launcher), clic long 1 s **sans bouger** puis **avec** léger glissement → comparer `tap` vs `down`/`up`.
+3. Répéter en USB.
+
+---
+
+### Synthèse causes probables
+
+| Bug | Priorité | Cause probable | Zone correction | LOCK ? |
+|-----|----------|----------------|-----------------|--------|
+| **Clic long WiFi** | **P0** | Pas de `down` au `pointerdown` ; maintien immobile → `tap` | `session.js` : envoyer `down` au press + `up` au release ; timer long-press optionnel | **Oui** — gestion input renderer |
+| **Clic long WiFi** | **P1** | `preferAdbTouch` force ADB où `down` = no-op | `main.js` : ne pas bypass scrcpy pour touch si seul fallback audio ; ou `adb-input-controller.js` : `down` → `input swipe x y x y <durée>` | main/adb-input : **non** ; scrcpy-socket : **oui** |
+| **Clic long WiFi** | **P2** | `isSyntheticLayoutPointerMove` bloque le move qui déclenchait `down` | `session.js` | **Oui** |
+| **BACK Type B WiFi** | **P0** | Clés Type B via scrcpy global, pas `input -d displayId` | `main.js` : inclure `type==="key"` dans `sendTypeBInputViaHubAdb` quand `displayId` défini | **Non** (amont) |
+| **BACK Type B WiFi** | **P1** | `routeInputToSession` utilise `session.serial` non résolu | `main.js` : passer serial résolu à Type B keys (sans modifier `new-instance-manager` si routage entièrement dans main) | **new-instance-manager** = LOCK si changement interne requis |
+
+---
+
+### Correctifs proposés (après validation)
+
+| # | Fichier | Changement | Validation |
+|---|---------|------------|--------------|
+| **F1** | `main.js` | `preferHubAdbInput` : touch **+ key** (+ scroll) → `sendTypeBInputViaHubAdb` si `displayId` Type B | Amont — OK direct |
+| **F2** | `session.js` | `pointerdown` → queue `down` ; `pointerup` → `up` ; tap si durée < seuil sans move | **LOCK input** — attendre OK |
+| **F3** | `adb-input-controller.js` | `sendTouch("down")` envoie maintien (`swipe` même point, durée longue) ou swipe long press | Hors LOCK scrcpy |
+| **F4** | `main.js` | Revoir `preferAdbTouch` (ne pas forcer ADB touch quand contrôle scrcpy vivant) | Amont — OK direct |
+
+**Fichiers LOCK non proposés en première intention :** `scrcpy-socket.js`, `createSession()`, `new-instance-manager.js` (sauf si F1 insuffisant et routage clé doit changer à l'intérieur).
+
+---
+
+## FIX — Flux vidéo à l'envers (orientation) USB/WiFi (2026-07-05)
+
+**Statut : ✅ LOCK validé utilisateur.**
+
+### Symptôme
+
+Image mirroring à l'envers ou orientation incorrecte (USB et WiFi).
+
+### Causes
+
+| # | Cause | Fichier |
+|---|--------|---------|
+| O1 | Verrous `@90` / `@270` inversés vs orientation naturelle | `stream-params.js` |
+| O2 | `wm size` lisait parfois `Override size` au lieu de `Physical size` | `device-orientation-manager.js` |
+| O3 | Ancien `captureOrientationLock` conservé au redémarrage flux | `main.js` |
+| O4 | Rotation canvas +90° sans compenser le verrou scrcpy serveur | `session.js` |
+
+### Correctifs
+
+| Fichier | Changement | LOCK ? |
+|---------|------------|--------|
+| `stream-params.js` | Inversion `@90`↔`@270` ; défaut portrait si dims absentes | Non |
+| `device-orientation-manager.js` | `Physical size` prioritaire | Non |
+| `main.js` | Recalcul verrou à chaque `startVideoStreamLogic` | Non |
+| `session.js` | Rotation canvas compensée (`captureRotation`) | Non |
+| `adb-input-controller.js` | Remap tactile selon `captureRotation` | Non |
+| `scrcpy-socket.js` | Fallback `resolveCaptureOrientationLock` + `EventEmitter` | **Oui** |
+
+**Zones LOCK non touchées :** `new-instance-manager.js`.
+
+---
+
+## BUG — Bouton orientation portrait incorrect en WiFi (2026-07-05)
+
+**Statut : ✅ corrigé (amont, hors LOCK).**
+
+### 1. Chaîne du bouton orientation
+
+```
+OrientationToggle.js
+  → sessionAPI.toggleOrientation(sessionId)
+  → ipc session:toggleOrientation
+  → streamParamsManager.toggleOrientation()
+  → setOrientation(sessionId, "portrait"|"landscape")
+       ├─ _resolveDeviceDimensions(entry)     → wm size (Physical size)
+       ├─ applyPhysicalOrientation(deviceId)  → adb shell user_rotation + cmd window
+       ├─ setSessionCaptureOrientation()      → entry + IPC session:orientation-changed
+       └─ PAS de redémarrage flux scrcpy
+```
+
+**Renderer (affichage seul) :** `session:orientation-changed` → `portraitDisplayBySession` → `drawVideoFrame` rotation canvas si flux encore paysage.
+
+**Pas de flag scrcpy au toggle** — le verrou `capture_orientation` du flux reste celui du démarrage.
+
+### 2. USB vs WiFi — même code ?
+
+| Étape | USB | WiFi | Branche `if (wifi)` ? |
+|-------|-----|------|----------------------|
+| IPC toggle | Identique | Identique | ❌ Non |
+| `applyPhysicalOrientation` | `adb -s <serial> shell settings put system user_rotation N` | Idem (`ip:port` quoté) | ❌ Non |
+| `resolveUserRotation` | `f(orientation, Physical wm size)` | Idem | ❌ Non |
+| Rotation canvas client | `session.js` si flux paysage | Idem | ❌ Non |
+
+**Différences observées (pas de branche transport) :**
+
+| # | Écart | Impact WiFi |
+|---|--------|-------------|
+| W1 | `setOrientation` appelle `applyPhysicalOrientation(entry.deviceId)` **sans** `resolveEffectiveAdbSerial` + `stableDeviceId` (contrairement à `session:close`) | Rotation physique peut **échouer** si serial session obsolète |
+| W2 | Latence ADB WiFi → rotation physique lente ; flux reste paysage plus longtemps | Canvas client utilisé plus longtemps |
+| W3 | `setOrientation` conserve `captureRotation=270` (verrou stream paysage) et le repousse à la vue session | Voir cause P1 ci-dessous |
+
+### 3. Lecture rotation / dims avant application
+
+| Donnée | Utilisée pour calcul cible ? | Source |
+|--------|------------------------------|--------|
+| `user_rotation` actuel | ❌ Non (sauvegarde restore uniquement) | `settings get system user_rotation` |
+| `wm size` Physical | ✅ Oui — `naturalLandscape` | `device-orientation-manager.getDeviceDimensions` |
+| Dims absentes | Défaut portrait (`naturalLandscape=false`) | `resolveUserRotation` |
+
+**WiFi :** si `wm size` timeout → dims null → défaut portrait (cohérent téléphone). Pas de lecture `user_rotation` avant calcul — **pas de cause directe WiFi** sauf échec fetch dims (même symptôme USB).
+
+### 4. Lien avec bug flux vidéo à l'envers
+
+| Aspect | Même cause racine ? | Détail |
+|--------|---------------------|--------|
+| Verrous `@90`/`@270` au stream start | **Partiellement** | Corrigé (LOCK validé) — concerne affichage **paysage initial** |
+| Bouton portrait WiFi | **Cause distincte mais régression liée** | Fix vidéo a ajouté `resolvePortraitCanvasRotation(captureRotation)` + conservation `liveRotation=270` au toggle |
+
+**Cause racine bouton portrait (P1) :** au toggle sans redémarrage flux :
+
+1. Flux scrcpy garde `captureRotation=270` (verrou paysage au démarrage).
+2. `setOrientation` repousse ce `270` à la vue session.
+3. `resolvePortraitCanvasRotation` calcule `(90−270) mod 360 = 180°` → **image à l'envers**.
+4. Sur **USB**, la rotation physique ADB réussit vite → flux passe en portrait → branche sans rotation canvas → **semble OK**.
+5. Sur **WiFi**, rotation physique plus lente ou échoue (W1) → flux reste paysage → rotation canvas 180° → **incorrect**.
+
+**Verdict :** pas la même cause que O1–O4 (verrous stream start), mais **effet de bord du fix vidéo** + **résolution serial incomplète au toggle** (W1).
+
+### 5. Correctifs prévus (amont — hors LOCK)
+
+| # | Fichier | Changement |
+|---|---------|------------|
+| F1 | `stream-params-manager.js` | `resolveEffectiveAdbSerial` avant `applyPhysicalOrientation` |
+| F2 | `main.js` | `applyPhysicalOrientation` : résolution avec `stableDeviceId` |
+| F3 | `session.js` | Rotation canvas portrait toggle : **+90° fixe** (pas de compensation `captureRotation` serveur) |
+| F4 | `browserViewManager.js` | Toggle orientation : met à jour `captureOrientation` sans repousser `captureRotation` au canvas |
+| F5 | `stream-params-manager.js` | Délai post-rotation plus long si serial WiFi (`ip:port`) |
+
+**Zones LOCK :** aucune modification requise (`scrcpy-socket.js`, `new-instance-manager.js` intacts).
+
+---
+
+## BUG — Input continu en mode portrait WiFi/USB (2026-07-05)
+
+**Statut : ✅ corrigé (amont `session.js`, hors LOCK).**
+
+### 1. Reproduction attendue (USB vs WiFi × orientation)
+
+| Scénario | Code identique ? | Symptôme attendu si cause portrait |
+|----------|------------------|-------------------------------------|
+| Paysage USB | Oui | Stable (pas de remap canvas) |
+| Paysage WiFi | Oui | Stable |
+| **Portrait USB** | Oui | Parfois OK (rotation physique rapide → flux portrait, pas de remap) |
+| **Portrait WiFi** | Oui | **Plus visible** — flux reste paysage plus longtemps → remap actif |
+
+**Verdict :** lié à **l'orientation portrait** (remap + layout canvas), **pas au transport** en soi. WiFi amplifie via latence rotation physique ADB.
+
+### 2. Recalcul coords orientation → boucle input ?
+
+| Mécanisme | Boucle ? | Détail |
+|-----------|----------|--------|
+| `mapDisplayCoordsToStream` | ⚠️ **Oui (indirect)** | Appelé à chaque `move` ; si `portraitInputRemap` **oscille** frame à frame (flux paysage↔portrait), les coords mappées **sautent** → rafale `action=move` |
+| `drawVideoFrame` | ⚠️ **Oui** | `setPortraitInputRemap(true/false)` **à chaque frame** selon `landscapeFrame` |
+| `syncPortraitLayout` | ⚠️ **Oui** | Appelé **à chaque frame** (~60/s) ; `resetZoom()` mutait le transform CSS → layout sous curseur → `pointermove` fantômes si drag actif |
+
+**Pas une boucle orientation→IPC→orientation**, mais une **boucle vidéo→layout→coords→move**.
+
+### 3. Listener / polling orientation → input ?
+
+| Source | Envoie touch ? |
+|--------|----------------|
+| `session:orientation-changed` | ❌ Non — met à jour `portraitDisplay` uniquement |
+| `setInputControllerOrientation` (main) | ❌ Non — métadonnée contrôleur ADB fallback |
+| `setInterval` + sendInput | ❌ Aucun |
+
+### 4. Logs attendus pendant le bug
+
+Sans toucher la souris, si drift device :
+- **Rafale `[Input] action=move`** → généré par le **renderer** (drag coincé ou coords qui sautent).
+- **Aucun log** → hors Hub (autre client scrcpy).
+
+Avec drag actif en portrait interim : `orientation=landscape` + `stream=HxW` (dims permutées) dans les logs.
+
+### 5. Lien bug flux vidéo / orientation précédent
+
+| | |
+|---|---|
+| **Même cause racine ?** | **Non directement** — fixes vidéo (@90/@270, canvas +90° toggle) sont **amont validés**. |
+| **Effet de bord** | Le remap portrait (`mapDisplayCoordsToStream`) et `syncPortraitLayout` par frame **coexistent** avec le toggle portrait ; la **désynchronisation flux paysage / UI portrait** provoque le drift. |
+
+### 6. Correctifs prévus (amont — `session.js` uniquement)
+
+| # | Changement |
+|---|------------|
+| F1 | `syncPortraitLayout` : appel uniquement si état layout change ; `resetZoom` seulement au toggle orientation |
+| F2 | Hystérésis `portraitInputRemap` (éviter oscillation flux paysage/portrait) |
+| F3 | Seuil `move` basé sur coords **mappées** (post-remap) |
+| F4 | `pointerleave` / `lostpointercapture` / `blur` → force fin de drag |
+
+**Zones LOCK :** `adb-input-controller.js`, `scrcpy-socket.js`, `new-instance-manager.js` — **non touchés**.
+
+---
+
+## BUG CRITIQUE — Input cassé global + orientation Type B (2026-07-05)
+
+**Statut : ✅ corrigé v2 (2026-07-05).**
+
+### 4. Correctifs appliqués (v1 + v2)
+
+| # | Fichier | Changement |
+|---|---------|------------|
+| F1 | `session.js` | `isOrientationManagedSession()` — orientation/remap/rotation canvas **Type A only** |
+| F2 | `session.js` | Type B bootstrap : pas d'`initSessionDisplayOrientation`, `portraitDisplay=0` |
+| F3 | `session.js` | **v2** — handlers pointer simplifiés ; retrait `blur`/`pointerleave`/`lostpointercapture`/`forceEndPointerDrag` |
+| F4 | `session.js` | **v2** — `activateSession` uniquement si session inactive (évite blur au clic) |
+| F5 | `session.js` | **v2** — `drawVideoFrame` : branche Type B directe (pas de rotation/layout portrait) |
+| F6 | `stream-params.js` | **v2** — `sanitizeTypeBScrcpyOptions()` |
+| F7 | `stream-params-manager.js` | Type B no-op orientation ; sanitize avant `restartWithStreamOptions` + purge `session.streamOptions` |
+| F8 | `new-instance-ipc.js` | **v2** — sanitize `streamOptions` avant `start` et après démarrage |
+| F9 | `main.js` | **v2** — `applyCaptureOrientationToOptions` uniquement si Type A |
+| F10 | `browserViewManager.js` | Type B : `captureOrientation` forcé paysage |
+| F11 | `OrientationToggle.js` | Désactivé si session active Type B |
+
+**Cause input persistante (v2) :** `window blur` déclenché par `activateSession()` à chaque `pointerdown` annulait le drag.  
+**Cause orientation Type B persistante (v2) :** `mergeTypeBScrcpyOptions` (LOCK) réinjectait `captureOrientationLock` depuis `session.streamOptions` stale → purge amont via `sanitizeTypeBScrcpyOptions`.
+
+### 4bis. Correctifs v1 (historique)
+
+| # | Fichier / fonction | Changement | Impact |
+|---|-------------------|------------|--------|
+| **R1** | `session.js` — `pointerleave` + `lostpointercapture` (fix input continu portrait) | Fin de drag forcée au resize canvas / perte capture | **Input cassé global** — clic/drag annulés dès le 1er frame vidéo |
+| **R2** | `session.js` — `mapDisplayCoordsToStream` sans garde type | Remap portrait appliqué à **Type B** si `portraitDisplay` actif | Coords Type B incorrectes |
+| **R3** | `session.js` — `drawVideoFrame` + `initSessionDisplayOrientation` Type B | Rotation canvas + remap sur virtual display | Orientation / input Type B cassés |
+| **R4** | `stream-params-manager.js` — `_buildScrcpyOptions` / `setOrientation` | `applyCaptureOrientationToOptions` + rotation physique ADB sur **Type B** | Verrous scrcpy + `user_rotation` sur display virtuel |
+| **R5** | `OrientationToggle.js` | Toggle actif sur session Type B active | Portrait forcé sur Type B par erreur |
+
+**Cause racine input global : R1** (guards pointer trop agressifs).  
+**Cause racine orientation Type B : R2–R5** (logique orientation non isolée à Type A).
+
+**Pas dans LOCK** — aucune modification `scrcpy-socket.js` / `new-instance-manager.js` / `adb-input-controller.js` requise.
+
+### 2. USB vs WiFi / portrait vs paysage
+
+| Combinaison | Cassé par | Mécanisme |
+|-------------|-----------|-----------|
+| Type A paysage USB/WiFi | R1 | `lostpointercapture` au resize canvas |
+| Type A portrait USB/WiFi | R1 + remap | Idem + coords portrait |
+| Type B paysage USB/WiFi | R1 + R2–R4 | Guards + orientation sur B |
+| Type B « portrait » | R3–R5 | Toggle / capture lock sur virtual display |
+
+**Verdict :** pas lié au transport — **régression code orientation/input partagé**.
+
+### 3. Lien bugs orientation précédents
+
+| Bug précédent | Lien |
+|---------------|------|
+| Flux vidéo à l'envers | Verrous `@90`/`@270` — **Type A stream start uniquement** ; ne doit pas toucher B |
+| Bouton portrait WiFi | `setOrientation` / canvas rotation — **doit rester Type A only** |
+| Input continu portrait | Fix R1 (pointerleave) — **a cassé tout l'input** → retiré pointerleave/lostpointercapture |
+
+### 4. Correctifs appliqués
+
+| # | Fichier | Changement |
+|---|---------|------------|
+| F1 | `session.js` | `isOrientationManagedSession()` — orientation/remap/rotation canvas **Type A only** |
+| F2 | `session.js` | Type B bootstrap : pas d'`initSessionDisplayOrientation`, `portraitDisplay=0` |
+| F3 | `session.js` | Retrait `pointerleave` / `lostpointercapture` (garde `blur` uniquement) |
+| F4 | `session.js` | Type B input : coords directes (pas de `mapDisplayCoordsToStream`) |
+| F5 | `stream-params-manager.js` | Type B : `_buildScrcpyOptions` sans orientation/lock ; `setOrientation`/`toggle` no-op |
+| F6 | `browserViewManager.js` | Type B : `captureOrientation` forcé paysage |
+| F7 | `OrientationToggle.js` | Désactivé si session active Type B |
+
+### 5. Matrice non-régression (tests utilisateur)
+
+| Fonction | Type A USB | Type A WiFi | Type A portrait | Type B USB | Type B WiFi |
+|----------|------------|-------------|-----------------|------------|-------------|
+| Input clic/drag | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Clavier | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Clic long (infos app) | ☐ | ☐ | — | ☐ | ☐ |
+| Clic droit → BACK | ☐ | ☐ | — | ☐ | ☐ |
+| Orientation portrait/paysage | ☐ | ☐ | ☐ | **paysage fixe** | **paysage fixe** |
+| Double-clic sidebar mirroring | ☐ | ☐ | — | — | — |
+| Audio par fenêtre | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Pastille couleur temps réel | ☐ | ☐ | — | ☐ | ☐ |
+| Toggle USB/WiFi + panneau Appareils | ☐ | ☐ | — | ☐ | ☐ |
+
+---
+
+## BUG — Renommer non synchronisé USB ↔ WiFi (2026-07-05)
+
+**Symptôme :** appareil fusionné (même identité physique, visible en USB et WiFi) renommé depuis le panneau Appareils (section USB ou WiFi) → l'autre entrée/transport ne reflète pas le nouveau nom (sidebar, panneau, sélecteur Nouvelle instance).
+
+**Statut : corrigé (2026-07-05).**
+
+### 1. Stockage des noms — clés par transport vs identité stable
+
+| Source | Fichier / module | Clé utilisée | Problème |
+|--------|-----------------|--------------|----------|
+| Noms personnalisés | `custom-names.json` via `CustomNamesManager` | Paramètre `serial` passé à `setDeviceCustomName()` | **Pas de résolution stable** : une entrée peut exister sous `e176518f` (USB) **et** `192.168.1.10:5555` (WiFi) pour le même appareil |
+| Noms WiFi config | `wifi-devices.json` via `WifiDevicesManager.rename()` | `deviceId` stable | Mis à jour **seulement** si `getByDeviceId(serial)` réussit avec le bon id |
+| Affichage unifié | `buildUnifiedEntry()` | `wifiConfig?.name \|\| baseDevice.name` | Source parallèle avant overlay `applyDeviceNames` |
+| Lecture noms | `applyDeviceNames()` | `device.deviceId \|\| device.serial` | **Une seule clé** — ignore alias transport (`usbSerial`, `wifiSerial`, `adbTarget`, `ip:port`) |
+
+**Preuve disque** (session 2026-07-05, `custom-names.json`) : clés dupliquées `e176518f` + `192.168.1.10:5555` pour le même Tab 5 — renommer depuis une entrée écrit sous une clé, l'autre transport lit l'autre clé.
+
+### 2. Fusion identité — utilisée à l'affichage, pas au Renommer
+
+| Zone | Utilise `deviceId` stable ? | Utilise `resolveStableDeviceIdFromTransport` ? |
+|------|---------------------------|-----------------------------------------------|
+| Sidebar / `listUnifiedDevices` | ✅ `mergeByDeviceId` | ✅ (résolution serial ADB) |
+| Panneau Appareils (UI) | ✅ `data-device-id` = `entry.deviceId` | ❌ |
+| `performDeviceRename` (`namesHandlers.js`) | ❌ écrit sous `payload.serial` tel quel | ❌ |
+| `applyDeviceNames` | Partiel (`deviceId \|\| serial`) | ❌ pas de lookup multi-clés |
+
+Le panneau et la sidebar **passent** `deviceId` stable au dialogue (`DevicesPanel.js`, `DevicePanel.js`). Mais :
+- les **anciennes clés** `ip:port` dans `custom-names.json` ne sont pas migrées ;
+- `performDeviceRename` ne **nettoie pas** les alias ni ne synchronise `wifi-devices.json` si le `serial` reçu est un transport WiFi non résolu ;
+- `applyDeviceNames` sur la ligne WiFi (`deviceId` = stable) ne trouve pas un nom stocké sous `ip:port`.
+
+### 3. Correctif prévu
+
+1. **`CustomNamesManager`** — lookup multi-clés (`deviceId`, `serial`, `usbSerial`, `wifiSerial`, `adbTarget`) ; écriture **unique** sous `deviceId` stable ; purge des alias à la lecture/écriture.
+2. **`namesHandlers.js`** — `performDeviceRename` / `resetDevice` : `resolveStableDeviceIdFromTransport()` + collecte alias + `wifiDevicesManager.rename(stableId)` systématique.
+3. Pas de changement renderer requis (UI envoie déjà `deviceId`).
+
+**Fichiers modifiés :** `custom-names-manager.js`, `namesHandlers.js`.
+
+**Hors scope :** fichiers INPUT LOCK, `scrcpy-socket.js`, `new-instance-manager.js`.
+
+---
+
+## BUG — Renommer fenêtres/onglets non synchronisé USB ↔ WiFi (2026-07-05)
+
+**Symptôme :** appareil fusionné — renommer l'onglet/fenêtre d'une session (miroir Type A ou instance Type B) depuis un transport (USB ou WiFi) → une nouvelle session sur l'autre transport garde l'ancien nom d'onglet.
+
+**Statut : corrigé (2026-07-05).**
+
+### 1. Stockage — clé session par transport vs identité stable
+
+| Source | Fichier | Clé session | Problème |
+|--------|---------|-------------|----------|
+| Noms onglets/fenêtres | `custom-names.json` → `sessions{}` | `mirror:${deviceId}` (Type A) ou `instance:${deviceId}:pkg:uid` (Type B) | `deviceId` dans la clé = **serial ADB transport** (`e176518f` USB vs `192.168.1.10:5555` WiFi) — **deux clés pour le même appareil** |
+| Métadonnée session live | `browserViewManager` entry | `deviceId` = serial ADB ; `stableDeviceId` = ro.serialno (déjà présent) | `buildSessionKey()` **ignore** `stableDeviceId` |
+| Preuve disque | `custom-names.json` sessions | `mirror:e176518f` + `mirror:192.168.1.10:5555` | Même symptôme que noms appareils (documenté § Renommer panneau) |
+
+**Type A :** `buildSessionKey` → `mirror:${entry.deviceId}` où `entry.deviceId` = serial effectif scrcpy/ADB (souvent `ip:port` en WiFi).
+
+**Type B :** `instance:${entry.deviceId}:${packageName}:${userId}` — même pollution.
+
+### 2. Même source de vérité que panneau Appareils ?
+
+| Fonction | Module | Utilise `CustomNamesManager` ? | Résout `stableDeviceId` ? |
+|----------|--------|-------------------------------|---------------------------|
+| Renommer appareil (panneau) | `namesHandlers.performDeviceRename` | ✅ | ✅ (corrigé 2026-07-05) |
+| Renommer onglet/fenêtre | `namesHandlers.performSessionRename` | ✅ | ❌ — `buildSessionKey({ deviceId: entry.deviceId })` sans `stableDeviceId` |
+| Affichage onglets | `applySessionNames` / `session:list` | ✅ | ❌ — clé dérivée du transport |
+| Enregistrement session | `session:registerView` → `resolveSessionLabel` | ✅ | ⚠️ passe `deviceId` transport seulement (mais entry a `stableDeviceId`) |
+
+**Conclusion :** même fichier `custom-names.json`, **logique de clé non alignée** avec le fix appareils — pas de lookup/consolidation multi-clés pour les sessions.
+
+### 3. Fichiers LOCK — impact
+
+| Fichier | Touché ? | Action |
+|---------|----------|--------|
+| `sessionHandlers.js` | ❌ non requis | `resolveSessionLabel` corrigé via résolution sync dans `CustomNamesManager` |
+| `new-instance-manager.js` | ❌ | — |
+| `scrcpy-socket.js` | ❌ | — |
+| Input LOCK (`main.js`, `session.js`, `adb-input-controller`) | ❌ | — |
+
+**Correctif :** couche noms uniquement — `custom-names-manager.js` + `namesHandlers.js` + `contextMenuHandlers.js` (reset session).
+
+1. `buildSessionKey` → `stableDeviceId || resolveSessionStableDeviceId(entry)` pour la clé canonique.
+2. Alias transport (`mirror:ip:port`) → consolidation/migration vers clé stable (comme appareils).
+3. `performSessionRename` / reset : résolution async si `stableDeviceId` absent + sync labels sur **toutes** les sessions ouvertes partageant la même clé stable.
+
+---
+
 ## Historique récent
 
-- **2026-07-05** — Fix pastille couleur onglet WiFi (résolution serial → deviceId stable dans session:list).
+- **2026-07-05** — Diagnostic + fix Renommer onglets/fenêtres USB/WiFi (clé session stable).
+- **2026-07-05** — Fix critique input global + isolation orientation Type B (F1–F7). : layout sans reset 60fps, hystérésis remap, seuil coords mappées, guards pointer.
+- **2026-07-05** — Fix bouton orientation portrait WiFi (F1–F5) : serial résolu, canvas +90° fixe au toggle, délai WiFi post-rotation.
+- **2026-07-05** — **LOCK validé** — Fix orientation vidéo (flux à l'envers USB/WiFi) : `stream-params.js`, `device-orientation-manager.js`, `main.js`, `session.js`, `scrcpy-socket.js`.
+- **2026-07-05** — Phase 3 orientation : `wm size` live (toggle, stream start, cache 60s).
+- **2026-07-05** — Fix clic long + BACK Type B WiFi (F1–F4).
+- **2026-07-05** — Diagnostic clic long + clic droit BACK WiFi vs USB.
+- **2026-07-05** — Phase 2 ADB quoting (`adbSerialArg` partagé).
+- **2026-07-05** — Phase 1 parité USB/WiFi : identité stable + resolve ADB serial.
 - **2026-07-05** — Diagnostic pastille couleur USB vs WiFi (clé serial vs deviceId stable).
 - **2026-07-05** — Diagnostic couleur instances + popup Renommer always-on-top.
 - **2026-07-05** — Fix ReferenceError `notifyDeviceViewsUpdated` (portée namesHandlers).

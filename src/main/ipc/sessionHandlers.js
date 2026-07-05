@@ -1,8 +1,33 @@
 const { ipcMain } = require("electron");
 const { exec } = require("child_process");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 let adbPathRef = null;
 let getVideoClientRef = null;
+let getNewInstanceManagerRef = null;
+
+async function resolveEntryAdbSerial(entry, sessionId = null) {
+    if (!entry?.deviceId && !entry?.stableDeviceId) {
+        const manager = getNewInstanceManagerRef?.();
+        if (sessionId && manager) {
+            const typeB = manager.getNewInstanceSession(sessionId);
+            if (typeB?.serial) {
+                entry = { deviceId: typeB.serial, stableDeviceId: typeB.stableDeviceId || null };
+            }
+        }
+    }
+    if (!entry?.deviceId && !entry?.stableDeviceId) return null;
+
+    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+            deviceId: entry.stableDeviceId || null,
+            serial: entry.deviceId || null
+        });
+        if (resolved) return resolved;
+    }
+
+    return entry.deviceId || null;
+}
 
 function runAdbShell(serial, shellCommand) {
     return new Promise((resolve, reject) => {
@@ -11,7 +36,7 @@ function runAdbShell(serial, shellCommand) {
             return;
         }
         exec(
-            `"${adbPathRef}" -s ${serial} shell ${shellCommand}`,
+            `"${adbPathRef}" -s ${adbSerialArg(serial)} shell ${shellCommand}`,
             { windowsHide: true },
             (error) => {
                 if (error) reject(error);
@@ -80,10 +105,11 @@ function attachTabCycleHandler(webContents) {
 function registerSessionHandlers(adbPath, deps = {}) {
     adbPathRef = adbPath;
     getVideoClientRef = typeof deps.getVideoClient === "function" ? deps.getVideoClient : null;
-    const stopVideoStream = typeof deps.stopVideoStream === "function" ? deps.stopVideoStream : null;
-    const getNewInstanceManager = typeof deps.getNewInstanceManager === "function"
+    getNewInstanceManagerRef = typeof deps.getNewInstanceManager === "function"
         ? deps.getNewInstanceManager
         : null;
+    const stopVideoStream = typeof deps.stopVideoStream === "function" ? deps.stopVideoStream : null;
+    const getNewInstanceManager = getNewInstanceManagerRef;
 
     ipcMain.handle("session:cycleTab", (_event, { direction = "next" } = {}) => {
         return cycleSessionTab(direction === "prev" ? "prev" : "next");
@@ -139,8 +165,9 @@ function registerSessionHandlers(adbPath, deps = {}) {
 
         if (wasPortrait && serial && global.deviceOrientationManager) {
             try {
-                await global.deviceOrientationManager.applyOrientation(serial, "landscape");
-                global.deviceOrientationManager.clearSavedState(serial);
+                const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
+                await global.deviceOrientationManager.applyOrientation(adbSerial, "landscape");
+                global.deviceOrientationManager.clearSavedState(adbSerial);
             } catch (err) {
                 console.warn("[session:close] restauration orientation:", err?.message || err);
             }
@@ -190,9 +217,10 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return manager.capturePreviewFrame(sessionId);
     });
 
-    ipcMain.handle("session:registerView", async (_event, { sessionId, type, deviceId, label, screenOff, stayAwakeActive, packageName, userId, streamParams }) => {
+    ipcMain.handle("session:registerView", async (_event, { sessionId, type, deviceId, stableDeviceId, label, screenOff, stayAwakeActive, packageName, userId, streamParams }) => {
         const extraQuery = {};
         if (deviceId) extraQuery.deviceId = deviceId;
+        if (stableDeviceId) extraQuery.stableDeviceId = stableDeviceId;
         if (label) extraQuery.label = label;
         if (screenOff !== undefined) extraQuery.screenOff = screenOff;
         if (stayAwakeActive !== undefined) extraQuery.stayAwakeActive = stayAwakeActive;
@@ -266,10 +294,11 @@ function registerSessionHandlers(adbPath, deps = {}) {
         }
 
         const turningOff = !entry.screenOff;
+        const adbSerial = await resolveEntryAdbSerial(entry, targetId);
 
         try {
-            if (turningOff && !entry.stayAwakeActive) {
-                await runAdbShell(entry.deviceId, "svc power stayon true");
+            if (turningOff && !entry.stayAwakeActive && adbSerial) {
+                await runAdbShell(adbSerial, "svc power stayon true");
                 manager.setSessionStayAwake(targetId, true);
             }
 
@@ -417,7 +446,9 @@ function registerStreamParamsHandlers(streamParamsManager) {
             sessionId,
             deviceId: entry.deviceId || null,
             type: entry.type || null,
-            packageName: entry.packageName || null
+            packageName: entry.packageName || null,
+            captureRotation: entry.captureRotation || 0,
+            captureOrientation: entry.captureOrientation || "landscape"
         };
     });
 }

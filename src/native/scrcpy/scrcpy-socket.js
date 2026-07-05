@@ -1,6 +1,7 @@
 const net = require("net");
 const { exec, spawn } = require("child_process");
 const EventEmitter = require("events");
+const { resolveCaptureOrientationLock } = require("../../shared/stream-params");
 
 // Chemin vers scrcpy-server (poussé puis exécuté sur le téléphone)
 const DEVICE_SERVER_PATH = "/data/local/tmp/scrcpy-server.jar";
@@ -293,11 +294,14 @@ class ScrcpySocketClient extends EventEmitter {
         }
 
         // Orientation relative à l'orientation naturelle de l'appareil (voir stream-params.js).
-        const lock = options.captureOrientationLock;
+        const lock = options.captureOrientationLock
+            ?? resolveCaptureOrientationLock(
+                options.orientation === "portrait" ? "portrait" : "landscape",
+                options.deviceWidth,
+                options.deviceHeight
+            );
         if (lock) {
             args.push(`capture_orientation=${lock}`);
-        } else if (options.orientation === 'portrait') {
-            args.push('capture_orientation=@270');
         }
 
         if (options.stayAwake) {

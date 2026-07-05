@@ -4,6 +4,7 @@ const {
     isUsableAppLabel,
     humanizePackageName
 } = require("../../shared/app-display");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 12000;
 const PACKAGE_LIST_TIMEOUT_MS = 15000;
@@ -84,11 +85,11 @@ class DeviceManager {
     }
 
     async getInstalledPackagesByUser(serial, userId) {
-        const plainCommand = `"${this.adbPath}" -s ${serial} shell pm list packages -3 --user ${userId}`;
+        const plainCommand = `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm list packages -3 --user ${userId}`;
 
         try {
             const stdout = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell pm list packages -3 -l --user ${userId}`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm list packages -3 -l --user ${userId}`,
                 PACKAGE_LIST_TIMEOUT_MS
             );
             const parsed = this._parsePackageListOutput(stdout, userId);
@@ -106,7 +107,7 @@ class DeviceManager {
     async getUserIds(serial) {
         try {
             const stdout = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell pm list users`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm list users`,
                 DEFAULT_COMMAND_TIMEOUT_MS
             );
             const ids = [];
@@ -229,8 +230,8 @@ class DeviceManager {
 
     async getDeviceInfo(serial) {
         const [sizeOutput, androidVersion] = await Promise.all([
-            execWithTimeout(`"${this.adbPath}" -s ${serial} shell wm size`, DEFAULT_COMMAND_TIMEOUT_MS),
-            execWithTimeout(`"${this.adbPath}" -s ${serial} shell getprop ro.build.version.release`, DEFAULT_COMMAND_TIMEOUT_MS)
+            execWithTimeout(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell wm size`, DEFAULT_COMMAND_TIMEOUT_MS),
+            execWithTimeout(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell getprop ro.build.version.release`, DEFAULT_COMMAND_TIMEOUT_MS)
         ]);
 
         const sizeMatch = sizeOutput.match(/Physical size:\s*(\d+)x(\d+)/i);
@@ -260,7 +261,7 @@ class DeviceManager {
 
         try {
             const batteryOut = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell dumpsys battery`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell dumpsys battery`,
                 6000
             );
             const levelMatch = batteryOut.match(/level:\s*(\d+)/i);
@@ -273,7 +274,7 @@ class DeviceManager {
 
         try {
             const wifiOut = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell dumpsys wifi`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell dumpsys wifi`,
                 8000
             );
             if (/Wi-Fi is disabled/i.test(wifiOut)) {

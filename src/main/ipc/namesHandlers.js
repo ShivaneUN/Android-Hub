@@ -1,5 +1,7 @@
 const { ipcMain } = require("electron");
 
+const DEFAULT_WIFI_PORT = 5555;
+
 function notifyNamesUpdated(mainWindow) {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("names:updated");
@@ -13,7 +15,47 @@ function notifyDeviceViewsUpdated(mainWindow, refreshDeviceList) {
     }
 }
 
-function performDeviceRename(manager, mainWindow, { serial, name, originalName }, refreshDeviceList) {
+async function resolveStableDeviceId(transportSerial) {
+    const id = String(transportSerial || "").trim();
+    if (!id) return null;
+
+    if (global.deviceRegistry?.resolveStableDeviceIdFromTransport) {
+        return global.deviceRegistry.resolveStableDeviceIdFromTransport(id) || id;
+    }
+    return id;
+}
+
+function collectDeviceAliasKeys(stableId, transportSerial) {
+    const keys = new Set();
+    const add = (value) => {
+        const key = String(value || "").trim();
+        if (key) keys.add(key);
+    };
+
+    add(transportSerial);
+    add(stableId);
+
+    const wifiManager = global.wifiDevicesManager;
+    const wifiService = global.wifiAdbService;
+    const config = wifiManager?.getByDeviceId?.(stableId);
+
+    if (config) {
+        if (config.usbSerialHint) add(config.usbSerialHint);
+        if (config.ip) {
+            add(wifiService?.buildWifiSerial?.(config.ip, config.port || DEFAULT_WIFI_PORT));
+        }
+    }
+
+    if (wifiService?.isWifiSerial?.(transportSerial)) {
+        add(transportSerial);
+        const configByWifi = wifiService.findConfigByWifiSerial?.(transportSerial);
+        if (configByWifi?.usbSerialHint) add(configByWifi.usbSerialHint);
+    }
+
+    return [...keys];
+}
+
+async function performDeviceRename(manager, mainWindow, { serial, name, originalName }, refreshDeviceList) {
     if (!manager || !serial) {
         return { success: false, error: "Paramètres invalides." };
     }
@@ -23,15 +65,52 @@ function performDeviceRename(manager, mainWindow, { serial, name, originalName }
         return { success: false, error: validation.error };
     }
 
-    manager.setDeviceCustomName(serial, originalName, validation.name);
-    if (global.wifiDevicesManager?.getByDeviceId?.(serial)) {
-        global.wifiDevicesManager.rename(serial, validation.name);
+    const stableId = await resolveStableDeviceId(serial);
+    const aliasKeys = collectDeviceAliasKeys(stableId, serial);
+
+    manager.setDeviceCustomName(stableId, originalName, validation.name, aliasKeys);
+
+    const wifiConfig = global.wifiDevicesManager?.getByDeviceId?.(stableId);
+    if (wifiConfig) {
+        global.wifiDevicesManager.rename(stableId, validation.name);
     }
+
     notifyDeviceViewsUpdated(mainWindow, refreshDeviceList);
-    return { success: true, name: validation.name };
+    return { success: true, name: validation.name, deviceId: stableId };
 }
 
-function performSessionRename(manager, bvm, mainWindow, { sessionId, name }) {
+function buildSessionMetaFromEntry(sessionId, entry, stableDeviceId = null) {
+    return {
+        sessionId,
+        type: entry.type,
+        deviceId: entry.deviceId,
+        stableDeviceId: stableDeviceId || entry.stableDeviceId || null,
+        packageName: entry.packageName,
+        userId: entry.userId
+    };
+}
+
+function syncOpenSessionLabels(bvm, manager, sessionMeta, label) {
+    if (!bvm || !manager || !sessionMeta || !label) return;
+
+    const targetKey = manager.buildSessionKey(sessionMeta);
+    if (!targetKey || targetKey.startsWith("session:")) return;
+
+    for (const session of bvm.getAllSessions()) {
+        const meta = buildSessionMetaFromEntry(session.sessionId, {
+            type: session.type,
+            deviceId: session.deviceId,
+            stableDeviceId: session.stableDeviceId,
+            packageName: session.packageName,
+            userId: session.userId
+        });
+        if (manager.buildSessionKey(meta) === targetKey) {
+            bvm.updateSessionMetadata(session.sessionId, { label });
+        }
+    }
+}
+
+async function performSessionRename(manager, bvm, mainWindow, { sessionId, name }) {
     if (!manager || !bvm || !sessionId) {
         return { success: false, error: "Paramètres invalides." };
     }
@@ -46,26 +125,52 @@ function performSessionRename(manager, bvm, mainWindow, { sessionId, name }) {
         return { success: false, error: validation.error };
     }
 
-    const sessionMeta = {
-        sessionId,
-        type: entry.type,
-        deviceId: entry.deviceId,
-        packageName: entry.packageName,
-        userId: entry.userId
-    };
+    let stableDeviceId = entry.stableDeviceId || null;
+    if (!stableDeviceId && entry.deviceId) {
+        stableDeviceId = await resolveStableDeviceId(entry.deviceId);
+    }
+
+    const sessionMeta = buildSessionMetaFromEntry(sessionId, entry, stableDeviceId);
+    const aliasKeys = manager.collectSessionAliasKeys(sessionMeta);
     const sessionKey = manager.buildSessionKey(sessionMeta);
-    const originalName = manager.getSessionOriginalName(
-        sessionKey,
-        entry.originalLabel || entry.label
-    );
+    const fallbackLabel = entry.originalLabel || entry.label;
+
+    manager.consolidateSessionRecord(sessionKey, fallbackLabel, aliasKeys);
+    const originalName = manager.getSessionOriginalName(sessionKey, fallbackLabel);
 
     console.log("[Names] renameSession", { sessionId, sessionKey, originalName, name: validation.name });
 
-    manager.setSessionCustomName(sessionKey, originalName, validation.name);
-    bvm.updateSessionMetadata(sessionId, { label: validation.name });
+    manager.setSessionCustomName(sessionKey, originalName, validation.name, aliasKeys);
+    syncOpenSessionLabels(bvm, manager, sessionMeta, validation.name);
 
     notifyNamesUpdated(mainWindow);
     return { success: true, name: validation.name, sessionKey };
+}
+
+async function performSessionReset(manager, bvm, mainWindow, sessionId) {
+    const entry = bvm.getSessionEntry(sessionId);
+    if (!entry) {
+        return { success: false, error: "Session introuvable." };
+    }
+
+    let stableDeviceId = entry.stableDeviceId || null;
+    if (!stableDeviceId && entry.deviceId) {
+        stableDeviceId = await resolveStableDeviceId(entry.deviceId);
+    }
+
+    const sessionMeta = buildSessionMetaFromEntry(sessionId, entry, stableDeviceId);
+    const aliasKeys = manager.collectSessionAliasKeys(sessionMeta);
+    const sessionKey = manager.buildSessionKey(sessionMeta);
+    const original = manager.resetSessionName(sessionKey, aliasKeys)
+        || entry.originalLabel
+        || entry.label;
+
+    syncOpenSessionLabels(bvm, manager, sessionMeta, original);
+
+    console.log("[Names] resetSession", { sessionId, sessionKey, original });
+
+    notifyNamesUpdated(mainWindow);
+    return { success: true, name: original };
 }
 
 function registerNamesHandlers(deps) {
@@ -75,26 +180,34 @@ function registerNamesHandlers(deps) {
     const getRenameDialogManager = deps.getRenameDialogManager;
     const refreshDeviceList = deps.refreshDeviceList;
 
-    ipcMain.handle("names:renameDevice", (_event, payload) => {
+    ipcMain.handle("names:renameDevice", async (_event, payload) => {
         return performDeviceRename(getManager(), getMainWindow(), payload, refreshDeviceList);
     });
 
-    ipcMain.handle("names:resetDevice", (_event, { serial }) => {
+    ipcMain.handle("names:resetDevice", async (_event, { serial }) => {
         const manager = getManager();
         if (!manager || !serial) {
             return { success: false, error: "Paramètres invalides." };
         }
 
-        const original = manager.resetDeviceName(serial);
+        const stableId = await resolveStableDeviceId(serial);
+        const aliasKeys = collectDeviceAliasKeys(stableId, serial);
+        const original = manager.resetDeviceName(stableId, aliasKeys);
+
+        const wifiConfig = global.wifiDevicesManager?.getByDeviceId?.(stableId);
+        if (wifiConfig && original) {
+            global.wifiDevicesManager.rename(stableId, original);
+        }
+
         notifyDeviceViewsUpdated(getMainWindow(), refreshDeviceList);
         return { success: true, name: original };
     });
 
-    ipcMain.handle("names:renameSession", (_event, payload) => {
+    ipcMain.handle("names:renameSession", async (_event, payload) => {
         return performSessionRename(getManager(), getBrowserViewManager(), getMainWindow(), payload);
     });
 
-    ipcMain.handle("names:resetSession", (_event, { sessionId }) => {
+    ipcMain.handle("names:resetSession", async (_event, { sessionId }) => {
         const manager = getManager();
         const bvm = getBrowserViewManager();
         if (!manager || !bvm || !sessionId) {
@@ -106,22 +219,7 @@ function registerNamesHandlers(deps) {
             return { success: false, error: "Session introuvable." };
         }
 
-        const sessionKey = manager.buildSessionKey({
-            sessionId,
-            type: entry.type,
-            deviceId: entry.deviceId,
-            packageName: entry.packageName,
-            userId: entry.userId
-        });
-        const original = manager.resetSessionName(sessionKey)
-            || entry.originalLabel
-            || entry.label;
-        bvm.updateSessionMetadata(sessionId, { label: original });
-
-        console.log("[Names] resetSession", { sessionId, sessionKey, original });
-
-        notifyNamesUpdated(getMainWindow());
-        return { success: true, name: original };
+        return performSessionReset(manager, bvm, getMainWindow(), sessionId);
     });
 
     ipcMain.handle("names:openRenameDialog", async (_event, payload = {}) => {
@@ -140,7 +238,7 @@ function registerNamesHandlers(deps) {
         return { success: true };
     });
 
-    ipcMain.handle("names:submitRenameDialog", (_event, { name }) => {
+    ipcMain.handle("names:submitRenameDialog", async (_event, { name }) => {
         const dialogManager = getRenameDialogManager?.();
         const pending = dialogManager?.getPending?.();
         if (!pending) {
@@ -152,13 +250,13 @@ function registerNamesHandlers(deps) {
 
         let result;
         if (pending.kind === "device") {
-            result = performDeviceRename(getManager(), getMainWindow(), {
+            result = await performDeviceRename(getManager(), getMainWindow(), {
                 serial: pending.serial,
                 name,
                 originalName: pending.originalName
             }, refreshDeviceList);
         } else if (pending.kind === "session") {
-            result = performSessionRename(
+            result = await performSessionRename(
                 getManager(),
                 getBrowserViewManager(),
                 getMainWindow(),
@@ -174,21 +272,27 @@ function registerNamesHandlers(deps) {
         return result;
     });
 
-    ipcMain.handle("names:getDeviceInfo", (_event, { serial, fallbackName }) => {
+    ipcMain.handle("names:getDeviceInfo", async (_event, { serial, fallbackName }) => {
         const manager = getManager();
         if (!manager || !serial) {
             return { success: false, error: "Paramètres invalides." };
         }
-        manager.ensureDeviceOriginal(serial, fallbackName);
+
+        const stableId = await resolveStableDeviceId(serial);
+        const aliasKeys = collectDeviceAliasKeys(stableId, serial);
+        manager.consolidateDeviceRecord(stableId, fallbackName, aliasKeys);
+        manager.ensureDeviceOriginal(stableId, fallbackName);
+
         return {
             success: true,
-            name: manager.getDeviceDisplayName(serial, fallbackName),
-            originalName: manager.getDeviceOriginalName(serial, fallbackName),
-            hasCustomName: manager.hasDeviceCustomName(serial)
+            name: manager.getDeviceDisplayName(stableId, fallbackName),
+            originalName: manager.getDeviceOriginalName(stableId, fallbackName),
+            hasCustomName: manager.hasDeviceCustomName(stableId, aliasKeys),
+            deviceId: stableId
         };
     });
 
-    ipcMain.handle("names:getSessionInfo", (_event, { sessionId }) => {
+    ipcMain.handle("names:getSessionInfo", async (_event, { sessionId }) => {
         const manager = getManager();
         const bvm = getBrowserViewManager();
         if (!manager || !bvm || !sessionId) {
@@ -200,23 +304,30 @@ function registerNamesHandlers(deps) {
             return { success: false, error: "Session introuvable." };
         }
 
-        const sessionKey = manager.buildSessionKey({
-            sessionId,
-            type: entry.type,
-            deviceId: entry.deviceId,
-            packageName: entry.packageName,
-            userId: entry.userId
-        });
+        let stableDeviceId = entry.stableDeviceId || null;
+        if (!stableDeviceId && entry.deviceId) {
+            stableDeviceId = await resolveStableDeviceId(entry.deviceId);
+        }
+
+        const sessionMeta = buildSessionMetaFromEntry(sessionId, entry, stableDeviceId);
+        const aliasKeys = manager.collectSessionAliasKeys(sessionMeta);
+        const sessionKey = manager.buildSessionKey(sessionMeta);
+        manager.consolidateSessionRecord(sessionKey, entry.originalLabel || entry.label, aliasKeys);
         manager.ensureSessionOriginal(sessionKey, entry.originalLabel || entry.label);
 
         return {
             success: true,
             name: manager.getSessionDisplayName(sessionKey, entry.originalLabel || entry.label),
             originalName: manager.getSessionOriginalName(sessionKey, entry.originalLabel || entry.label),
-            hasCustomName: manager.hasSessionCustomName(sessionKey),
+            hasCustomName: manager.hasSessionCustomName(sessionKey, aliasKeys),
             sessionKey
         };
     });
 }
 
-module.exports = { registerNamesHandlers };
+module.exports = {
+    registerNamesHandlers,
+    resolveStableDeviceId,
+    collectDeviceAliasKeys,
+    performSessionReset
+};

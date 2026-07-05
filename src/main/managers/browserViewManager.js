@@ -86,11 +86,14 @@ class BrowserViewManager {
             label: extraQuery.label || sessionId,
             originalLabel: extraQuery.label || sessionId,
             deviceId: extraQuery.deviceId || extraQuery.serial || null,
+            stableDeviceId: extraQuery.stableDeviceId || null,
             packageName: extraQuery.packageName || null,
             userId: Number.isInteger(extraQuery.userId) ? extraQuery.userId : null,
             screenOff: Boolean(extraQuery.screenOff),
             stayAwakeActive: Boolean(extraQuery.stayAwakeActive),
-            captureOrientation: normalizeOrientation(extraQuery.captureOrientation || "landscape"),
+            captureOrientation: type === "B"
+                ? normalizeOrientation("landscape")
+                : normalizeOrientation(extraQuery.captureOrientation || "landscape"),
             streamParams: cloneParams(extraQuery.streamParams || DEFAULT_STREAM_PARAMS),
             originalStreamParams: cloneParams(extraQuery.streamParams || DEFAULT_STREAM_PARAMS),
             scrcpyOptions: null,
@@ -128,7 +131,8 @@ class BrowserViewManager {
             label: extraQuery.label || undefined,
             packageName: extraQuery.packageName || undefined,
             userId: Number.isInteger(extraQuery.userId) ? extraQuery.userId : undefined,
-            orientation: entry.captureOrientation
+            orientation: type === "B" ? "landscape" : entry.captureOrientation,
+            captureRotation: entry.captureRotation || 0
         };
         Object.keys(query).forEach((key) => {
             if (query[key] === undefined) delete query[key];
@@ -165,6 +169,9 @@ class BrowserViewManager {
         if (extraQuery.label) entry.label = extraQuery.label;
         if (extraQuery.deviceId || extraQuery.serial) {
             entry.deviceId = extraQuery.deviceId || extraQuery.serial;
+        }
+        if (extraQuery.stableDeviceId) {
+            entry.stableDeviceId = extraQuery.stableDeviceId;
         }
         if (extraQuery.packageName !== undefined) entry.packageName = extraQuery.packageName;
         if (Number.isInteger(extraQuery.userId)) entry.userId = extraQuery.userId;
@@ -507,7 +514,12 @@ class BrowserViewManager {
         const entry = this.views.get(sessionId);
         if (!entry) return false;
         entry.scrcpyOptions = scrcpyOptions ? { ...scrcpyOptions } : null;
-        if (scrcpyOptions?.orientation === "portrait") {
+        if (entry.type === "B") {
+            entry.captureOrientation = normalizeOrientation("landscape");
+            if (scrcpyOptions?.captureRotation !== undefined) {
+                entry.captureRotation = Number(scrcpyOptions.captureRotation) || 0;
+            }
+        } else if (scrcpyOptions?.orientation === "portrait") {
             entry.captureOrientation = normalizeOrientation("portrait");
         } else if (scrcpyOptions) {
             entry.captureOrientation = normalizeOrientation("landscape");
@@ -516,11 +528,31 @@ class BrowserViewManager {
         return true;
     }
 
-    setSessionCaptureOrientation(sessionId, orientation, { captureRotation = 0 } = {}) {
+    setSessionCaptureOrientation(sessionId, orientation, {
+        captureRotation,
+        updateCaptureRotation = false
+    } = {}) {
         const entry = this.views.get(sessionId);
         if (!entry) return false;
+        if (entry.type === "B") {
+            entry.captureOrientation = normalizeOrientation("landscape");
+            if (updateCaptureRotation) {
+                entry.captureRotation = Number.isFinite(Number(captureRotation)) ? Number(captureRotation) : 0;
+                this.sendToSessionView(sessionId, "session:capture-rotation-changed", {
+                    sessionId,
+                    captureRotation: entry.captureRotation
+                });
+            }
+            return true;
+        }
         entry.captureOrientation = normalizeOrientation(orientation);
-        entry.captureRotation = Number.isFinite(Number(captureRotation)) ? Number(captureRotation) : 0;
+        if (updateCaptureRotation) {
+            entry.captureRotation = Number.isFinite(Number(captureRotation)) ? Number(captureRotation) : 0;
+            this.sendToSessionView(sessionId, "session:capture-rotation-changed", {
+                sessionId,
+                captureRotation: entry.captureRotation
+            });
+        }
         return true;
     }
 
@@ -531,6 +563,7 @@ class BrowserViewManager {
             label: entry.label,
             originalLabel: entry.originalLabel || entry.label,
             deviceId: entry.deviceId || null,
+            stableDeviceId: entry.stableDeviceId || null,
             packageName: entry.packageName || null,
             userId: Number.isInteger(entry.userId) ? entry.userId : null,
             screenOff: Boolean(entry.screenOff),

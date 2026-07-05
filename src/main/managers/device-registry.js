@@ -380,6 +380,80 @@ class DeviceRegistry {
         return null;
     }
 
+    /**
+     * Résout un identifiant transport (USB / ip:port) ou stable → serial ADB effectif actuel.
+     */
+    async resolveEffectiveAdbSerial({ deviceId, serial } = {}) {
+        const unified = await this.listUnifiedDevices();
+        const pickLiveSerial = (device) => {
+            if (!device || device.connected === false) return null;
+            return device.serial || device.wifiSerial || device.usbSerial || null;
+        };
+
+        const findByTransport = (transportId) => {
+            if (!transportId) return null;
+            const id = String(transportId).trim();
+            return unified.find((device) =>
+                device.deviceId === id
+                || device.serial === id
+                || device.usbSerial === id
+                || device.wifiSerial === id
+            ) || null;
+        };
+
+        if (deviceId) {
+            const byStable = unified.find((device) => device.deviceId === deviceId);
+            const live = pickLiveSerial(byStable);
+            if (live) return live;
+        }
+
+        if (serial) {
+            const byTransport = findByTransport(serial);
+            const live = pickLiveSerial(byTransport);
+            if (live) return live;
+
+            if (this.wifiAdbService.isWifiSerial(serial)) {
+                return serial;
+            }
+        }
+
+        if (deviceId) {
+            const fallback = this.resolveAdbSerial({ deviceId });
+            if (fallback) return fallback;
+        }
+
+        return serial || null;
+    }
+
+    /**
+     * Transport ADB ou clé historique → deviceId stable (ro.serialno / config WiFi).
+     */
+    async resolveStableDeviceIdFromTransport(transportId) {
+        const id = String(transportId || "").trim();
+        if (!id) return null;
+
+        const unified = await this.listUnifiedDevices();
+        const match = unified.find((device) =>
+            device.deviceId === id
+            || device.serial === id
+            || device.usbSerial === id
+            || device.wifiSerial === id
+        );
+        if (match?.deviceId) return match.deviceId;
+
+        if (this.wifiAdbService.isWifiSerial(id)) {
+            const config = this.wifiAdbService.findConfigByWifiSerial(id);
+            if (config?.deviceId) return config.deviceId;
+            const stable = await this.wifiAdbService.resolveStableDeviceId(id);
+            if (stable) return stable;
+        }
+
+        const configById = this.wifiDevicesManager.getByDeviceId(id);
+        if (configById?.deviceId) return configById.deviceId;
+
+        return id;
+    }
+
     async startupAutoConnect() {
         const configs = this.wifiDevicesManager.list().filter((entry) => entry.wifiEnabled && entry.ip);
         for (const config of configs) {

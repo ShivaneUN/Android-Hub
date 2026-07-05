@@ -7,6 +7,7 @@ const {
     isUsableAppLabel
 } = require("../../shared/app-display");
 const { AppIconExtractor } = require("./app-icon-extractor");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DUMP_TIMEOUT_MS = 12000;
@@ -159,7 +160,7 @@ class AppMetadataManager {
         const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
         try {
             const stdout = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell pm dump${userArg} ${packageName}`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm dump${userArg} ${packageName}`,
                 DUMP_TIMEOUT_MS
             );
             const label = extractLabelFromDumpOutput(stdout);
@@ -176,7 +177,7 @@ class AppMetadataManager {
         const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
         try {
             const stdout = await execWithTimeout(
-                `"${this.adbPath}" -s ${serial} shell dumpsys package${userArg} ${packageName}`,
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell dumpsys package${userArg} ${packageName}`,
                 DUMP_TIMEOUT_MS
             );
             const match = stdout.match(/versionCode=(\d+)/);

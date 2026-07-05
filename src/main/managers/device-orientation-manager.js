@@ -1,10 +1,6 @@
 const { exec } = require("child_process");
 const { normalizeOrientation, ORIENTATION_PORTRAIT } = require("../../shared/stream-params");
-
-function shellQuote(value) {
-    if (value == null) return '""';
-    return `"${String(value).replace(/"/g, '\\"')}"`;
-}
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -32,7 +28,7 @@ class DeviceOrientationManager {
         if (!serial || !this.adbPath) {
             throw new Error("ADB ou serial manquant");
         }
-        return execPromise(`"${this.adbPath}" -s ${shellQuote(serial)} shell ${shellCommand}`);
+        return execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell ${shellCommand}`);
     }
 
     async _readSetting(serial, key) {
@@ -50,9 +46,15 @@ class DeviceOrientationManager {
     async getDeviceDimensions(serial) {
         try {
             const out = await this._runShell(serial, "wm size");
-            const match = String(out).match(/(?:Physical|Override) size:\s*(\d+)x(\d+)/i);
-            if (!match) return null;
-            return { width: Number(match[1]), height: Number(match[2]) };
+            const physical = String(out).match(/Physical size:\s*(\d+)x(\d+)/i);
+            if (physical) {
+                return { width: Number(physical[1]), height: Number(physical[2]) };
+            }
+            const override = String(out).match(/Override size:\s*(\d+)x(\d+)/i);
+            if (override) {
+                return { width: Number(override[1]), height: Number(override[2]) };
+            }
+            return null;
         } catch (_err) {
             return null;
         }
@@ -77,7 +79,7 @@ class DeviceOrientationManager {
         const portrait = normalizeOrientation(orientation) === ORIENTATION_PORTRAIT;
         const naturalLandscape = deviceWidth > 0 && deviceHeight > 0
             ? deviceWidth >= deviceHeight
-            : true;
+            : false;
 
         if (naturalLandscape) {
             return portrait ? 1 : 0;

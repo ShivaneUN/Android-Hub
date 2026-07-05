@@ -1,9 +1,5 @@
 const { exec } = require("child_process");
-
-function shellQuote(value) {
-    if (value == null) return '""';
-    return `"${String(value).replace(/"/g, '\\"')}"`;
-}
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -30,7 +26,7 @@ class DevicePowerManager {
     async applyStayAwake(serial) {
         if (!serial) return;
 
-        const quoted = shellQuote(serial);
+        const quoted = adbSerialArg(serial);
 
         try {
             await execPromise(`"${this.adbPath}" -s ${quoted} shell svc power stayon true`);

@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld("sessionAPI", {
             sessionId,
             type,
             deviceId: options.deviceId,
+            stableDeviceId: options.stableDeviceId,
             label: options.label,
             screenOff: options.screenOff,
             stayAwakeActive: options.stayAwakeActive,

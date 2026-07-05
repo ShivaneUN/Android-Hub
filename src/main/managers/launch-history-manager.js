@@ -118,13 +118,6 @@ class LaunchHistoryManager {
 
         const key = this.buildKey(deviceId, packageName, userId);
         const now = Date.now();
-        const beforeCount = Object.keys(this.entries).length;
-        console.log("[LaunchHistoryManager] recordLaunch avant", {
-            key,
-            entries: beforeCount,
-            keys: Object.keys(this.entries)
-        });
-
         const existing = this.entries[key];
 
         if (existing) {
@@ -133,6 +126,7 @@ class LaunchHistoryManager {
             if (appName) existing.appName = appName;
             if (iconPath) existing.iconPath = iconPath;
             existing.userId = Number.isInteger(userId) ? userId : null;
+            existing.deviceId = deviceId;
         } else {
             this.entries[key] = {
                 deviceId,
@@ -146,14 +140,6 @@ class LaunchHistoryManager {
         }
 
         this.save();
-
-        const afterCount = Object.keys(this.entries).length;
-        console.log("[LaunchHistoryManager] recordLaunch après", {
-            key,
-            entries: afterCount,
-            keys: Object.keys(this.entries)
-        });
-
         return { success: true, entry: { ...this.entries[key], key } };
     }
 
@@ -163,6 +149,51 @@ class LaunchHistoryManager {
             .filter(([, entry]) => this.isValidEntry(entry))
             .map(([key, entry]) => ({ ...entry, key }))
             .sort((a, b) => (b.lastLaunchedAt || 0) - (a.lastLaunchedAt || 0));
+    }
+
+    /**
+     * Migre les entrées dont deviceId est un serial ADB (USB / ip:port) vers deviceId stable.
+     */
+    async migrateDeviceIdsToStable(resolveStableIdFn) {
+        if (typeof resolveStableIdFn !== "function") return false;
+
+        const next = {};
+        let changed = false;
+
+        for (const [key, entry] of Object.entries(this.entries)) {
+            if (!this.isValidEntry(entry)) continue;
+
+            const stableId = await resolveStableIdFn(entry.deviceId);
+            const canonicalDeviceId = stableId || entry.deviceId;
+            const newKey = this.buildKey(canonicalDeviceId, entry.packageName, entry.userId);
+            const migrated = {
+                ...entry,
+                deviceId: canonicalDeviceId
+            };
+
+            const existing = next[newKey];
+            if (!existing || (migrated.lastLaunchedAt || 0) >= (existing.lastLaunchedAt || 0)) {
+                next[newKey] = migrated;
+            }
+
+            if (canonicalDeviceId !== entry.deviceId || newKey !== key) {
+                changed = true;
+                console.log(
+                    "[LaunchHistoryManager] migration deviceId",
+                    entry.deviceId,
+                    "->",
+                    canonicalDeviceId,
+                    `(${key} -> ${newKey})`
+                );
+            }
+        }
+
+        if (changed) {
+            this.entries = next;
+            this.save();
+        }
+
+        return changed;
     }
 
     remove({ deviceId, packageName, userId = null, key = null } = {}) {

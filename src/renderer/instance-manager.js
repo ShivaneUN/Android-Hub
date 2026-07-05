@@ -56,6 +56,7 @@ async function setupInstance(id, deviceId, deviceName, packageName, label, optio
         if (window.sessionAPI) {
             await window.sessionAPI.registerView(id, "A", {
                 deviceId,
+                stableDeviceId: options.stableDeviceId || null,
                 label,
                 packageName: packageName || null
             });

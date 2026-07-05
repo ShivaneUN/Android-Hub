@@ -1,3 +1,5 @@
+const { collectDeviceAliasKeys } = require("./namesHandlers");
+
 function enrichPanelEntries(entries, { namesManager, colorsManager } = {}) {
     if (!Array.isArray(entries)) return [];
 
@@ -150,7 +152,13 @@ function registerWifiHandlers(deps) {
                     if (namesManager) {
                         namesManager.ensureDeviceOriginal(resolvedDeviceId, displayName);
                         if (name) {
-                            namesManager.setDeviceCustomName(resolvedDeviceId, displayName, name);
+                            const aliasKeys = collectDeviceAliasKeys(resolvedDeviceId, liveUsbSerial);
+                            namesManager.setDeviceCustomName(
+                                resolvedDeviceId,
+                                displayName,
+                                name,
+                                aliasKeys
+                            );
                         }
                     }
 
@@ -232,7 +240,13 @@ function registerWifiHandlers(deps) {
         const result = wifiManager.rename(deviceId, name);
         if (result.success && namesManager) {
             const entry = wifiManager.getByDeviceId(deviceId);
-            namesManager.setDeviceCustomName(deviceId, entry?.name || deviceId, name);
+            const aliasKeys = collectDeviceAliasKeys(deviceId, entry?.usbSerialHint);
+            namesManager.setDeviceCustomName(
+                deviceId,
+                entry?.name || deviceId,
+                name,
+                aliasKeys
+            );
         }
         void refreshDeviceList();
         return result;

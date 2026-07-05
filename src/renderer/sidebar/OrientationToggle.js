@@ -49,6 +49,11 @@ async function updateOrientationToggle() {
             return;
         }
 
+        if (result.type === "B") {
+            setOrientationToggleDisabled();
+            return;
+        }
+
         setOrientationToggleState(result.orientation === "portrait", result.sessionId);
     } catch (err) {
         console.error("[OrientationToggle] Erreur mise a jour:", err);

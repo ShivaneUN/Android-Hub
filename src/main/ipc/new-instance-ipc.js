@@ -1,4 +1,25 @@
 function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
+    async function resolveLaunchDims(serial, stableDeviceId, retries = 4) {
+        if (!serial || !global.deviceOrientationManager) return null;
+        let adbSerial = serial;
+        if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+            adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                deviceId: stableDeviceId || null,
+                serial
+            }) || serial;
+        }
+        for (let attempt = 0; attempt < retries; attempt += 1) {
+            const dims = await global.deviceOrientationManager.getDeviceDimensions(adbSerial);
+            if (dims?.width > 0 && dims?.height > 0) {
+                return dims;
+            }
+            if (attempt < retries - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 350));
+            }
+        }
+        return null;
+    }
+
     ipcMain.handle("new-instance:create", async (_event, payload = {}) => {
         try {
             const session = manager.createNewInstanceSession(payload);
@@ -10,9 +31,30 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
 
     ipcMain.handle("new-instance:start", async (_event, { sessionId }) => {
         try {
+            const pending = manager.getNewInstanceSession(sessionId);
+            let launchDims = null;
+            if (pending?.streamOptions) {
+                const { applyTypeBLaunchOrientation } = require("../../shared/stream-params");
+                launchDims = await resolveLaunchDims(pending.serial, pending.stableDeviceId);
+                applyTypeBLaunchOrientation(
+                    pending.streamOptions,
+                    launchDims?.width,
+                    launchDims?.height
+                );
+                console.log(
+                    `[NewInstance] ${sessionId} orientation lock:`,
+                    pending.streamOptions.captureOrientationLock || "null",
+                    launchDims ? `${launchDims.width}x${launchDims.height}` : "dims-absentes"
+                );
+            }
             const session = await manager.startNewInstanceSession(sessionId);
             if (global.launchHistoryManager && session?.serial && session?.packageName) {
                 let iconPath = null;
+                let stableDeviceId = session.stableDeviceId || null;
+                if (!stableDeviceId && global.deviceRegistry) {
+                    stableDeviceId = await global.deviceRegistry.resolveStableDeviceIdFromTransport(session.serial);
+                }
+                const historyDeviceId = stableDeviceId || session.serial;
                 if (global.appMetadataManager) {
                     const cached = global.appMetadataManager.getCachedEntry(
                         session.serial,
@@ -22,7 +64,7 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                     iconPath = cached?.iconPath || null;
                 }
                 global.launchHistoryManager.recordLaunch({
-                    deviceId: session.serial,
+                    deviceId: historyDeviceId,
                     packageName: session.packageName,
                     appName: session.tabLabel || session.packageName,
                     iconPath,
@@ -32,11 +74,27 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
             if (global.browserViewManager && session?.streamOptions) {
                 const entry = global.browserViewManager.getSessionEntry(sessionId);
                 if (entry) {
-                    const { fromScrcpyOptions } = require("../../shared/stream-params");
+                    const { fromScrcpyOptions, applyTypeBLaunchOrientation } = require("../../shared/stream-params");
+                    if (!launchDims && session.serial) {
+                        launchDims = await resolveLaunchDims(session.serial, session.stableDeviceId);
+                    }
+                    applyTypeBLaunchOrientation(
+                        session.streamOptions,
+                        launchDims?.width,
+                        launchDims?.height
+                    );
                     const isFirst = !entry._streamInitialized;
                     const params = fromScrcpyOptions(session.streamOptions, "B");
                     global.browserViewManager.setSessionStreamParams(sessionId, params, { asOriginal: isFirst });
                     global.browserViewManager.setSessionScrcpyOptions(sessionId, session.streamOptions);
+                    global.browserViewManager.setSessionCaptureOrientation(
+                        sessionId,
+                        "landscape",
+                        {
+                            captureRotation: session.streamOptions.captureRotation || 0,
+                            updateCaptureRotation: true
+                        }
+                    );
                     if (global.sessionStreamRegistry) {
                         global.sessionStreamRegistry.syncFromBrowserViewEntry(sessionId, entry);
                         global.sessionStreamRegistry.setScrcpyOptions(sessionId, session.streamOptions, { asOriginal: isFirst });

@@ -1,11 +1,7 @@
 const { exec } = require("child_process");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const STREAM_MUSIC = 3;
-
-function shellQuote(value) {
-    if (value == null) return '""';
-    return `"${String(value).replace(/"/g, '\\"')}"`;
-}
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -47,7 +43,7 @@ class DeviceAudioVolumeManager {
         if (!serial || !this.adbPath) {
             throw new Error("ADB ou serial manquant");
         }
-        return execPromise(`"${this.adbPath}" -s ${shellQuote(serial)} shell ${shellCommand}`);
+        return execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell ${shellCommand}`);
     }
 
     async _getMediaVolume(serial) {

@@ -1,5 +1,6 @@
 const { Menu, MenuItem, dialog, nativeImage, ipcMain } = require("electron");
 const { DEVICE_COLORS } = require("../../shared/device-colors");
+const { resolveStableDeviceId, collectDeviceAliasKeys, performSessionReset } = require("./namesHandlers");
 
 const colorSwatchCache = new Map();
 
@@ -144,25 +145,20 @@ function registerContextMenuHandlers(deps) {
                     if (!manager || !(await confirmReset(mainWin))) return;
 
                     if (target.kind === "device" && target.serial) {
-                        manager.resetDeviceName(target.serial);
+                        const stableId = await resolveStableDeviceId(target.serial);
+                        const aliasKeys = collectDeviceAliasKeys(stableId, target.serial);
+                        const original = manager.resetDeviceName(stableId, aliasKeys);
+
+                        const wifiConfig = global.wifiDevicesManager?.getByDeviceId?.(stableId);
+                        if (wifiConfig && original) {
+                            global.wifiDevicesManager.rename(stableId, original);
+                        }
+
                         notifyNamesUpdated(mainWin);
                     } else if (target.kind === "session" && target.sessionId) {
                         const bvm = getBrowserViewManager?.();
-                        const entry = bvm?.getSessionEntry(target.sessionId);
-                        if (!entry) return;
-
-                        const sessionKey = manager.buildSessionKey({
-                            sessionId: target.sessionId,
-                            type: entry.type,
-                            deviceId: entry.deviceId,
-                            packageName: entry.packageName,
-                            userId: entry.userId
-                        });
-                        const original = manager.resetSessionName(sessionKey)
-                            || entry.originalLabel
-                            || entry.label;
-                        bvm.updateSessionMetadata(target.sessionId, { label: original });
-                        notifyNamesUpdated(mainWin);
+                        if (!bvm) return;
+                        await performSessionReset(manager, bvm, mainWin, target.sessionId);
                     }
                 }
             }));

@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 const { pathToFileURL } = require("url");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 20000;
 
@@ -83,7 +84,7 @@ class AppIconExtractor {
     async getApkPathOnDevice(serial, packageName, userId = null) {
         const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
         const stdout = await execWithTimeout(
-            `"${this.adbPath}" -s ${serial} shell pm path${userArg} ${packageName}`
+            `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm path${userArg} ${packageName}`
         );
 
         const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -97,7 +98,7 @@ class AppIconExtractor {
     async pullApk(serial, remoteApkPath, localApkPath) {
         fs.mkdirSync(path.dirname(localApkPath), { recursive: true });
         await execWithTimeout(
-            `"${this.adbPath}" -s ${serial} pull "${remoteApkPath}" "${localApkPath}"`,
+            `"${this.adbPath}" -s ${adbSerialArg(serial)} pull "${remoteApkPath}" "${localApkPath}"`,
             45000
         );
 

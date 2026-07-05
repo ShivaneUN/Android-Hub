@@ -79,12 +79,13 @@ function toggleOrientationValue(orientation) {
 function resolveCaptureOrientationLock(orientation, deviceWidth, deviceHeight) {
     const wantPortrait = normalizeOrientation(orientation) === ORIENTATION_PORTRAIT;
     const hasDims = Number(deviceWidth) > 0 && Number(deviceHeight) > 0;
-    const naturalLandscape = hasDims ? deviceWidth >= deviceHeight : true;
+    // Sans dims physiques, supposer un téléphone portrait (cas le plus fréquent).
+    const naturalLandscape = hasDims ? deviceWidth >= deviceHeight : false;
 
     if (naturalLandscape) {
-        return wantPortrait ? "@270" : null;
+        return wantPortrait ? "@90" : null;
     }
-    return wantPortrait ? null : "@90";
+    return wantPortrait ? null : "@270";
 }
 
 function captureRotationFromLock(lock) {
@@ -97,6 +98,20 @@ function applyCaptureOrientationToOptions(options, orientation, deviceWidth, dev
     const lock = resolveCaptureOrientationLock(orientation, deviceWidth, deviceHeight);
     options.captureOrientationLock = lock;
     options.captureRotation = captureRotationFromLock(lock);
+    return options;
+}
+
+/** Type B au lancement : même verrou capture que Type A en paysage (pas de mode portrait UI). */
+function applyTypeBLaunchOrientation(options = {}, deviceWidth, deviceHeight) {
+    delete options.orientation;
+    applyCaptureOrientationToOptions(options, ORIENTATION_LANDSCAPE, deviceWidth, deviceHeight);
+    if (Number(deviceWidth) > 0 && Number(deviceHeight) > 0) {
+        options.deviceWidth = Number(deviceWidth);
+        options.deviceHeight = Number(deviceHeight);
+    } else {
+        delete options.deviceWidth;
+        delete options.deviceHeight;
+    }
     return options;
 }
 
@@ -278,7 +293,8 @@ const api = {
     toggleOrientationValue,
     resolveCaptureOrientationLock,
     captureRotationFromLock,
-    applyCaptureOrientationToOptions
+    applyCaptureOrientationToOptions,
+    applyTypeBLaunchOrientation
 };
 
 if (typeof module !== "undefined" && module.exports) {

@@ -9,6 +9,7 @@ const {
     withOrientation,
     toggleOrientationValue,
     applyCaptureOrientationToOptions,
+    applyTypeBLaunchOrientation,
     DEFAULT_STREAM_PARAMS
 } = require("../../shared/stream-params");
 
@@ -31,10 +32,15 @@ class StreamParamsManager {
         this.getGlobalAudioOutputManager = deps.getGlobalAudioOutputManager;
         this.setInputControllerOrientation = deps.setInputControllerOrientation;
         this.getDeviceDimensions = deps.getDeviceDimensions;
+        this.fetchDeviceDimensions = deps.fetchDeviceDimensions;
         this.applyPhysicalOrientation = deps.applyPhysicalOrientation;
+        this.resolveEffectiveAdbSerial = deps.resolveEffectiveAdbSerial;
     }
 
     _resolveOrientation(sessionId, entry) {
+        if (entry?.type === "B") {
+            return "landscape";
+        }
         if (entry?.captureOrientation) {
             return normalizeOrientation(entry.captureOrientation);
         }
@@ -43,11 +49,39 @@ class StreamParamsManager {
     }
 
     _buildScrcpyOptions(sessionId, entry, type, params, orientation, deviceDims = null) {
-        const base = withOrientation(toScrcpyOptions(params, type), orientation);
+        let base = toScrcpyOptions(params, type);
         if (Number.isInteger(entry.userId)) {
             base.userId = entry.userId;
         }
 
+        if (type === "B") {
+            const dims = deviceDims || this.getDeviceDimensions?.(entry.deviceId) || null;
+            applyTypeBLaunchOrientation(base, dims?.width, dims?.height);
+
+            const live = this._getLiveScrcpyOptions(sessionId, type);
+            if (!live) return base;
+
+            const merged = {
+                ...live,
+                bitRate: base.bitRate,
+                maxFps: base.maxFps,
+                iFrameInterval: base.iFrameInterval,
+                userId: base.userId,
+                captureOrientationLock: base.captureOrientationLock,
+                captureRotation: base.captureRotation || 0
+            };
+            if (base.newDisplay) {
+                merged.newDisplay = base.newDisplay;
+                delete merged.displayId;
+            } else if (live.displayId !== undefined) {
+                merged.displayId = live.displayId;
+                delete merged.newDisplay;
+            }
+            delete merged.orientation;
+            return merged;
+        }
+
+        base = withOrientation(base, orientation);
         const dims = deviceDims || this.getDeviceDimensions?.(entry.deviceId) || null;
         applyCaptureOrientationToOptions(
             base,
@@ -67,20 +101,9 @@ class StreamParamsManager {
             orientation: base.orientation,
             userId: base.userId,
             captureOrientationLock: base.captureOrientationLock,
-            captureRotation: base.captureRotation
+            captureRotation: base.captureRotation,
+            maxSize: base.maxSize
         };
-
-        if (type === "B") {
-            if (base.newDisplay) {
-                merged.newDisplay = base.newDisplay;
-                delete merged.displayId;
-            } else if (live.displayId !== undefined) {
-                merged.displayId = live.displayId;
-                delete merged.newDisplay;
-            }
-        } else {
-            merged.maxSize = base.maxSize;
-        }
 
         if (base.orientation) {
             merged.orientation = base.orientation;
@@ -99,6 +122,9 @@ class StreamParamsManager {
 
     _notifyOrientationChanged(sessionId, orientation) {
         const manager = this._manager();
+        const entry = manager?.getSessionEntry(sessionId);
+        if (entry?.type === "B") return;
+
         manager?.sendToSessionView(sessionId, "session:orientation-changed", { sessionId, orientation });
 
         const win = this.getMainWindow?.();
@@ -113,6 +139,14 @@ class StreamParamsManager {
 
     _manager() {
         return this.getBrowserViewManager?.() || null;
+    }
+
+    async _resolveDeviceDimensions(entry) {
+        if (!entry) return null;
+        if (typeof this.fetchDeviceDimensions === "function") {
+            return await this.fetchDeviceDimensions(entry);
+        }
+        return this.getDeviceDimensions?.(entry.deviceId) || null;
     }
 
     _registry() {
@@ -220,7 +254,8 @@ class StreamParamsManager {
         const params = validation.params;
 
         const orientation = this._resolveOrientation(sessionId, entry);
-        const scrcpyOptions = this._buildScrcpyOptions(sessionId, entry, type, params, orientation);
+        const deviceDims = await this._resolveDeviceDimensions(entry);
+        const scrcpyOptions = this._buildScrcpyOptions(sessionId, entry, type, params, orientation, deviceDims);
 
         try {
             this._notifyStreamRestarting(sessionId);
@@ -240,7 +275,8 @@ class StreamParamsManager {
             manager.setSessionStreamParams(sessionId, params);
             manager.setSessionScrcpyOptions(sessionId, scrcpyOptions);
             manager.setSessionCaptureOrientation(sessionId, orientation, {
-                captureRotation: scrcpyOptions.captureRotation || 0
+                captureRotation: scrcpyOptions.captureRotation || 0,
+                updateCaptureRotation: true
             });
             this._registry()?.setScrcpyOptions(sessionId, scrcpyOptions);
 
@@ -285,6 +321,17 @@ class StreamParamsManager {
         const ctx = this.getSessionContext(sessionId);
         if (!ctx.success) return ctx;
 
+        if (ctx.type === "B") {
+            return {
+                success: true,
+                sessionId,
+                orientation: "landscape",
+                restarted: false,
+                physical: false,
+                message: "Type B reste en paysage — orientation non modifiable."
+            };
+        }
+
         const current = this._resolveOrientation(sessionId, ctx.entry);
         if (current === normalized) {
             return {
@@ -296,7 +343,7 @@ class StreamParamsManager {
             };
         }
 
-        const deviceDims = this.getDeviceDimensions?.(ctx.entry.deviceId) || null;
+        const deviceDims = await this._resolveDeviceDimensions(ctx.entry);
         const scrcpyOptions = this._buildScrcpyOptions(
             sessionId,
             ctx.entry,
@@ -306,22 +353,29 @@ class StreamParamsManager {
             deviceDims
         );
 
+        let adbSerial = ctx.entry.deviceId;
+        if (this.resolveEffectiveAdbSerial) {
+            adbSerial = await this.resolveEffectiveAdbSerial({
+                deviceId: ctx.entry.stableDeviceId || null,
+                serial: ctx.entry.deviceId
+            }) || adbSerial;
+        }
+
         let physicalResult = { success: false, physical: false };
-        if (typeof this.applyPhysicalOrientation === "function" && ctx.entry.deviceId) {
+        if (typeof this.applyPhysicalOrientation === "function" && adbSerial) {
             physicalResult = await this.applyPhysicalOrientation(
-                ctx.entry.deviceId,
+                adbSerial,
                 normalized,
                 deviceDims
             );
             if (physicalResult?.success) {
-                await sleep(350);
+                const isWifiSerial = /:\d+$/.test(String(adbSerial));
+                await sleep(isWifiSerial ? 650 : 350);
             }
         }
 
         const manager = this._manager();
-        manager.setSessionCaptureOrientation(sessionId, normalized, {
-            captureRotation: 0
-        });
+        manager.setSessionCaptureOrientation(sessionId, normalized);
 
         const priorOptions = ctx.entry.scrcpyOptions ? { ...ctx.entry.scrcpyOptions } : {};
         if (scrcpyOptions.orientation) {
@@ -329,8 +383,6 @@ class StreamParamsManager {
         } else {
             delete priorOptions.orientation;
         }
-        delete priorOptions.captureOrientationLock;
-        priorOptions.captureRotation = 0;
         manager.setSessionScrcpyOptions(sessionId, priorOptions);
         this._registry()?.setScrcpyOptions(sessionId, priorOptions);
         this._notifyOrientationChanged(sessionId, normalized);
@@ -358,6 +410,16 @@ class StreamParamsManager {
         const entry = manager?.getSessionEntry(targetId);
         if (!entry) {
             return { success: false, error: "Session introuvable" };
+        }
+
+        if (entry.type === "B") {
+            return {
+                success: true,
+                sessionId: targetId,
+                orientation: "landscape",
+                restarted: false,
+                message: "Type B reste en paysage — orientation non modifiable."
+            };
         }
 
         const next = toggleOrientationValue(this._resolveOrientation(targetId, entry));
@@ -455,6 +517,14 @@ class StreamParamsManager {
             return { success: false, error: "Aucun appareil associé à cette session" };
         }
 
+        let adbSerial = entry.deviceId;
+        if (this.resolveEffectiveAdbSerial) {
+            adbSerial = await this.resolveEffectiveAdbSerial({
+                deviceId: entry.stableDeviceId || null,
+                serial: entry.deviceId
+            }) || adbSerial;
+        }
+
         const win = this.getMainWindow?.();
         if (!win || win.isDestroyed()) {
             return { success: false, error: "Fenêtre principale indisponible" };
@@ -465,7 +535,7 @@ class StreamParamsManager {
         await sleep(500);
 
         const result = await this.startVideoStream(
-            entry.deviceId,
+            adbSerial,
             sessionId,
             entry.packageName || null,
             scrcpyOptions,
@@ -491,7 +561,20 @@ class StreamParamsManager {
         }
 
         try {
-            await newInstanceManager.restartWithStreamOptions(sessionId, scrcpyOptions, {
+            const deviceDims = await this._resolveDeviceDimensions(entry);
+            const launchOptions = applyTypeBLaunchOrientation(
+                scrcpyOptions,
+                deviceDims?.width,
+                deviceDims?.height
+            );
+            if (session.streamOptions) {
+                session.streamOptions = applyTypeBLaunchOrientation(
+                    session.streamOptions,
+                    deviceDims?.width,
+                    deviceDims?.height
+                );
+            }
+            await newInstanceManager.restartWithStreamOptions(sessionId, launchOptions, {
                 userId: entry.userId
             });
 

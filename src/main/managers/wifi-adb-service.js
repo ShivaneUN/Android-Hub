@@ -1,5 +1,6 @@
 const { exec } = require("child_process");
 const { DEFAULT_WIFI_PORT } = require("./wifi-devices-manager");
+const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const WIFI_SERIAL_PATTERN = /^\d{1,3}(?:\.\d{1,3}){3}:\d+$/;
 const DEFAULT_CONNECT_TIMEOUT_MS = 7000;
@@ -24,10 +25,6 @@ function execWithTimeout(command, timeoutMs) {
             setTimeout(() => reject(new Error(`Timeout ADB (${timeoutMs}ms)`)), timeoutMs);
         })
     ]);
-}
-
-function adbSerialArg(serial) {
-    return `"${String(serial || "").replace(/"/g, '\\"')}"`;
 }
 
 class WifiAdbService {

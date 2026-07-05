@@ -31,7 +31,8 @@ const {
 const { StreamParamsManager } = require("./managers/stream-params-manager");
 const {
     applyCaptureOrientationToOptions,
-    getOrientationFromScrcpyOptions
+    getOrientationFromScrcpyOptions,
+    applyTypeBLaunchOrientation
 } = require("../shared/stream-params");
 const { SessionStreamRegistry } = require("./managers/session-stream-registry");
 const { VideoPreviewTooltipManager } = require("./managers/video-preview-tooltip-manager");
@@ -52,6 +53,7 @@ const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
 const { SessionAudioProcessManager } = require("./managers/session-audio-process-manager");
 const { registerAudioHandlers } = require("./ipc/audioHandlers");
+const { adbSerialArg } = require("../shared/adb-serial-arg");
 
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
@@ -71,7 +73,7 @@ function execPromise(command) {
 async function resolveLaunchActivity(serial, packageName, userId = null) {
     const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
     try {
-        const stdout = await execPromise(`"${adbPath}" -s ${serial} shell cmd package resolve-activity${userArg} --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${packageName}`);
+        const stdout = await execPromise(`"${adbPath}" -s ${adbSerialArg(serial)} shell cmd package resolve-activity${userArg} --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${packageName}`);
         const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (lines.length === 0) return null;
         const candidate = lines.find(l => l.includes('/')) || lines[lines.length - 1];
@@ -91,7 +93,7 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     const activity = await resolveLaunchActivity(serial, packageName, userId);
 
     if (!activity) {
-        exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
+        exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
             if (err) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err.message);
         });
         return;
@@ -102,16 +104,16 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     if (useDisplay) {
         launchCandidates.push(
             options.backgroundLaunch
-                ? `"${adbPath}" -s ${serial} shell am start${userArg} --display ${displayId} --activity-task-on-home -n ${activity}`
-                : `"${adbPath}" -s ${serial} shell am start${userArg} --display ${displayId} -n ${activity}`
+                ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} --activity-task-on-home -n ${activity}`
+                : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} -n ${activity}`
         );
     }
     launchCandidates.push(
         options.backgroundLaunch
-            ? `"${adbPath}" -s ${serial} shell am start${userArg} --activity-task-on-home -n ${activity}`
-            : `"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`
+            ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --activity-task-on-home -n ${activity}`
+            : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`
     );
-    launchCandidates.push(`"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`);
+    launchCandidates.push(`"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`);
 
     let launched = false;
     for (const launchCmd of launchCandidates) {
@@ -125,14 +127,14 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     }
 
     if (!launched) {
-        exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
+        exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
             if (err2) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err2.message);
         });
         return;
     }
 
     if (options.backgroundLaunch) {
-        exec(`"${adbPath}" -s ${serial} shell input keyevent 3`, { windowsHide: true }, (err) => {
+        exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell input keyevent 3`, { windowsHide: true }, (err) => {
             if (err) console.error("Erreur mise de l'app en arrière-plan:", err.message);
         });
     }
@@ -198,6 +200,59 @@ let devicePowerManager;
 let deviceOrientationManager;
 let lastConnectedSerials = [];
 
+/** @type {Map<string, { width: number, height: number, at: number }>} */
+const deviceDimensionsCache = new Map();
+const DEVICE_DIMS_CACHE_TTL_MS = 60000;
+
+function readCachedInputControllerDims(serial) {
+    if (!serial) return null;
+    for (const controller of Object.values(inputControllersBySession)) {
+        if (controller.serial === serial && controller.deviceWidth > 0 && controller.deviceHeight > 0) {
+            return { width: controller.deviceWidth, height: controller.deviceHeight };
+        }
+    }
+    return null;
+}
+
+function readCachedDeviceDimensions(serial) {
+    if (!serial) return null;
+    const fromInput = readCachedInputControllerDims(serial);
+    if (fromInput) return fromInput;
+
+    const cached = deviceDimensionsCache.get(serial);
+    if (cached && Date.now() - cached.at < DEVICE_DIMS_CACHE_TTL_MS) {
+        return { width: cached.width, height: cached.height };
+    }
+    return null;
+}
+
+async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null) {
+    if (!serial) return null;
+
+    let adbSerial = serial;
+    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
+            deviceId: stableDeviceId || null,
+            serial
+        }) || serial;
+    }
+
+    const cached = readCachedDeviceDimensions(adbSerial);
+    if (cached) return cached;
+
+    const dims = await deviceOrientationManager?.getDeviceDimensions(adbSerial);
+    if (dims?.width > 0 && dims?.height > 0) {
+        deviceDimensionsCache.set(adbSerial, { ...dims, at: Date.now() });
+        return dims;
+    }
+    return null;
+}
+
+async function resolveDeviceDimensionsForEntry(entry) {
+    if (!entry?.deviceId) return null;
+    return resolveDeviceDimensionsForSerial(entry.deviceId, entry.stableDeviceId || null);
+}
+
 function syncDevicePowerPolicy(devices) {
     if (!devicePowerManager || !Array.isArray(devices)) return;
     const serials = devices
@@ -234,8 +289,11 @@ function getActiveTypeBHistoryKeys() {
 
     if (newInstanceManager) {
         for (const session of newInstanceManager.listNewInstanceSessions()) {
-            if (session.serial && session.packageName) {
-                keys.add(buildLaunchHistoryKey(session.serial, session.packageName, session.userId));
+            if (session.packageName) {
+                const keyId = session.stableDeviceId || session.serial;
+                if (keyId) {
+                    keys.add(buildLaunchHistoryKey(keyId, session.packageName, session.userId));
+                }
             }
         }
     }
@@ -243,8 +301,12 @@ function getActiveTypeBHistoryKeys() {
     const bvm = global.browserViewManager;
     if (bvm) {
         for (const session of bvm.getAllSessions()) {
-            if (session.type === "B" && session.deviceId && session.packageName) {
-                keys.add(buildLaunchHistoryKey(session.deviceId, session.packageName, session.userId));
+            if (session.type === "B" && session.packageName) {
+                const entry = bvm.getSessionEntry(session.sessionId);
+                const keyId = entry?.stableDeviceId || session.deviceId;
+                if (keyId) {
+                    keys.add(buildLaunchHistoryKey(keyId, session.packageName, session.userId));
+                }
             }
         }
     }
@@ -477,6 +539,47 @@ function getConnectedDevicesSimple() {
 const videoClients = {}; // { tabId: ScrcpySocketClient }
 const inputControllersBySession = {}; // { sessionId: AdbInputController }
 const inputDeviceMetaBySession = {}; // { sessionId: { streamWidth, streamHeight } }
+/** @type {Map<string, { serial: string, launchSerial: string|null, stableDeviceId: string|null }>} */
+const sessionAdbSerialCache = new Map();
+
+async function getSessionAdbSerial(routingId, { launchSerial, stableDeviceId } = {}) {
+    const cached = sessionAdbSerialCache.get(routingId);
+    if (
+        cached?.serial
+        && cached.launchSerial === (launchSerial || null)
+        && cached.stableDeviceId === (stableDeviceId || null)
+    ) {
+        return cached.serial;
+    }
+
+    if (!global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        return launchSerial || null;
+    }
+
+    const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+        deviceId: stableDeviceId || null,
+        serial: launchSerial || null
+    });
+    const serial = resolved || launchSerial || null;
+    if (serial) {
+        sessionAdbSerialCache.set(routingId, {
+            serial,
+            launchSerial: launchSerial || null,
+            stableDeviceId: stableDeviceId || null
+        });
+    }
+    return serial;
+}
+
+function invalidateSessionAdbSerialCache(routingId) {
+    if (routingId) {
+        sessionAdbSerialCache.delete(routingId);
+        return;
+    }
+    sessionAdbSerialCache.clear();
+}
+
+global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
 const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
 const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
 
@@ -535,7 +638,7 @@ function buildDisplayBootstrapScrcpyArgs(baseArgs) {
     return next;
 }
 
-function buildNewInstanceExternalBaseArgs(serial, packageName, userId) {
+function buildNewInstanceExternalBaseArgs(serial, packageName, userId, { captureOrientationLock } = {}) {
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
     const args = [
         "--serial", serial,
@@ -546,6 +649,9 @@ function buildNewInstanceExternalBaseArgs(serial, packageName, userId) {
         "--record=NUL",
         "--record-format=mkv"
     ];
+    if (captureOrientationLock) {
+        args.push(`--capture-orientation=${captureOrientationLock}`);
+    }
     if (normalizedUserId === null && packageName) {
         args.splice(3, 0, `--start-app=${packageName}`);
     }
@@ -851,6 +957,14 @@ app.whenReady().then(() => {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
     global.launchHistoryManager = launchHistoryManager;
+    void (async () => {
+        if (wifiStartupPromise) await wifiStartupPromise;
+        if (launchHistoryManager && deviceRegistry) {
+            await launchHistoryManager.migrateDeviceIdsToStable((id) =>
+                deviceRegistry.resolveStableDeviceIdFromTransport(id)
+            );
+        }
+    })();
     global.globalAudioOutputManager = new GlobalAudioOutputManager();
     global.sessionAudioProcessManager = new SessionAudioProcessManager(scrcpyBinaryPath);
     global.sessionAudioProcessManager.setResolvers({
@@ -939,6 +1053,8 @@ async function listDevicesForUI() {
 }
 
     ipcMain.handle("get-devices", async () => {
+        invalidateSessionAdbSerialCache();
+        deviceDimensionsCache.clear();
         const devices = await listDevicesForUI();
         const connectedCount = devices.filter((d) => d.connected !== false).length;
         console.log(`[get-devices] connected count=${connectedCount}`);
@@ -989,6 +1105,7 @@ async function listDevicesForUI() {
         if (!sessionId) return;
         delete inputControllersBySession[sessionId];
         delete inputDeviceMetaBySession[sessionId];
+        invalidateSessionAdbSerialCache(sessionId);
     }
     global.releaseSessionInputResources = releaseSessionInputResources;
 
@@ -1023,8 +1140,23 @@ async function listDevicesForUI() {
         if (meta) {
             controller.setStreamSize(meta.streamWidth, meta.streamHeight);
         }
+        const entry = global.browserViewManager?.getSessionEntry(routingId);
+        if (entry?.captureRotation !== undefined && typeof controller.setCaptureRotation === "function") {
+            controller.setCaptureRotation(entry.captureRotation);
+        }
         inputControllersBySession[routingId] = controller;
         return controller;
+    }
+
+    function syncInputControllerCaptureRotation(controller, routingId, typeBSession) {
+        if (!controller) return;
+        const entry = global.browserViewManager?.getSessionEntry(routingId);
+        const captureRotation = entry?.captureRotation
+            ?? typeBSession?.streamOptions?.captureRotation
+            ?? 0;
+        if (typeof controller.setCaptureRotation === "function") {
+            controller.setCaptureRotation(captureRotation);
+        }
     }
 
     function resolveTypeBDisplayId(typeBSession) {
@@ -1062,8 +1194,10 @@ async function listDevicesForUI() {
         if (!controller || controller.serial !== resolvedDeviceId) {
             controller = await getOrCreateSessionInputController(routingId, resolvedDeviceId);
         }
+        syncInputControllerCaptureRotation(controller, routingId, typeBSession);
         if (Number.isInteger(displayId)) {
             controller.setDisplayId(displayId);
+            controller.setCaptureRotation(0);
         }
         if (streamWidth > 0 && streamHeight > 0) {
             controller.setStreamSize(streamWidth, streamHeight);
@@ -1123,15 +1257,26 @@ async function listDevicesForUI() {
             throw new Error("DeviceId manquant pour send-input");
         }
 
+        const entry = global.browserViewManager?.getSessionEntry(routingId);
+        const typeBForResolve = newInstanceManager?.getNewInstanceSession(routingId);
+        const resolvedSerial = await getSessionAdbSerial(routingId, {
+            launchSerial: resolvedDeviceId,
+            stableDeviceId: entry?.stableDeviceId || typeBForResolve?.stableDeviceId || null
+        });
+        if (resolvedSerial) {
+            resolvedDeviceId = resolvedSerial;
+        }
+
         const sessionEntry = global.browserViewManager?.getSessionEntry(routingId);
         const typeBSession = newInstanceManager?.getNewInstanceSession(routingId);
         const isTypeB = sessionEntry?.type === "B" || Boolean(typeBSession);
 
         if (isTypeB && newInstanceManager) {
             const displayId = resolveTypeBDisplayId(typeBSession);
-            const preferHubAdbTouch = Number.isInteger(displayId) && (type === "touch" || type === "scroll");
+            const preferHubAdbInput = Number.isInteger(displayId)
+                && (type === "touch" || type === "scroll" || type === "key");
 
-            if (preferHubAdbTouch) {
+            if (preferHubAdbInput) {
                 try {
                     await sendTypeBInputViaHubAdb({
                         routingId,
@@ -1238,10 +1383,7 @@ async function listDevicesForUI() {
             return { width: 1920, height: 1080 };
         }
 
-        const connState = scrcpyClient?.getConnectionState?.();
-        const preferAdbTouch = Boolean(connState?.controlFromFallback && connState?.hasAudio);
-
-        if (scrcpyClient?.controlSocket && !preferAdbTouch && (type === "touch" || type === "scroll")) {
+        if (scrcpyClient?.controlSocket && (type === "touch" || type === "scroll")) {
             const controlSize = resolveControlSize(scrcpyClient);
             try {
                 if (type === "touch") {
@@ -1307,9 +1449,7 @@ async function listDevicesForUI() {
             controller.setOrientation(orientation);
         }
 
-        if (sessionEntry?.captureRotation !== undefined && typeof controller.setCaptureRotation === "function") {
-            controller.setCaptureRotation(sessionEntry.captureRotation);
-        }
+        syncInputControllerCaptureRotation(controller, routingId, null);
 
         if (streamWidth && streamHeight) {
             controller.setStreamSize(streamWidth, streamHeight);
@@ -1352,8 +1492,22 @@ async function listDevicesForUI() {
         }
 
         const normalizedUserId = Number.isInteger(userId) ? userId : null;
-        const baseArgs = buildNewInstanceExternalBaseArgs(serial, packageName, normalizedUserId);
+        let launchDims = await resolveDeviceDimensionsForSerial(serial);
+        if (!launchDims) {
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            launchDims = await resolveDeviceDimensionsForSerial(serial);
+        }
+        const launchOrient = {};
+        applyTypeBLaunchOrientation(launchOrient, launchDims?.width, launchDims?.height);
+        const baseArgs = buildNewInstanceExternalBaseArgs(serial, packageName, normalizedUserId, {
+            captureOrientationLock: launchOrient.captureOrientationLock || null
+        });
         const args = buildExternalScrcpyArgs(baseArgs);
+        console.log(
+            `[NewInstance] launch ${serial} capture-orientation:`,
+            launchOrient.captureOrientationLock || "null",
+            launchDims ? `${launchDims.width}x${launchDims.height}` : "dims-absentes"
+        );
 
         try {
             const launchId = `launch-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1471,16 +1625,22 @@ async function listDevicesForUI() {
     });
 
     async function startVideoStreamLogic(serial, tabId, packageName, options = {}, runtime = {}) {
-        if (!options.captureOrientationLock) {
-            let dims = null;
-            for (const ctrl of Object.values(inputControllersBySession)) {
-                if (ctrl.serial === serial && ctrl.deviceWidth > 0 && ctrl.deviceHeight > 0) {
-                    dims = { width: ctrl.deviceWidth, height: ctrl.deviceHeight };
-                    break;
-                }
+        const entry = global.browserViewManager?.getSessionEntry(tabId);
+        const isTypeA = !entry || entry.type !== "B";
+
+        if (isTypeA) {
+            let dims = readCachedDeviceDimensions(serial);
+            if (!dims) {
+                dims = await resolveDeviceDimensionsForSerial(serial);
             }
             const orientation = options.orientation || getOrientationFromScrcpyOptions(options);
             applyCaptureOrientationToOptions(options, orientation, dims?.width, dims?.height);
+        } else {
+            let dims = readCachedDeviceDimensions(serial);
+            if (!dims) {
+                dims = await resolveDeviceDimensionsForSerial(serial);
+            }
+            applyTypeBLaunchOrientation(options, dims?.width, dims?.height);
         }
 
         if (videoClients[tabId]) {
@@ -1528,7 +1688,7 @@ async function listDevicesForUI() {
 
             const activity = await resolveLaunchActivity(serial, targetPackage, userId);
             if (!activity) {
-                exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
+                exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
                     if (err) console.error(`Fallback lancement app ${targetPackage} (user=${userId ?? "default"}):`, err.message);
                 });
                 return;
@@ -1539,16 +1699,16 @@ async function listDevicesForUI() {
             if (Number.isInteger(newDisplayId)) {
                 launchCandidates.push(
                     options.backgroundLaunch
-                        ? `"${adbPath}" -s ${serial} shell am start${userArg} --display ${newDisplayId} --activity-task-on-home -n ${activity}`
-                        : `"${adbPath}" -s ${serial} shell am start${userArg} --display ${newDisplayId} -n ${activity}`
+                        ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${newDisplayId} --activity-task-on-home -n ${activity}`
+                        : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${newDisplayId} -n ${activity}`
                 );
             }
             launchCandidates.push(
                 options.backgroundLaunch
-                    ? `"${adbPath}" -s ${serial} shell am start${userArg} --activity-task-on-home -n ${activity}`
-                    : `"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`
+                    ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --activity-task-on-home -n ${activity}`
+                    : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`
             );
-            launchCandidates.push(`"${adbPath}" -s ${serial} shell am start${userArg} -n ${activity}`);
+            launchCandidates.push(`"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`);
 
             (async () => {
                 let launched = false;
@@ -1563,14 +1723,14 @@ async function listDevicesForUI() {
                 }
 
                 if (!launched) {
-                    exec(`"${adbPath}" -s ${serial} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
+                    exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${targetPackage} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
                         if (err2) console.error(`Fallback lancement app ${targetPackage} (user=${userId ?? "default"}):`, err2.message);
                     });
                     return;
                 }
 
                 if (options.backgroundLaunch) {
-                    exec(`"${adbPath}" -s ${serial} shell input keyevent 3`, { windowsHide: true }, (err3) => {
+                    exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell input keyevent 3`, { windowsHide: true }, (err3) => {
                         if (err3) console.error(`Erreur mise de l'app en arrière-plan:`, err3.message);
                     });
                 }
@@ -1682,7 +1842,7 @@ async function listDevicesForUI() {
             };
 
             if (options.disableAnimations) {
-                exec(`"${adbPath}" -s ${serial} shell settings put global window_animation_scale 0.0 && settings put global transition_animation_scale 0.0 && settings put global animator_duration_scale 0.0`, { windowsHide: true }, (err) => {
+                exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell settings put global window_animation_scale 0.0 && settings put global transition_animation_scale 0.0 && settings put global animator_duration_scale 0.0`, { windowsHide: true }, (err) => {
                     if (err) console.error(`Erreur désactivation animations:`, err.message);
                 });
             }
@@ -1833,7 +1993,10 @@ async function listDevicesForUI() {
                 global.browserViewManager.setSessionCaptureOrientation(
                     tabId,
                     getOrientationFromScrcpyOptions(streamOptions),
-                    { captureRotation: streamOptions.captureRotation || 0 }
+                    {
+                        captureRotation: streamOptions.captureRotation || 0,
+                        updateCaptureRotation: true
+                    }
                 );
 
                 if (global.sessionStreamRegistry) {
@@ -1964,18 +2127,22 @@ async function listDevicesForUI() {
                 controller.setCaptureRotation(entry?.captureRotation || 0);
             }
         },
-        getDeviceDimensions: (serial) => {
-            if (!serial) return null;
-            for (const controller of Object.values(inputControllersBySession)) {
-                if (controller.serial === serial && controller.deviceWidth > 0 && controller.deviceHeight > 0) {
-                    return { width: controller.deviceWidth, height: controller.deviceHeight };
-                }
+        getDeviceDimensions: (serial) => readCachedDeviceDimensions(serial),
+        fetchDeviceDimensions: (entry) => resolveDeviceDimensionsForEntry(entry),
+        applyPhysicalOrientation: async (serialHint, orientation, deviceDims) => {
+            let serial = serialHint;
+            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                serial = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                    deviceId: null,
+                    serial: serialHint
+                }) || serialHint;
             }
-            return null;
+            const dims = deviceDims || await resolveDeviceDimensionsForSerial(serial);
+            return deviceOrientationManager?.applyOrientation(serial, orientation, dims)
+                ?? Promise.resolve({ success: false, error: "Gestionnaire d'orientation indisponible" });
         },
-        applyPhysicalOrientation: (serial, orientation, deviceDims) =>
-            deviceOrientationManager?.applyOrientation(serial, orientation, deviceDims)
-                ?? Promise.resolve({ success: false, error: "Gestionnaire d'orientation indisponible" })
+        resolveEffectiveAdbSerial: (params) =>
+            global.deviceRegistry?.resolveEffectiveAdbSerial(params) ?? Promise.resolve(params?.serial || null)
     });
 
     registerSessionHandlers(adbPath, {
