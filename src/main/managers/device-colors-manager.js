@@ -140,17 +140,24 @@ class DeviceColorsManager {
         });
     }
 
-    applySessionColors(sessions) {
+    applySessionColors(sessions, adbSerialToDeviceId = null) {
         if (!Array.isArray(sessions)) return sessions;
 
+        const resolveColorKey = (adbSerial) => {
+            if (!adbSerial) return null;
+            return adbSerialToDeviceId?.get(adbSerial) || adbSerial;
+        };
+
         const connectedIds = sessions
-            .map((session) => session?.deviceId)
+            .map((session) => resolveColorKey(session?.deviceId))
             .filter(Boolean);
 
         return sessions.map((session) => {
             if (!session?.deviceId) return session;
-            const deviceColor = this.getColorForDevice(session.deviceId)
-                || this.ensureColorOnConnect(session.deviceId, connectedIds);
+
+            const colorKey = resolveColorKey(session.deviceId);
+            const deviceColor = this.getColorForDevice(colorKey)
+                || this.ensureColorOnConnect(colorKey, connectedIds);
             return deviceColor ? { ...session, deviceColor } : session;
         });
     }

@@ -79,11 +79,6 @@ class RenameDialogManager {
             }
         });
 
-        this.dialogWindow.setAlwaysOnTop(true, "screen-saver");
-        if (typeof this.dialogWindow.setVisibleOnAllWorkspaces === "function") {
-            this.dialogWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        }
-
         this.readyPromise = this.dialogWindow.loadFile(this._overlayHtmlPath());
         await this.readyPromise;
         await this.dialogWindow.webContents.executeJavaScript(`
@@ -111,7 +106,6 @@ class RenameDialogManager {
             currentName: payload.currentName || ""
         });
 
-        win.setAlwaysOnTop(true, "screen-saver");
         win.show();
         win.focus();
         return true;

@@ -119,7 +119,9 @@
             if (typeof window.refreshDevices === "function") {
                 window.refreshDevices();
             }
-            if (typeof window.renderSidebar === "function") {
+            if (typeof window.refreshSessionTabColors === "function") {
+                window.refreshSessionTabColors().catch(console.error);
+            } else if (typeof window.renderSidebar === "function") {
                 window.renderSidebar().catch(console.error);
             }
         });

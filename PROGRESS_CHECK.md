@@ -1345,8 +1345,172 @@ Actions locales (rename, reconnect, remove) appelaient déjà `renderPanel()` �
 
 ---
 
+## BUG — Couleur instances + popup Renommer always-on-top (2026-07-05)
+
+**Statut : corrigé (2026-07-05).**
+
+### Correctifs appliqués
+
+| Bug | Fichiers | Correction |
+|-----|----------|------------|
+| Couleur instances | `sessionHandlers.js`, `browserViewManager.js`, `session.html`, `session.js`, `sessionPreload.js`, `deviceColorsHandlers.js`, `contextMenuHandlers.js` | `deviceColorHex` en query URL à la création ; bordure `body` ; IPC `session:device-color-changed` pour mise à jour live |
+| Popup Renommer | `rename-dialog-manager.js` | Suppression `setAlwaysOnTop` + `setVisibleOnAllWorkspaces` |
+
+**Mise à jour live couleur :** oui — toute session ouverte pour le `deviceId` reçoit la nouvelle bordure sans relancer la session.
+
+---
+
+### 1. Couleur non appliquée aux fenêtres (instances)
+
+| Zone | Fichier | Couleur appliquée ? |
+|------|---------|---------------------|
+| Sidebar devices | `DevicePanel.js` | ✅ pill `.device-color-pill` via `device.deviceColor` |
+| Onglets session | `Sidebar.js` | ✅ pill onglet via `sessionAPI.list()` → `applySessionColors` |
+| Panneau Appareils | `wifiHandlers.js` → `DevicesPanel.js` | ✅ `getColorForDevice(deviceId)` |
+| **BrowserView (flux vidéo)** | `session.html` / `browserViewManager.js` | ❌ **Aucune** — pas de `deviceColor` dans `extraQuery` ni query URL |
+| Overlay HTML `.content` | `index.html` / `layout-metrics.js` | ❌ Impossible — BrowserView natif passe **au-dessus** du DOM renderer |
+
+**Source de vérité :** `DeviceColorsManager` (`device-colors.json`) — `getColorForDevice(deviceId)` ; enrichissement sessions via `applySessionColors()` dans `sessionHandlers.js` (IPC `session:list` uniquement, pas propagé à la vue).
+
+**Création session :** `session:registerView` → `browserViewManager.registerSessionView()` → `loadFile(session.html, { query: sessionId, type, deviceId, label, orientation })` — **sans** `deviceColorHex`.
+
+**Mise à jour live :** aucun canal IPC vers les BrowserViews ; changement de couleur ne met à jour que sidebar / panneau (event `device-colors:updated`).
+
+**Zones LOCK :** le problème est **en amont** (`browserViewManager`, `sessionHandlers`, `session.html`) — pas dans `createSession()` / `scrcpy-socket.js` / `new-instance-manager.js`.
+
+**Fix prévu :**
+1. À l'enregistrement : résoudre `deviceColorHex` depuis `DeviceColorsManager` et le passer en query URL.
+2. `session.html` : bordure `inset` sur `body` via `--device-color`.
+3. Mise à jour live : IPC `session:device-color-changed` → `browserViewManager.updateDeviceColorForDevice(deviceId, hex)` depuis `device-colors:setManual` / `setAuto` (et menu contextuel).
+
+---
+
+### 2. Popup Renommer toujours au premier plan
+
+| Point | Détail |
+|-------|--------|
+| Type | **BrowserWindow** Electron (`RenameDialogManager`) — pas une modal HTML |
+| `parent` | `mainWindow` (comportement enfant correct) |
+| Cause | `setAlwaysOnTop(true, "screen-saver")` dans `_ensureWindow()` (l.82) **et** `show()` (l.114) |
+| Extra | `setVisibleOnAllWorkspaces(true)` (l.83-85) — renforce le comportement « flottant » |
+
+**Fix prévu :** retirer les deux `setAlwaysOnTop` ; retirer `setVisibleOnAllWorkspaces` (inutile sans always-on-top).
+
+**Zones LOCK :** aucune.
+
+---
+
+## CORRECTION — Retrait bordure flux + pastille onglet (2026-07-05)
+
+**Statut : corrigé (2026-07-05).**
+
+### Correctifs appliqués
+
+| Point | Action |
+|-------|--------|
+| 1. Bordure flux | Retirée (`session.html`, `session.js`, `sessionPreload.js`, `browserViewManager`, handlers IPC) |
+| 2. Bordure fenêtre focus | Non implémentée (frameless + BrowserView — trop risqué) |
+| 3. Pastille onglet | `refreshSessionTabColors()` dans `Sidebar.js` — mise à jour ciblée sur `device-colors:updated` |
+
+---
+
+### 1. Retrait bordure colorée sur le flux (demandé)
+
+| Fichier | Élément ajouté récemment | Action |
+|---------|--------------------------|--------|
+| `session.html` | `body[data-device-color]{border:…}` | Retirer |
+| `session.js` | `applyDeviceColor`, query `deviceColorHex`, listener IPC | Retirer |
+| `sessionPreload.js` | `onDeviceColorChanged` | Retirer |
+| `browserViewManager.js` | `deviceColorHex` entry/query, `updateDeviceColorForDevice()` | Retirer |
+| `sessionHandlers.js` | résolution `deviceColorHex` dans `session:registerView` | Retirer |
+| `deviceColorsHandlers.js` | push couleur vers BrowserViews | Retirer |
+| `contextMenuHandlers.js` | idem | Retirer |
+
+**Zones LOCK :** aucun de ces fichiers n'est dans `createSession()` / `scrcpy-socket.js` / `new-instance-manager.js`.
+
+---
+
+### 2. Alternative bordure fenêtre au focus (optionnel)
+
+| Contrainte | Détail |
+|------------|--------|
+| Fenêtre principale | `frame: false` — pas de chrome OS natif |
+| Flux vidéo | BrowserView natif au-dessus du DOM |
+| Overlay HTML `.content` | Masqué sous le BrowserView |
+
+→ Bordure « fenêtre active » cohérente sans toucher au flux = refonte titlebar/CSS + sync focus OS — **hors scope, non implémenté**.
+
+---
+
+### 3. Pastille couleur dans l'onglet — diagnostic
+
+| Point | État actuel |
+|-------|-------------|
+| Rendu initial | `Sidebar.js` → `createSessionTabElement` : pill `.tab-icon.device-color-pill` + `deviceColor.hex` inline |
+| Source | `sessionAPI.list()` → `applySessionColors()` (`device-colors.json` via `deviceId` session) |
+| Event changement | `deviceColorsAPI.onUpdated` → **`renderSidebar()`** (rebuild complet `tabsBar.innerHTML = ""`) |
+| Problème | Rebuild lourd ; `upsertSessionTab` ne met à jour la pill que si `deviceColor?.hex` truthy (pas de reset) ; pas de refresh ciblé des pills existantes |
+
+**Fix prévu :** `refreshSessionTabColors()` — met à jour uniquement les pills des onglets ouverts via `sessionAPI.list()`, sans détruire les tabs ; appelé sur `device-colors:updated`.
+
+**Zones LOCK :** aucune.
+
+---
+
+## BUG — Pastille couleur USB OK / WiFi KO (2026-07-05)
+
+**Statut : corrigé (2026-07-05).**
+
+### Correctif
+
+`DeviceRegistry.buildAdbSerialToDeviceIdMap()` + `applySessionColors(sessions, map)` dans `session:list` — résolution `ip:port` → `deviceId` stable pour le lookup couleur, sans modifier `entry.deviceId` (serial ADB pour scrcpy/ADB).
+
+---
+
+### 1. Source de vérité couleur vs clé session
+
+| Couche | Clé utilisée | WiFi |
+|--------|--------------|------|
+| `device-colors.json` | `deviceId` stable (`ro.serialno` / `android_id`) | ✅ via `applyDeviceColors` → `device.deviceId` |
+| Menu contextuel sidebar | `device.deviceId` stable (`DevicePanel.js` l.295) | ✅ `setManualColor(stableId)` |
+| Carte sidebar (pill) | `device.deviceColor` enrichi sur `deviceId` stable | ✅ |
+| **`BrowserView` session (`entry.deviceId`)** | **Serial ADB effectif** (`ip:port` en WiFi) | ❌ |
+| `applySessionColors()` | `getColorForDevice(session.deviceId)` = serial ADB | ❌ cherche `192.168.x.x:5555` au lieu de `e176518f` |
+
+**Cause racine :** couleur stockée sous **deviceId stable**, session enregistrée avec **serial transport** (`ip:port`). USB masque le bug car souvent `serial USB === deviceId stable`.
+
+---
+
+### 2. Fusion identité USB + WiFi à cet endroit
+
+| Étape | Fusion |
+|-------|--------|
+| Liste devices (`DeviceRegistry.listUnifiedDevices`) | ✅ 1 entrée / `deviceId`, `serial` = transport effectif |
+| Lancement miroir / Type B | `createInstance(serial)` / `registerView({ deviceId: serial })` → **serial WiFi**, pas `device.deviceId` |
+| `applySessionColors` | ❌ **Pas de résolution** serial ADB → deviceId stable |
+
+---
+
+### 3. Écouteur changement couleur
+
+| Point | USB | WiFi |
+|-------|-----|------|
+| `device-colors:updated` → `refreshSessionTabColors()` | ✅ même chemin | ✅ même chemin |
+| `sessionAPI.list()` → couleur | ✅ si clé session = clé JSON | ❌ clé session `ip:port` ≠ clé JSON |
+
+→ Le listener est **commun** ; l'échec WiFi vient du **lookup**, pas d'un écouteur manquant.
+
+**Fix prévu :** `DeviceRegistry.buildAdbSerialToDeviceIdMap()` + `applySessionColors(sessions, map)` pour résoudre la clé couleur via deviceId stable tout en gardant `entry.deviceId` = serial ADB (LOCK scrcpy/ADB).
+
+**Zones LOCK :** aucune (`entry.deviceId` reste le serial ADB pour `runAdbShell`, `new-instance-manager`).
+
+---
+
 ## Historique récent
 
+- **2026-07-05** — Fix pastille couleur onglet WiFi (résolution serial → deviceId stable dans session:list).
+- **2026-07-05** — Diagnostic pastille couleur USB vs WiFi (clé serial vs deviceId stable).
+- **2026-07-05** — Diagnostic couleur instances + popup Renommer always-on-top.
 - **2026-07-05** — Fix ReferenceError `notifyDeviceViewsUpdated` (portée namesHandlers).
 - **2026-07-05** — Diagnostic toggle WiFi ne reflète pas l'état réel (stockage vs connexion active, race auto-connect, fusion identité).
 - **2026-07-05** — Diagnostic séparation USB/WiFi panneau (21051182G / e176518f / ip:port).

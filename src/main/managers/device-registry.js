@@ -491,6 +491,34 @@ class DeviceRegistry {
 
         return { usb: usbEntries, wifi: wifiEntries };
     }
+
+    /**
+     * Map serial ADB effectif (USB ou ip:port) → deviceId stable pour couleurs / noms.
+     */
+    async buildAdbSerialToDeviceIdMap() {
+        const map = new Map();
+        const unified = await this.listUnifiedDevices();
+
+        for (const device of unified) {
+            const stableId = device.deviceId;
+            if (!stableId) continue;
+
+            for (const serial of [device.serial, device.wifiSerial, device.usbSerial]) {
+                if (serial) map.set(serial, stableId);
+            }
+        }
+
+        for (const config of this.wifiDevicesManager.list()) {
+            if (!config.deviceId) continue;
+            const wifiSerial = this.wifiAdbService.buildWifiSerial(
+                config.ip,
+                config.port || DEFAULT_WIFI_PORT
+            );
+            map.set(wifiSerial, config.deviceId);
+        }
+
+        return map;
+    }
 }
 
 module.exports = { DeviceRegistry };

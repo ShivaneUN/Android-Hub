@@ -9,6 +9,15 @@ function isTypingTarget(element) {
     return element.isContentEditable;
 }
 
+function applyTabColorPill(pill, deviceColor) {
+    if (!pill) return;
+    if (deviceColor?.hex) {
+        pill.style.background = deviceColor.hex;
+    } else {
+        pill.style.removeProperty("background");
+    }
+}
+
 function createSessionTabElement({ sessionId, type, active, label, hasCustomName, deviceColor }) {
     const tab = document.createElement("div");
     tab.className = `scrcpy-tab ${active ? "active" : ""}`;
@@ -79,9 +88,8 @@ function upsertSessionTab({ sessionId, type, active, label, hasCustomName, devic
                 `;
             }
         }
-        if (deviceColor?.hex) {
-            const pill = existing.querySelector(".tab-icon.device-color-pill");
-            if (pill) pill.style.background = deviceColor.hex;
+        if (deviceColor !== undefined) {
+            applyTabColorPill(existing.querySelector(".tab-icon.device-color-pill"), deviceColor);
         }
         if (active) {
             setActiveSessionTab(sessionId);
@@ -105,6 +113,20 @@ function upsertSessionTab({ sessionId, type, active, label, hasCustomName, devic
     });
     tabsBar.appendChild(tab);
     return tab;
+}
+
+async function refreshSessionTabColors() {
+    if (!window.sessionAPI?.list) return;
+
+    const sessions = await window.sessionAPI.list();
+    const tabsBar = getSessionTabsContainer();
+    if (!tabsBar) return;
+
+    for (const session of sessions) {
+        const tab = tabsBar.querySelector(`[data-tab-id="${session.sessionId}"]`);
+        if (!tab) continue;
+        applyTabColorPill(tab.querySelector(".tab-icon.device-color-pill"), session.deviceColor);
+    }
 }
 
 async function refreshSessionTabMetadata(sessionId) {
@@ -274,6 +296,7 @@ async function onSessionLaunched(sessionId, type, options = {}) {
 }
 
 window.renderSidebar = renderSidebar;
+window.refreshSessionTabColors = refreshSessionTabColors;
 window.finalizeSessionUI = finalizeSessionUI;
 window.onSessionLaunched = onSessionLaunched;
 window.activateSessionTab = activateSessionTab;
@@ -292,6 +315,6 @@ if (window.sessionAPI?.list) {
 
 if (window.deviceColorsAPI?.onUpdated) {
     window.deviceColorsAPI.onUpdated(() => {
-        renderSidebar().catch(console.error);
+        refreshSessionTabColors().catch(console.error);
     });
 }

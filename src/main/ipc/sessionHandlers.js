@@ -149,15 +149,13 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return result;
     });
 
-    ipcMain.handle("session:list", () => {
+    ipcMain.handle("session:list", async () => {
         const manager = global.browserViewManager;
         if (!manager) return [];
         const sessions = manager.getAllSessions();
         let resolved;
         if (!global.customNamesManager) {
-            resolved = global.deviceColorsManager
-                ? global.deviceColorsManager.applySessionColors(sessions)
-                : sessions;
+            resolved = sessions;
         } else {
             resolved = global.customNamesManager.applySessionNames(sessions);
             for (const session of resolved) {
@@ -166,10 +164,15 @@ function registerSessionHandlers(adbPath, deps = {}) {
                     manager.updateSessionMetadata(session.sessionId, { label: session.label });
                 }
             }
-            if (global.deviceColorsManager) {
-                resolved = global.deviceColorsManager.applySessionColors(resolved);
-            }
         }
+
+        if (global.deviceColorsManager) {
+            const adbSerialToDeviceId = global.deviceRegistry
+                ? await global.deviceRegistry.buildAdbSerialToDeviceIdMap()
+                : null;
+            resolved = global.deviceColorsManager.applySessionColors(resolved, adbSerialToDeviceId);
+        }
+
         return resolved;
     });
 
