@@ -853,6 +853,17 @@ function requestRendererDeviceRefresh() {
     if (win && !win.isDestroyed()) {
         win.webContents.send("devices:refresh-request");
     }
+
+    const hubModal = global.hubModalOverlayManager;
+    const overlay = hubModal?.overlayWindow;
+    if (
+        overlay
+        && !overlay.isDestroyed()
+        && overlay.isVisible()
+        && hubModal.getCurrentPanel?.() === "devices"
+    ) {
+        overlay.webContents.send("devices:refresh-request");
+    }
 }
 
 async function listDevicesForUI() {

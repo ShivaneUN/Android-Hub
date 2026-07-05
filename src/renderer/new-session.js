@@ -1011,6 +1011,14 @@ async function openNewSessionPanel(options = {}) {
     await Promise.all([loadConnectedDevices(), loadLaunchHistory()]);
 }
 
+window.refreshNewSessionPanel = async function refreshNewSessionPanel() {
+    if (typeof window.refreshDevices === "function") {
+        await window.refreshDevices();
+    }
+    await loadConnectedDevices();
+    await loadLaunchHistory();
+};
+
 document.addEventListener("DOMContentLoaded", () => {
     const navNewSession = document.getElementById("nav-new-session");
     const appSearchInput = document.getElementById("new-instance-app-search-input");

@@ -583,6 +583,8 @@
         await refreshSessions();
     };
 
+    window.refreshControlPanel = refreshSessions;
+
     function boot() {
         try {
             ensureUI();

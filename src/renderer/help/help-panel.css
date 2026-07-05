@@ -250,6 +250,14 @@
   align-items: stretch;
 }
 
+.help-guide-content--static {
+  display: block;
+}
+
+.help-guide-content--static .help-guide-text {
+  max-width: none;
+}
+
 .help-guide-visual {
   background: #0a0e14;
   border: 1px solid var(--border-subtle);

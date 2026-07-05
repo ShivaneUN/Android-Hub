@@ -75,6 +75,20 @@
         }
     ];
 
+    const WIFI_GUIDE = {
+        title: "Connecter un appareil en WiFi",
+        steps: [
+            "Branche ton appareil en USB et assure-toi qu'il est bien détecté dans le Hub (débogage USB activé sur le téléphone).",
+            "Vérifie que ton téléphone est connecté au WiFi, sur le même réseau que cet ordinateur.",
+            "Clique sur le toggle WiFi à côté de l'appareil dans la sidebar.",
+            "À la première connexion, le Hub va automatiquement configurer l'appareil et te demander de lui donner un nom. Une fois connecté, un message « Connecté en WiFi » s'affiche.",
+            "Tu peux maintenant débrancher le câble USB — l'appareil reste joignable tant qu'il est sur le même réseau WiFi.",
+            "Pour repasser en USB, reclique simplement sur le toggle (le WiFi sera désactivé, mais la configuration reste enregistrée pour la prochaine fois).",
+            "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans le panneau « Appareils » (icône 📶 dans la barre principale)."
+        ],
+        note: "Si le WiFi du téléphone change de réseau ou si son adresse IP change, il se peut que tu doives reconnecter l'appareil via le toggle."
+    };
+
     const SHORTCUT_GROUPS = [
         {
             title: "Navigation",
@@ -219,6 +233,19 @@
         return keys.map((k) => `<kbd class="help-kbd">${k}</kbd>`).join("");
     }
 
+    function renderWifiGuideSection() {
+        const stepsHtml = WIFI_GUIDE.steps.map((step) => `<li>${step}</li>`).join("");
+        return `
+            <div class="help-guide-content help-guide-content--static">
+                <div class="help-guide-text">
+                    <h3 class="help-guide-heading">${WIFI_GUIDE.title}</h3>
+                    <ol class="help-guide-steps">${stepsHtml}</ol>
+                    <div class="help-guide-tip"><strong>Remarque :</strong> ${WIFI_GUIDE.note}</div>
+                </div>
+            </div>
+        `;
+    }
+
     function renderShortcutsSection() {
         return SHORTCUT_GROUPS.map((group) => `
             <div class="help-shortcuts-group">
@@ -291,11 +318,15 @@
                         <div class="help-modal-icon" aria-hidden="true">?</div>
                         <h2 class="help-modal-title" id="help-modal-title">Aide &amp; Raccourcis</h2>
                     </div>
-                    <button type="button" class="help-modal-close" data-hub-modal-close id="help-modal-close" title="Fermer">&#10005;</button>
+                    <div class="hub-panel-header-actions">
+                        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="help" title="Rafraîchir">Rafraîchir</button>
+                        <button type="button" class="help-modal-close" data-hub-modal-close id="help-modal-close" title="Fermer">&#10005;</button>
+                    </div>
                 </div>
                 <div class="help-modal-tabs">
                     <button type="button" class="help-tab-btn active" data-help-tab="shortcuts">Raccourcis</button>
                     <button type="button" class="help-tab-btn" data-help-tab="guide">Guide mirroring</button>
+                    <button type="button" class="help-tab-btn" data-help-tab="wifi">Connexion WiFi</button>
                 </div>
                 <div class="help-modal-body">
                     <section class="help-section active" id="help-section-shortcuts" data-section="shortcuts">
@@ -310,6 +341,9 @@
                     <section class="help-section" id="help-section-guide" data-section="guide">
                         <div id="help-guide-root">${renderGuideStep()}</div>
                         ${renderTroubleshootPanel()}
+                    </section>
+                    <section class="help-section" id="help-section-wifi" data-section="wifi">
+                        ${renderWifiGuideSection()}
                     </section>
                 </div>
                 <div class="help-guide-footer" id="help-guide-footer">
@@ -419,4 +453,12 @@
 
     window.openHelpPanel = openHelpPanel;
     window.closeHelpPanel = closeHelpPanel;
+    window.refreshHelpPanel = function refreshHelpPanel() {
+        const root = overlayEl?.querySelector(".help-modal") || overlayEl;
+        const activeTab = root?.querySelector(".help-tab-btn.active")?.dataset.helpTab || "shortcuts";
+        currentGuideStep = 0;
+        refreshGuideView();
+        setActiveTab(activeTab);
+        root?.querySelector("#help-troubleshoot-panel")?.classList.remove("visible");
+    };
 })();

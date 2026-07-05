@@ -1202,9 +1202,50 @@ ip = await this.fetchWlan0Ip(usbSerial);   // shell ip addr — session USB souv
 
 ---
 
+## BUG/FEATURE — Panneau Appareils sans rafraîchissement auto (2026-07-05)
+
+**Symptôme :** le panneau USB/WiFi n'affiche statuts / nouveaux devices / changements toggle qu'après fermeture/réouverture manuelle.
+
+**Statut : corrigé (2026-07-05).**
+
+---
+
+### 1. Source de données actuelle — pas de state réactif
+
+| Aspect | Implémentation actuelle (avant fix) |
+|--------|-------------------------------------|
+| **Composant** | `src/renderer/devices-panel/DevicesPanel.js` |
+| **Fetch** | `wifiAPI.getPanelData()` → IPC `wifi:panel-data` → `DeviceRegistry.buildDevicesPanelData()` |
+| **Moment du fetch** | **Une seule fois** à l'ouverture (`openDevicesPanel` → `renderPanel()`) |
+| **State / store** | ❌ Aucun — pas de React/store ; variables DOM réécrites |
+| **Sidebar** | `DevicePanel.js` écoute `devices-refreshed` (poll 8 s) — **panneau modal non** |
+| **Fenêtre modal** | `hub-modal-window.html` (BrowserWindow overlay) — scripts `devices.js` + `DevicesPanel.js` |
+| **Broadcast post-toggle** | `requestRendererDeviceRefresh()` → main window seulement — **overlay non notifié** |
+
+→ Fetch **statique au montage** ; aucun polling ni écoute d'événements sur le panneau Appareils.
+
+---
+
+### 2. Corrections appliquées
+
+| P | Fichier | Correction |
+|---|---------|------------|
+| **P0** | `DevicesPanel.js` | Polling **4 s** tant que `#panel-devices.active` |
+| **P0** | `DevicesPanel.js` | Écoute `devices-refreshed` + `devices:refresh-request` → refresh silencieux |
+| **P0** | `main.js` | `requestRendererDeviceRefresh()` notifie aussi l'overlay si panneau `devices` ouvert |
+| **P1** | `hub-modal-window.html` | Bouton **Rafraîchir** manuel |
+| **P1** | `DevicesPanel.js` | `renderPanel({ silent })` — pas de flash « Chargement… » en poll |
+| **P1** | `hub-modal-window.js` | `stopDevicesPanelLiveRefresh()` à la fermeture / changement de panneau |
+
+Actions locales (rename, reconnect, remove) appelaient déjà `renderPanel()` — inchangé.
+
+**Zones LOCK :** aucune.
+
+---
+
 ## Historique récent
 
-- **2026-07-05** — Fix IP wlan0 (ordre fetch avant tcpip, parsing IPv4, log brut).
+- **2026-07-05** — Panneau Appareils : refresh auto (poll 4 s, events, bouton Rafraîchir).
 - **2026-07-05** — Diagnostic toggle WiFi ne reflète pas l'état réel (stockage vs connexion active, race auto-connect, fusion identité).
 - **2026-07-05** — Diagnostic séparation USB/WiFi panneau (21051182G / e176518f / ip:port).
 - **2026-07-05** — Diagnostic bug toggle WiFi absent (connexion WiFi seule).
