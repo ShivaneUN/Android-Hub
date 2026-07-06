@@ -14,8 +14,10 @@
             <div class="icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </div>
-            <div class="sidebar-language-badge" id="sidebar-language-badge">FR</div>
-            <div class="label" data-i18n="sidebar.language">Langue</div>
+            <div class="label sidebar-language-label">
+                <span data-i18n="sidebar.language">Langue</span>
+                <span class="sidebar-language-badge" id="sidebar-language-badge">FR</span>
+            </div>
         `;
         navAide.insertAdjacentElement("afterend", item);
 
