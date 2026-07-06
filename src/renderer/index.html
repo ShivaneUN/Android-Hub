@@ -163,7 +163,7 @@
       document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
       document.getElementById(navId).classList.add("active");
       if (navId === "nav-new-session") {
-        await openNewSessionPanel();
+        await openNewSessionPanelFromMain();
         return;
       }
       if (navId === "nav-settings") {

@@ -72,14 +72,14 @@
         showPanel(panel);
         bindHubPanelRefreshButtons();
 
-        if (panel === "new-session" && typeof openNewSessionPanel === "function") {
+        if (panel === "new-session" && typeof window.openNewSessionPanel === "function") {
             window.stopDevicesPanelLiveRefresh?.();
-            await openNewSessionPanel({ inChildWindow: true });
-        } else if (panel === "settings" && typeof openSettingsPanel === "function") {
-            await openSettingsPanel({ inChildWindow: true, tab: tab || "devices" });
-        } else if (panel === "help" && typeof openHelpPanel === "function") {
+            await window.openNewSessionPanel({ inChildWindow: true });
+        } else if (panel === "settings" && typeof window.openSettingsPanel === "function") {
+            await window.openSettingsPanel({ inChildWindow: true, tab: tab || "devices" });
+        } else if (panel === "help" && typeof window.openHelpPanel === "function") {
             window.stopDevicesPanelLiveRefresh?.();
-            openHelpPanel(payload.tab || "shortcuts");
+            window.openHelpPanel(payload.tab || "shortcuts");
         } else {
             window.stopDevicesPanelLiveRefresh?.();
         }

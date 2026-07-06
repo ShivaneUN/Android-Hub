@@ -2,7 +2,7 @@
 
 > **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Dernière mise à jour : 2026-07-05
+Dernière mise à jour : 2026-07-06
 
 ---
 
@@ -50,6 +50,19 @@ Dernière mise à jour : 2026-07-05
 1. Ne jamais modifier directement le recalcul de coordonnées, le mapping touch, le clic droit / clic long, ni les handlers pointer partagés.
 2. Greffer en amont uniquement : résolution serial, métadonnées session, orientation avant le pipeline input.
 3. Bug input suspect : diagnostiquer sans patch tant que l'utilisateur n'a pas validé.
+
+### Renderer — scripts globaux & i18n (LOCK 2026-07-06)
+
+> Les scripts chargés via `<script src>` dans `index.html` / `hub-modal-window.html` partagent **un seul scope global**. Ne pas déclarer `const t`, `const api` ou tout identifiant générique au top-level.
+
+**Règles :**
+
+1. Helper i18n : nom unique par fichier (`dt`, `nsT`, …) **ou** IIFE comme `SettingsPanel.js` / `HelpPanel.js`.
+2. Exports partagés : noms explicites (`appDisplayApi`, `streamParamsApi`) — pas `const api`.
+3. Fonctions panel : exposer sur `window.*` (`window.openNewSessionPanel`, `openNewSessionPanelFromMain`, …).
+4. Zones LOCK (input, vidéo, audio, `scrcpy-socket.js`, `new-instance-manager.js`) : inchangées.
+
+Référence détaillée : `PROGRESS_CHECK.md` § Fix collisions scope global i18n / modales.
 
 ### Input Type A — LOCK (historique `c23e7cb`, étendu 2026-07-05)
 
@@ -110,4 +123,5 @@ Dernière mise à jour : 2026-07-05
 1. Vérifier si la zone touchée est **LOCK** (audio, **input**, **noms**, `scrcpy-socket.js`, `new-instance-manager.js`, etc.).
 2. Si oui → **STOP** et demander accord explicite.
 3. Pour l'**input** : toute évolution passe par une couche **amont** ; jamais de patch direct dans les fichiers listés § Input LOCK DÉFINITIF.
-4. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
+4. Pour le **renderer** : pas de `const t` / `const api` au scope global dans les `<script>` — voir § Renderer scripts globaux & i18n.
+5. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.

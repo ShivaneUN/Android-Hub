@@ -270,7 +270,7 @@ function formatParamsSummary(params) {
     return `${res?.label || `${p.width}×${p.height}`} · ${p.dpi} dpi · ${p.maxFps} fps · ${p.bitRateMbps} Mbps · GOP ${p.iFrameInterval}s`;
 }
 
-const api = {
+const streamParamsApi = {
     DEFAULT_STREAM_PARAMS,
     CONTROL_OPTIONS,
     RESOLUTION_PRESETS,
@@ -298,7 +298,7 @@ const api = {
 };
 
 if (typeof module !== "undefined" && module.exports) {
-    module.exports = api;
+    module.exports = streamParamsApi;
 } else {
-    globalThis.StreamParams = api;
+    globalThis.StreamParams = streamParamsApi;
 }

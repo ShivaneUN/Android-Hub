@@ -59,6 +59,10 @@ window.openSettingsPanelFromMain = (tab = "devices") => {
     void openHubModal("page-settings-panel", { panel: "settings", tab });
 };
 
+window.openNewSessionPanelFromMain = async () => {
+    await openHubModal("page-new-session", { panel: "new-session" });
+};
+
 window.closeHelpPanel = () => {
     void closeHubModal();
 };

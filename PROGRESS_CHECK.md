@@ -4,6 +4,42 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Fix collisions scope global i18n / modales (2026-07-06)
+
+**Statut : corrigé & verrouillé.**
+
+### Diagnostic
+
+- Après i18n FR/EN (`d25edef`), plusieurs scripts `<script>` globaux déclaraient les mêmes identifiants :
+  - `const t` dans `DevicePanel.js` + `new-session.js` → `SyntaxError: Identifier 't' has already been declared` → **`new-session.js` ne chargeait plus**.
+  - `const api` dans `app-display.js` + `stream-params.js` → `AppDisplay` / `StreamParams` absents du renderer.
+- Conséquence : aucune modale (Nouvelle instance, Paramètres, Aide), pas de mirroring, pas de `__hubModalMainActions`.
+
+### Correctif
+
+| Fichier | Changement |
+|---------|------------|
+| `sidebar/DevicePanel.js` | Helper i18n renommé `dt` (scope global unique) |
+| `shared/app-display.js` | `appDisplayApi` (plus de collision `api`) |
+| `shared/stream-params.js` | `streamParamsApi` |
+| `new-session.js` | `window.openNewSessionPanel` exposé |
+| `app.js` | `openNewSessionPanelFromMain()` |
+| `index.html` | Sidebar → `openNewSessionPanelFromMain()` |
+| `hub-modal/hub-modal-window.js` | Références `window.openNewSessionPanel` / `openSettingsPanel` / `openHelpPanel` |
+
+### Détection appareils (inchangée)
+
+- Polling renderer **8 s** (`devices.js`).
+- `get-devices` invalide toujours les caches à chaque appel (`invalidateSessionAdbSerialCache`, `deviceDimensionsCache.clear`).
+
+### Règle LOCK (post-i18n)
+
+> **Ne pas déclarer `const t` ni `const api` au scope global** dans les scripts renderer chargés via `<script>` sans IIFE. Utiliser un nom unique (`dt`, `appDisplayApi`, …) ou encapsuler dans une IIFE comme les autres composants.
+
+**Zones LOCK :** aucune touchée (`scrcpy-socket.js`, `new-instance-manager.js`, input, audio, orientation).
+
+---
+
 ## TÂCHE — Sidebar Paramètres (regroupement Appareils / Contrôle / Nettoyage) (2026-07-06)
 
 **Statut : implémenté.**

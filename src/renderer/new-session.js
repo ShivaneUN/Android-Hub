@@ -1041,6 +1041,8 @@ async function openNewSessionPanel(options = {}) {
     await Promise.all([loadConnectedDevices(), loadLaunchHistory()]);
 }
 
+window.openNewSessionPanel = openNewSessionPanel;
+
 window.refreshNewSessionPanel = async function refreshNewSessionPanel() {
     if (typeof window.refreshDevices === "function") {
         await window.refreshDevices();

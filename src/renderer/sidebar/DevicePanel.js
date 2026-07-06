@@ -1,7 +1,7 @@
 /**
  * Panneau sidebar : liste unifiée des appareils (USB / WiFi fusionnés).
  */
-const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+const dt = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
 
 const WIFI_ERROR_STEPS = ["tcpip", "ip", "connect"];
 
@@ -31,14 +31,14 @@ function transportClass(device) {
 
 function wifiErrorMessage(step) {
     if (step && WIFI_ERROR_STEPS.includes(step)) {
-        return t(`devicePanel.errors.${step}`);
+        return dt(`devicePanel.errors.${step}`);
     }
     return null;
 }
 
 function wifiProgressMessage(step) {
     if (step && WIFI_ERROR_STEPS.includes(step)) {
-        return t(`devicePanel.progress.${step}`);
+        return dt(`devicePanel.progress.${step}`);
     }
     return null;
 }
@@ -67,7 +67,7 @@ async function handleWifiToggle(device, enabled, toggleInput) {
 
         if (result?.success) {
             window.showHubToast?.(
-                result.message || (enabled ? t("devicePanel.wifiEnabled") : t("devicePanel.wifiDisconnected")),
+                result.message || (enabled ? dt("devicePanel.wifiEnabled") : dt("devicePanel.wifiDisconnected")),
                 "success"
             );
 
@@ -83,12 +83,12 @@ async function handleWifiToggle(device, enabled, toggleInput) {
             return;
         }
 
-        const message = wifiErrorMessage(result?.step) || result?.error || t("devicePanel.wifiFailed");
+        const message = wifiErrorMessage(result?.step) || result?.error || dt("devicePanel.wifiFailed");
         window.showHubToast?.(message, "error", 5500);
         if (toggleInput) toggleInput.checked = false;
         await window.refreshDevices?.();
     } catch (err) {
-        window.showHubToast?.(err.message || t("devicePanel.wifiError"), "error", 5500);
+        window.showHubToast?.(err.message || dt("devicePanel.wifiError"), "error", 5500);
         if (toggleInput) toggleInput.checked = false;
     } finally {
         if (toggleInput) toggleInput.disabled = false;
@@ -103,17 +103,17 @@ function renderDevicePanel(devices) {
 
     if (connected.length === 0) {
         container.innerHTML = `
-            <div class="sidebar-devices-empty">${t("sidebar.devicePanel.empty")}</div>
+            <div class="sidebar-devices-empty">${dt("sidebar.devicePanel.empty")}</div>
         `;
         return;
     }
 
     container.innerHTML = connected.map((device) => {
-        const name = device.name || device.serial || t("sidebar.devicePanel.deviceFallback");
+        const name = device.name || device.serial || dt("sidebar.devicePanel.deviceFallback");
         const originalName = device.originalName || name;
         const battery = formatBattery(device.battery);
         const transport = device.transportLabel || (
-            device.transport === "wifi" ? t("sidebar.devicePanel.wifiConnected") : t("sidebar.devicePanel.usb")
+            device.transport === "wifi" ? dt("sidebar.devicePanel.wifiConnected") : dt("sidebar.devicePanel.usb")
         );
         const statusDot = device.status === "green" ? "online" : "offline";
         const colorStyle = device.deviceColor?.hex ? ` style="background:${device.deviceColor.hex}"` : "";
@@ -128,8 +128,8 @@ function renderDevicePanel(devices) {
         );
         const showUsbBadge = device.usbAvailable && !(wifiChecked && device.transport === "wifi");
         const transportBadge = showUsbBadge && device.transport !== "wifi"
-            ? `<span class="sidebar-device-stat transport-usb" title="${t("sidebar.devicePanel.usb")}">${t("sidebar.devicePanel.usb")}</span>`
-            : `<span class="sidebar-device-stat transport-${transportClass(device)}" title="${t("sidebar.devicePanel.transportAdb")}">${transport}</span>`;
+            ? `<span class="sidebar-device-stat transport-usb" title="${dt("sidebar.devicePanel.usb")}">${dt("sidebar.devicePanel.usb")}</span>`
+            : `<span class="sidebar-device-stat transport-${transportClass(device)}" title="${dt("sidebar.devicePanel.transportAdb")}">${transport}</span>`;
 
         return `
             <div class="sidebar-device-card" data-device-id="${device.deviceId || ""}" data-serial="${device.serial || ""}" data-original-name="${originalName}" data-has-custom="${device.hasCustomName ? "1" : "0"}" title="${name}">
@@ -138,13 +138,13 @@ function renderDevicePanel(devices) {
                     <span class="sidebar-device-status ${statusDot}"></span>
                     <span class="sidebar-device-name">${name}</span>
                     ${canToggleWifi ? `
-                    <label class="sidebar-wifi-toggle" title="${t("sidebar.devicePanel.wifiToggle")}">
+                    <label class="sidebar-wifi-toggle" title="${dt("sidebar.devicePanel.wifiToggle")}">
                         <input type="checkbox" class="sidebar-wifi-toggle-input" data-device-id="${device.deviceId || ""}" ${wifiChecked ? "checked" : ""}>
                         <span class="sidebar-wifi-toggle-ui"></span>
                     </label>` : ""}
                 </div>
                 <div class="sidebar-device-meta">
-                    <span class="sidebar-device-stat battery-${batteryClass(device.battery)}" title="${t("sidebar.devicePanel.battery")}">
+                    <span class="sidebar-device-stat battery-${batteryClass(device.battery)}" title="${dt("sidebar.devicePanel.battery")}">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="0.5"/></svg>
                         ${battery}
                     </span>

@@ -191,7 +191,7 @@ function getAppLabel(app = {}) {
     return app.labelName || app.displayName || humanizePackageName(app.package || "");
 }
 
-const api = {
+const appDisplayApi = {
     GENERIC_APP_LABELS,
     looksLikePackageName,
     isGenericAppLabel,
@@ -205,7 +205,7 @@ const api = {
 };
 
 if (typeof module !== "undefined" && module.exports) {
-    module.exports = api;
+    module.exports = appDisplayApi;
 } else {
-    globalThis.AppDisplay = api;
+    globalThis.AppDisplay = appDisplayApi;
 }
