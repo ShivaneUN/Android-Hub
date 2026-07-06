@@ -180,6 +180,34 @@ html, body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
+.scrcpy-tab .tab-app-icon {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #222835;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.scrcpy-tab .tab-app-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scrcpy-tab .tab-app-icon.is-placeholder svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--text-muted);
+  fill: none;
+}
+
 .device-color-pill {
   border-radius: 50%;
   flex-shrink: 0;

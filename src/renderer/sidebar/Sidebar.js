@@ -18,15 +18,99 @@ function applyTabColorPill(pill, deviceColor) {
     }
 }
 
-function createSessionTabElement({ sessionId, type, active, label, hasCustomName, deviceColor }) {
+const DEFAULT_TAB_APP_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M8 14.5l2.5-2.5 2.1 2.1 2.4-2.4 1.5 1.5"/></svg>`;
+
+const sessionIconCache = new Map();
+const sessionIconInFlight = new Set();
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function normalizeUserId(userId) {
+    return Number.isInteger(userId) ? userId : 0;
+}
+
+function buildSessionIconKey(session = {}) {
+    const deviceKey = session.stableDeviceId || session.deviceId;
+    const packageName = session.packageName || null;
+    if (!deviceKey || !packageName) return null;
+    return `${deviceKey}::${packageName}::${normalizeUserId(session.userId)}`;
+}
+
+function renderTabAppIcon(iconUrl = null) {
+    if (iconUrl) {
+        return `<span class="tab-app-icon"><img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"></span>`;
+    }
+    return `<span class="tab-app-icon is-placeholder">${DEFAULT_TAB_APP_ICON_SVG}</span>`;
+}
+
+function updateTabAppIcon(tab, iconUrl = null) {
+    if (!tab) return;
+    const iconContainer = tab.querySelector(".tab-app-icon");
+    if (!iconContainer) return;
+    iconContainer.classList.toggle("is-placeholder", !iconUrl);
+    iconContainer.innerHTML = iconUrl
+        ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy">`
+        : DEFAULT_TAB_APP_ICON_SVG;
+}
+
+function hydrateTabsWithIcon(iconKey, iconUrl) {
+    const tabsBar = getSessionTabsContainer();
+    if (!tabsBar || !iconKey || !iconUrl) return;
+    tabsBar.querySelectorAll(".scrcpy-tab").forEach((tab) => {
+        const tabIconKey = tab.dataset.iconKey;
+        if (tabIconKey === iconKey) {
+            updateTabAppIcon(tab, iconUrl);
+        }
+    });
+}
+
+async function resolveSessionTabIcon(session = {}) {
+    const iconKey = buildSessionIconKey(session);
+    if (!iconKey || sessionIconCache.has(iconKey) || sessionIconInFlight.has(iconKey)) return;
+    if (!window.electronAPI?.resolveAppMetadata) return;
+
+    sessionIconInFlight.add(iconKey);
+    try {
+        const payload = {
+            deviceId: session.stableDeviceId || session.deviceId,
+            packageName: session.packageName,
+            userId: Number.isInteger(session.userId) ? session.userId : null,
+            appNameHint: session.label || session.packageName
+        };
+        const result = await window.electronAPI.resolveAppMetadata(payload);
+        if (result?.success && result.metadata?.iconUrl) {
+            sessionIconCache.set(iconKey, result.metadata.iconUrl);
+            hydrateTabsWithIcon(iconKey, result.metadata.iconUrl);
+        }
+    } catch (_err) {
+        // noop
+    } finally {
+        sessionIconInFlight.delete(iconKey);
+    }
+}
+
+function createSessionTabElement({ sessionId, type, active, label, hasCustomName, deviceColor, packageName, userId, deviceId, stableDeviceId }) {
     const tab = document.createElement("div");
     tab.className = `scrcpy-tab ${active ? "active" : ""}`;
     tab.dataset.tabId = sessionId;
     tab.dataset.sessionType = type;
+    const iconKey = buildSessionIconKey({ stableDeviceId, deviceId, packageName, userId });
+    const iconUrl = iconKey ? (sessionIconCache.get(iconKey) || null) : null;
+    tab.dataset.iconKey = iconKey || "";
+    tab.dataset.packageName = packageName || "";
+    tab.dataset.deviceKey = stableDeviceId || deviceId || "";
+    tab.dataset.userId = String(normalizeUserId(userId));
     const displayLabel = label || sessionId;
     const colorStyle = deviceColor?.hex ? ` style="background:${deviceColor.hex}"` : "";
     tab.innerHTML = `
         <span class="tab-icon device-color-pill"${colorStyle}></span>
+        ${renderTabAppIcon(iconUrl)}
         <span class="tab-label">
             <span class="session-type-badge">${type}</span>
             ${displayLabel}
@@ -73,7 +157,8 @@ function setActiveSessionTab(sessionId) {
     });
 }
 
-function upsertSessionTab({ sessionId, type, active, label, hasCustomName, deviceColor }, { updateOnly = false } = {}) {
+function upsertSessionTab(session, { updateOnly = false } = {}) {
+    const { sessionId, type, active, label, hasCustomName, deviceColor } = session;
     const tabsBar = getSessionTabsContainer();
     if (!tabsBar || !sessionId) return;
 
@@ -91,6 +176,13 @@ function upsertSessionTab({ sessionId, type, active, label, hasCustomName, devic
         if (deviceColor !== undefined) {
             applyTabColorPill(existing.querySelector(".tab-icon.device-color-pill"), deviceColor);
         }
+        const iconKey = buildSessionIconKey(session);
+        existing.dataset.iconKey = iconKey || "";
+        existing.dataset.packageName = session.packageName || "";
+        existing.dataset.deviceKey = session.stableDeviceId || session.deviceId || "";
+        existing.dataset.userId = String(normalizeUserId(session.userId));
+        updateTabAppIcon(existing, iconKey ? (sessionIconCache.get(iconKey) || null) : null);
+        resolveSessionTabIcon(session).catch(() => {});
         if (active) {
             setActiveSessionTab(sessionId);
         }
@@ -109,9 +201,14 @@ function upsertSessionTab({ sessionId, type, active, label, hasCustomName, devic
         active: Boolean(active),
         label,
         hasCustomName,
-        deviceColor
+        deviceColor,
+        packageName: session.packageName,
+        userId: session.userId,
+        deviceId: session.deviceId,
+        stableDeviceId: session.stableDeviceId
     });
     tabsBar.appendChild(tab);
+    resolveSessionTabIcon(session).catch(() => {});
     return tab;
 }
 
@@ -235,6 +332,7 @@ async function renderSidebar() {
 
     sessions.forEach((session) => {
         tabsBar.appendChild(createSessionTabElement(session));
+        resolveSessionTabIcon(session).catch(() => {});
     });
 
     if (typeof updateScreenToggle === "function") updateScreenToggle();
@@ -316,5 +414,19 @@ if (window.sessionAPI?.list) {
 if (window.deviceColorsAPI?.onUpdated) {
     window.deviceColorsAPI.onUpdated(() => {
         refreshSessionTabColors().catch(console.error);
+    });
+}
+
+if (window.electronAPI?.onAppMetadataUpdated) {
+    window.electronAPI.onAppMetadataUpdated(({ serial, updates } = {}) => {
+        if (!Array.isArray(updates) || updates.length === 0) return;
+        for (const update of updates) {
+            const deviceKey = update.deviceId || serial;
+            const packageName = update.packageName || update.package;
+            if (!deviceKey || !packageName || !update.iconUrl) continue;
+            const iconKey = `${deviceKey}::${packageName}::${normalizeUserId(update.userId)}`;
+            sessionIconCache.set(iconKey, update.iconUrl);
+            hydrateTabsWithIcon(iconKey, update.iconUrl);
+        }
     });
 }

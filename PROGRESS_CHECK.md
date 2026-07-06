@@ -1,6 +1,18 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-05
+Dernière mise à jour : 2026-07-06
+
+---
+
+## TÂCHE — Logo application sur onglets/fenêtres (2026-07-06)
+
+**Statut : implémenté (async + fallback).**
+
+- Réutilisation du mécanisme existant `AppMetadataManager` via IPC `app-metadata:resolve` (pas de duplication extraction APK).
+- Onglets session (`Sidebar.js`) : ajout d'une icône applicative à côté du badge type, avec placeholder SVG immédiat.
+- Chargement non bloquant : résolution asynchrone par session (`stableDeviceId + package + userId`) puis mise à jour visuelle à chaud.
+- Cache côté renderer pour éviter les résolutions répétées ; écoute `app-metadata:updated` pour hydrater les onglets dès qu'une icône est prête.
+- Aucune modification des zones LOCK input/vidéo/orientation/audio.
 
 ---
 
