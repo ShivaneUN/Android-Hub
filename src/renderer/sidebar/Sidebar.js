@@ -148,13 +148,22 @@ function createSessionTabElement({ sessionId, type, active, label, hasCustomName
     return tab;
 }
 
-function setActiveSessionTab(sessionId) {
+function updateSessionFocusChrome(sessionId) {
     const tabsBar = getSessionTabsContainer();
-    if (!tabsBar) return;
+    if (tabsBar) {
+        tabsBar.querySelectorAll(".scrcpy-tab").forEach((tab) => {
+            tab.classList.toggle("active", Boolean(sessionId) && tab.dataset.tabId === sessionId);
+        });
+    }
 
-    tabsBar.querySelectorAll(".scrcpy-tab").forEach((tab) => {
-        tab.classList.toggle("active", tab.dataset.tabId === sessionId);
-    });
+    const content = document.querySelector(".content");
+    if (content) {
+        content.classList.toggle("content--session-focused", Boolean(sessionId));
+    }
+}
+
+function setActiveSessionTab(sessionId) {
+    updateSessionFocusChrome(sessionId);
 }
 
 function upsertSessionTab(session, { updateOnly = false } = {}) {
@@ -342,6 +351,8 @@ async function renderSidebar() {
     const content = document.querySelector(".content");
     if (content) {
         content.classList.toggle("content--session-view", sessions.length > 0);
+        const activeSession = sessions.find((session) => session.active);
+        updateSessionFocusChrome(activeSession?.sessionId || null);
         if (typeof reportContentBounds === "function") reportContentBounds();
     }
 }

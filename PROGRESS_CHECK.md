@@ -4,6 +4,55 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Contour vert fenêtre/onglet actif (2026-07-06)
+
+**Statut : implémenté.**
+
+- Réutilise `setActiveSessionTab` / `session.active` / `session:activated` / `session:cycleTab` (Ctrl+Tab) — pas de nouveau tracking.
+- Onglet actif : bordure verte inset 2px + accent bas 3px (`.scrcpy-tab.active`).
+- Zone vidéo : `box-shadow` inset 3px sur `.content.content--session-focused`.
+- Pastille couleur appareil (`.tab-icon.device-color-pill`) inchangée, distincte du contour de focus.
+
+---
+
+## TÂCHE — Inventaire emplacements logs (2026-07-06)
+
+**Statut : documenté (audit code, pas de code nettoyage).**
+
+Livrable détaillé : **[LOGS_STRUCTURE.md](./LOGS_STRUCTURE.md)**
+
+### Résumé
+
+| Zone | Chemin / comportement |
+|------|------------------------|
+| **Seul log fichier Hub confirmé** | `{userData}/update.log` — append illimité, auto-updater (`auto-updater.js`) |
+| **Dossier `logs/`** | Cible maintenance mais **non écrit** par le code actuel |
+| **ADB / scrcpy** | **Aucune** redirection fichier — stdout/stderr → `console.*` uniquement |
+| **Par session / device** | Processus en mémoire (`scrcpy.exe`, `adb shell` server) ; pas de `*.log` par serial ou sessionId |
+| **Détection verrou** | Déjà implémentée : `tryDeleteFile()` ouvre en `r+`, skip si `EBUSY`/`EPERM`/`EACCES` |
+
+**Recommandation nettoyage** : ne supprimer que `update.log` + contenu ancien de `logs/` ; s’appuyer sur le skip lock existant + filtre d’âge pour l’auto-nettoyage.
+
+---
+
+## TÂCHE — Fix compteur historique modal Nettoyer (2026-07-06)
+
+**Statut : corrigé.**
+
+### Diagnostic
+
+- L'affichage principal (`launch-history:list` → `LaunchHistoryManager.list()`) montre toutes les entrées valides visibles (après `pruneStale` 2 jours).
+- Le compteur modal utilisait `purgeOlderThan(cutoff 7 jours)` : une app lancée récemment comptait **0** entrée éligible alors que l'historique principal en affichait au moins 1.
+- Même source (`launch-history.json` / `LaunchHistoryManager`), mais **logique de comptage différente** (filtre d'âge 7 jours vs liste complète).
+
+### Correctif
+
+- `LaunchHistoryManager.collectMaintenanceKeys()` + `purgeForMaintenance({ olderThanMs })` : alignés sur `list()` (même `pruneStale`, exclusion sessions Type B actives).
+- **Preview / nettoyage manuel** : `olderThanMs = null` → compte et supprime toutes les entrées visibles dans l'historique.
+- **Nettoyage auto** (`startup` / `interval`) : conserve le filtre 7 jours via `olderThanMs = cutoff`.
+
+---
+
 ## TÂCHE — Nettoyage sélectif logs / cache / historique (2026-07-06)
 
 **Statut : implémenté (main + preload + panneau Appareils).**
