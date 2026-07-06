@@ -2,6 +2,8 @@
  * Bandeau de notification des mises à jour automatiques.
  */
 (function initUpdateNotifier() {
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
     const banner = document.getElementById("update-banner");
     if (!banner || !window.electronAPI) return;
 
@@ -55,7 +57,7 @@
     function updateVersionBadge(state = {}) {
         if (!versionBtn) return;
         const currentVersion = state.currentVersion || "?";
-        versionBtn.textContent = `v${currentVersion}`;
+        versionBtn.textContent = t("titlebar.version", { version: currentVersion });
 
         const hasUpdate = state.status === "available" || state.status === "downloaded";
         versionBtn.classList.toggle("has-update", hasUpdate);
@@ -70,20 +72,20 @@
 
         if (status === "idle" || status === "checking") {
             if (status === "checking") {
-                titleEl.textContent = "Recherche de mises à jour…";
-                detailEl.textContent = `Version actuelle : v${currentVersion}`;
+                titleEl.textContent = t("update.status.checking");
+                detailEl.textContent = t("update.status.currentVersion", { version: currentVersion });
                 setProgress(false);
                 renderActions(status);
                 showBanner();
             } else if (manualCheckPending) {
                 manualCheckPending = false;
-                titleEl.textContent = "Vous êtes à jour";
-                detailEl.textContent = `Version v${currentVersion} — aucune mise à jour disponible.`;
+                titleEl.textContent = t("update.status.upToDate");
+                detailEl.textContent = t("update.status.upToDateDetail", { version: currentVersion });
                 setProgress(false);
                 renderActions("uptodate");
                 showBanner();
             } else if (state.error && state.enabled === false) {
-                titleEl.textContent = "Mises à jour non configurées";
+                titleEl.textContent = t("update.status.notConfigured");
                 detailEl.textContent = state.error;
                 renderActions("error");
                 showBanner();
@@ -100,10 +102,10 @@
                 hideBanner();
                 return;
             }
-            titleEl.textContent = `Mise à jour v${nextVersion} disponible`;
+            titleEl.textContent = t("update.status.available", { version: nextVersion });
             detailEl.textContent = state.releaseNotes
                 ? state.releaseNotes.split("\n")[0]
-                : `Une nouvelle version est prête (actuelle : v${currentVersion}).`;
+                : t("update.status.availableDetail", { currentVersion });
             setProgress(false);
             renderActions(status);
             showBanner();
@@ -111,8 +113,9 @@
         }
 
         if (status === "downloading") {
-            titleEl.textContent = `Téléchargement v${nextVersion || ""}…`.trim();
-            detailEl.textContent = `${Math.round(state.progress?.percent ?? 0)} %`;
+            const percent = Math.round(state.progress?.percent ?? 0);
+            titleEl.textContent = t("update.status.downloading", { version: nextVersion || "" });
+            detailEl.textContent = t("update.status.progress", { percent });
             setProgress(true, state.progress?.percent ?? 0);
             renderActions(status);
             showBanner();
@@ -120,10 +123,10 @@
         }
 
         if (status === "downloaded") {
-            titleEl.textContent = `Mise à jour v${nextVersion} prête`;
+            titleEl.textContent = t("update.status.downloaded", { version: nextVersion });
             detailEl.textContent = state.canInstall === false
-                ? "Téléchargement terminé — installez via Setup.exe pour appliquer la mise à jour."
-                : "Redémarrez l'application pour terminer l'installation.";
+                ? t("update.status.downloadedManual")
+                : t("update.status.downloadedInstall");
             setProgress(true, 100);
             renderActions(status);
             showBanner();
@@ -131,8 +134,8 @@
         }
 
         if (status === "error") {
-            titleEl.textContent = "Erreur de mise à jour";
-            detailEl.textContent = state.error || "Impossible de vérifier les mises à jour.";
+            titleEl.textContent = t("update.error.title");
+            detailEl.textContent = state.error || t("update.error.checkFailed");
             setProgress(false);
             renderActions(status);
             showBanner();
@@ -140,8 +143,8 @@
         }
 
         if (status === "dev-mode") {
-            titleEl.textContent = "Mises à jour";
-            detailEl.textContent = state.error || "Disponible uniquement en version installée.";
+            titleEl.textContent = t("update.status.devMode");
+            detailEl.textContent = state.error || t("update.status.devModeDetail");
             setProgress(false);
             renderActions(status);
             showBanner();
@@ -190,6 +193,13 @@
     window.electronAPI.onUpdateStatus((state) => {
         window.__updateState = state;
         renderState(state);
+    });
+
+    globalThis.HubI18n?.onChange?.(() => {
+        if (window.__updateState) {
+            renderState(window.__updateState);
+        }
+        globalThis.HubI18n?.applyDomI18n?.(banner);
     });
 
     window.electronAPI.updateGetStatus?.()

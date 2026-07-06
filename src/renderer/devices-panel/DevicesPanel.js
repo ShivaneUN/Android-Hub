@@ -2,6 +2,8 @@
  * Panneau Appareils — historique USB et configurations WiFi.
  */
 (function initDevicesPanel() {
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
     const PANEL_POLL_MS = 4000;
     let panelPollTimer = null;
     let panelListenersBound = false;
@@ -146,14 +148,14 @@
 
     async function onCleanupNow() {
         if (!window.maintenanceAPI?.previewCleanup || !window.maintenanceAPI?.runCleanup) {
-            window.showHubToast?.("Maintenance indisponible", "error");
+            window.showHubToast?.(t("devicesPanel.maintenanceUnavailable"), "error");
             return;
         }
 
         setCleanupCategoryChecks(true);
         const preview = await refreshCleanupPreview();
         if (!preview?.success) {
-            window.showHubToast?.(preview?.error || "Prévisualisation impossible", "error");
+            window.showHubToast?.(preview?.error || t("devicesPanel.previewFailed"), "error");
             return;
         }
 
@@ -164,7 +166,7 @@
         const els = getCleanupModalElements();
         const categories = getSelectedCleanupCategories();
         if (!hasCleanupSelection(categories)) {
-            window.showHubToast?.("Sélectionnez au moins une catégorie", "info");
+            window.showHubToast?.(t("devicesPanel.selectCategory"), "info");
             return;
         }
 
@@ -172,12 +174,12 @@
             ? cleanupPreviewCache
             : await refreshCleanupPreview();
         if (!preview?.success) {
-            window.showHubToast?.(preview?.error || "Prévisualisation impossible", "error");
+            window.showHubToast?.(preview?.error || t("devicesPanel.previewFailed"), "error");
             return;
         }
 
         if (!hasCleanupWork(preview, categories)) {
-            window.showHubToast?.("Aucun élément à nettoyer pour la sélection", "info");
+            window.showHubToast?.(t("devicesPanel.nothingToClean"), "info");
             return;
         }
 
@@ -191,11 +193,11 @@
         closeCleanupModal();
 
         if (!result?.success) {
-            window.showHubToast?.(result?.error || "Nettoyage impossible", "error");
+            window.showHubToast?.(result?.error || t("devicesPanel.cleanupFailed"), "error");
             return;
         }
 
-        const summary = result.summary?.message || "Nettoyage terminé";
+        const summary = result.summary?.message || t("devicesPanel.cleanupDone");
         window.showHubToast?.(summary, "success");
     }
 
@@ -286,6 +288,14 @@
         });
     }
 
+    function applyMaintenanceHintLabels() {
+        const days = 7;
+        const hint = document.querySelector(".devices-maintenance-hint");
+        if (hint) hint.textContent = t("devicesPanel.maintenanceHint", { days });
+        const modalHint = document.querySelector(".cleanup-modal-hint");
+        if (modalHint) modalHint.textContent = t("maintenance.hint", { days });
+    }
+
     function bindCleanupAction() {
         if (cleanupActionBound) return;
         cleanupActionBound = true;
@@ -298,13 +308,14 @@
 
         bindCleanupModal();
         bindAutoCleanPreferences();
+        applyMaintenanceHintLabels();
         void loadAutoCleanPreferences();
     }
 
     function renderDeviceRow(entry, { section, subLine }) {
         const deviceId = entry.deviceId || entry.serial;
         const reconnectBtn = section === "wifi"
-            ? `<button type="button" class="devices-panel-btn" data-action="reconnect" data-device-id="${escapeHtml(deviceId)}" title="Reconnecter">Reconnecter</button>`
+            ? `<button type="button" class="devices-panel-btn" data-action="reconnect" data-device-id="${escapeHtml(deviceId)}" title="${t("devicesPanel.reconnect")}">${t("devicesPanel.reconnect")}</button>`
             : "";
 
         const statusClass = section === "wifi"
@@ -320,9 +331,9 @@
                 </div>
                 <span class="devices-panel-status ${statusClass}">${escapeHtml(entry.statusLabel)}</span>
                 <div class="devices-panel-actions">
-                    <button type="button" class="devices-panel-btn" data-action="rename" data-device-id="${escapeHtml(deviceId)}" data-original-name="${escapeHtml(entry.originalName || entry.name)}" title="Renommer">Renommer</button>
+                    <button type="button" class="devices-panel-btn" data-action="rename" data-device-id="${escapeHtml(deviceId)}" data-original-name="${escapeHtml(entry.originalName || entry.name)}" title="${t("devicesPanel.rename")}">${t("devicesPanel.rename")}</button>
                     ${reconnectBtn}
-                    <button type="button" class="devices-panel-btn danger" data-action="remove" data-device-id="${escapeHtml(deviceId)}" data-section="${section}" title="Supprimer">Supprimer</button>
+                    <button type="button" class="devices-panel-btn danger" data-action="remove" data-device-id="${escapeHtml(deviceId)}" data-section="${section}" title="${t("devicesPanel.remove")}">${t("devicesPanel.remove")}</button>
                 </div>
             </div>
         `;
@@ -338,15 +349,15 @@
         renderInFlight = true;
         try {
             if (!silent) {
-                usbList.innerHTML = '<p class="apps-loading">Chargement...</p>';
-                wifiList.innerHTML = '<p class="apps-loading">Chargement...</p>';
+                usbList.innerHTML = `<p class="apps-loading">${t("devicesPanel.loading")}</p>`;
+                wifiList.innerHTML = `<p class="apps-loading">${t("devicesPanel.loading")}</p>`;
             }
 
             const response = await window.wifiAPI?.getPanelData?.();
             if (!response?.success) {
                 if (!silent) {
-                    usbList.innerHTML = '<p class="apps-loading">Erreur de chargement</p>';
-                    wifiList.innerHTML = '<p class="apps-loading">Erreur de chargement</p>';
+                    usbList.innerHTML = `<p class="apps-loading">${t("devicesPanel.loadError")}</p>`;
+                    wifiList.innerHTML = `<p class="apps-loading">${t("devicesPanel.loadError")}</p>`;
                 }
                 return;
             }
@@ -355,7 +366,7 @@
             const wifi = Array.isArray(response.wifi) ? response.wifi : [];
 
             if (!usb.length) {
-                usbList.innerHTML = '<p class="apps-loading">Aucun appareil USB enregistré</p>';
+                usbList.innerHTML = `<p class="apps-loading">${t("devicesPanel.noUsb")}</p>`;
             } else {
                 usbList.innerHTML = usb.map((entry) => renderDeviceRow(entry, {
                     section: "usb",
@@ -365,7 +376,7 @@
             }
 
             if (!wifi.length) {
-                wifiList.innerHTML = '<p class="apps-loading">Aucun appareil WiFi configuré</p>';
+                wifiList.innerHTML = `<p class="apps-loading">${t("devicesPanel.noWifi")}</p>`;
             } else {
                 wifiList.innerHTML = wifi.map((entry) => renderDeviceRow(entry, {
                     section: "wifi",
@@ -409,9 +420,9 @@
             const result = await window.wifiAPI.reconnect({ deviceId });
             btn.disabled = false;
             if (result?.success) {
-                window.showHubToast?.(result.message || "Reconnecté en WiFi", "success");
+                window.showHubToast?.(result.message || t("devicesPanel.toastReconnected"), "success");
             } else {
-                window.showHubToast?.(result?.error || "Reconnexion impossible", "error");
+                window.showHubToast?.(result?.error || t("devicesPanel.toastReconnectFailed"), "error");
             }
             await syncAfterPanelAction();
             return;
@@ -420,19 +431,19 @@
         if (action === "remove") {
             const section = btn.dataset.section || "wifi";
             const message = section === "wifi"
-                ? "Supprimer définitivement la configuration WiFi de cet appareil ?"
-                : "Retirer cet appareil de l'historique USB ? La configuration WiFi associée sera aussi supprimée.";
+                ? t("devicesPanel.confirmRemoveWifi")
+                : t("devicesPanel.confirmRemoveUsb");
             if (!window.confirm(message)) return;
 
             const result = await window.wifiAPI.removeFromPanel({ deviceId });
             if (result?.success) {
                 window.showHubToast?.(
-                    section === "wifi" ? "Configuration WiFi supprimée" : "Appareil retiré de l'historique",
+                    section === "wifi" ? t("devicesPanel.toastWifiRemoved") : t("devicesPanel.toastUsbRemoved"),
                     "success"
                 );
                 await syncAfterPanelAction();
             } else {
-                window.showHubToast?.(result?.error || "Suppression impossible", "error");
+                window.showHubToast?.(result?.error || t("devicesPanel.toastRemoveFailed"), "error");
             }
         }
     }
@@ -502,4 +513,13 @@
     window.openDevicesPanel = openDevicesPanel;
     window.stopDevicesPanelLiveRefresh = stopDevicesPanelLiveRefresh;
     window.refreshDevicesPanel = (options) => renderPanel(options || { silent: true });
+
+    globalThis.HubI18n?.onChange?.(() => {
+        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-devices") || document);
+        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("cleanup-modal-overlay") || document);
+        applyMaintenanceHintLabels();
+        if (isDevicesPanelActive()) {
+            void renderPanel({ silent: true });
+        }
+    });
 })();

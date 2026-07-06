@@ -1,4 +1,8 @@
 (function initHelpPanel() {
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+    const tArray = (key) => globalThis.HubI18n?.tArray?.(key) ?? [];
+    const tObject = (key) => globalThis.HubI18n?.tObject?.(key) ?? {};
+
     function isHubModalChildWindow() {
         return /hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"));
     }
@@ -7,148 +11,34 @@
         return;
     }
 
-    const GUIDE_STEPS = [
-        {
-            visualLabel: "Connexion USB",
-            visualCaption: "Utilisez un câble de données",
-            title: "Branchez votre téléphone",
-            lead: "Utilisez un câble USB de données (pas seulement de charge).",
-            steps: [
-                "Branchez votre téléphone Android à votre ordinateur via USB.",
-                "Sur le téléphone, choisissez « Transfert de fichiers » (MTP) si Android demande le mode USB.",
-                "Évitez les hubs USB bon marché — branchez directement à l'ordinateur si possible."
-            ],
-            tip: "Astuce : si rien ne se passe en branchant le câble, c'est souvent un câble de charge uniquement. Essayez celui fourni avec votre téléphone.",
-            illustration: renderUsbIllustration
-        },
-        {
-            visualLabel: "Options développeur",
-            visualCaption: "À faire une seule fois",
-            title: "Activez les options développeur",
-            lead: "Cette étape n'est nécessaire qu'une seule fois par appareil.",
-            steps: [
-                "Ouvrez Paramètres → À propos du téléphone.",
-                "Repérez « Numéro de build » (ou « Numéro de version »).",
-                "Appuyez 7 fois dessus jusqu'au message « Vous êtes développeur »."
-            ],
-            tip: "Le libellé exact varie selon la marque (Samsung, Xiaomi, etc.) mais le principe reste le même.",
-            illustration: renderDevOptionsIllustration
-        },
-        {
-            visualLabel: "Débogage USB",
-            visualCaption: "Paramètres développeur",
-            title: "Activez le débogage USB",
-            lead: "Android Hub communique avec votre téléphone via ADB — le débogage USB est requis.",
-            steps: [
-                "Allez dans Paramètres → Système → Options pour les développeurs.",
-                "Activez l'option « Débogage USB ».",
-                "Sur Xiaomi / Realme / Oppo : autorisez aussi « Débogage USB (paramètres de sécurité) » si proposé."
-            ],
-            tip: "Sur certaines marques, les options développeur sont dans Paramètres → Paramètres supplémentaires.",
-            illustration: renderUsbDebugIllustration
-        },
-        {
-            visualLabel: "Autorisation",
-            visualCaption: "Fenêtre sur le téléphone",
-            title: "Autorisez la connexion",
-            lead: "Votre téléphone va demander de faire confiance à cet ordinateur.",
-            steps: [
-                "Une fenêtre « Autoriser le débogage USB ? » apparaît sur le téléphone.",
-                "Cochez « Toujours autoriser depuis cet ordinateur ».",
-                "Appuyez sur « Autoriser »."
-            ],
-            tip: "Si la fenêtre n'apparaît pas, débranchez/rebranchez le câble et déverrouillez l'écran du téléphone.",
-            illustration: renderAuthorizeIllustration
-        },
-        {
-            visualLabel: "Android Hub",
-            visualCaption: "Appareil détecté",
-            title: "Vous êtes prêt !",
-            lead: "Votre téléphone est maintenant détecté par Android Hub.",
-            steps: [
-                "L'appareil apparaît dans le panneau « Appareils connectés » à gauche.",
-                "Ouvrez « Nouvelle instance », sélectionnez l'appareil puis une application — ou cliquez « Mirroring » pour afficher l'écran complet.",
-                "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier."
-            ],
-            tip: "Double-cliquez une entrée de l'historique pour relancer rapidement une application déjà utilisée.",
-            illustration: renderReadyIllustration
-        }
+    const GUIDE_ILLUSTRATIONS = [
+        renderUsbIllustration,
+        renderDevOptionsIllustration,
+        renderUsbDebugIllustration,
+        renderAuthorizeIllustration,
+        renderReadyIllustration
     ];
 
-    const WIFI_GUIDE = {
-        title: "Connecter un appareil en WiFi",
-        steps: [
-            "Branche ton appareil en USB et assure-toi qu'il est bien détecté dans le Hub (débogage USB activé sur le téléphone).",
-            "Vérifie que ton téléphone est connecté au WiFi, sur le même réseau que cet ordinateur.",
-            "Clique sur le toggle WiFi à côté de l'appareil dans la sidebar.",
-            "À la première connexion, le Hub va automatiquement configurer l'appareil et te demander de lui donner un nom. Une fois connecté, un message « Connecté en WiFi » s'affiche.",
-            "Tu peux maintenant débrancher le câble USB — l'appareil reste joignable tant qu'il est sur le même réseau WiFi.",
-            "Pour repasser en USB, reclique simplement sur le toggle (le WiFi sera désactivé, mais la configuration reste enregistrée pour la prochaine fois).",
-            "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans le panneau « Appareils » (icône 📶 dans la barre principale)."
-        ],
-        note: "Si le WiFi du téléphone change de réseau ou si son adresse IP change, il se peut que tu doives reconnecter l'appareil via le toggle."
-    };
+    function getGuideSteps() {
+        const steps = tArray("help.guide.steps");
+        return steps.map((step, index) => ({
+            ...step,
+            illustration: GUIDE_ILLUSTRATIONS[index] || (() => "")
+        }));
+    }
 
-    const SHORTCUT_GROUPS = [
-        {
-            title: "Navigation",
-            items: [
-                { keys: ["Ctrl", "Tab"], desc: "Passer à l'onglet session suivant." },
-                { keys: ["Ctrl", "Shift", "Tab"], desc: "Revenir à l'onglet session précédent." }
-            ]
-        },
-        {
-            title: "Contrôle du flux (session active)",
-            items: [
-                { keys: ["Clic"], desc: "Taper / cliquer sur l'écran Android (canvas vidéo focalisé)." },
-                { keys: ["Clic droit"], desc: "Touche Retour Android." }
-            ]
-        },
-        {
-            title: "Nouvelle instance",
-            items: [
-                { keys: ["Double-clic"], desc: "Relancer une application depuis la section Historique." }
-            ]
-        },
-        {
-            title: "Dialogues",
-            items: [
-                { keys: ["Entrée"], desc: "Valider le renommage d'une session ou d'un appareil." },
-                { keys: ["Échap"], desc: "Annuler le renommage." }
-            ]
-        },
-        {
-            title: "Appareils connectés (sidebar)",
-            items: [
-                { keys: ["Double-clic"], desc: "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)." }
-            ]
-        },
-        {
-            title: "Clic droit — Appareils connectés (sidebar)",
-            items: [
-                { keys: ["Renommer"], desc: "Ouvrir le dialogue pour personnaliser le nom affiché dans la liste des appareils." },
-                { keys: ["Réinitialiser le nom"], desc: "Revenir au nom d'origine (visible uniquement si l'appareil a été renommé)." },
-                { keys: ["Couleur → Auto"], desc: "Attribuer automatiquement une couleur distincte à chaque appareil connecté." },
-                { keys: ["Couleur → teinte"], desc: "Choisir une couleur fixe (Rouge, Orange, Jaune, Vert, Turquoise, Bleu, Violet, Rose, Marron, Ardoise) pour identifier l'appareil dans la sidebar et les onglets." }
-            ]
-        },
-        {
-            title: "Clic droit — Onglets de session",
-            items: [
-                { keys: ["Renommer"], desc: "Personnaliser le libellé de l'onglet (mirroring ou instance d'application)." },
-                { keys: ["Réinitialiser le nom"], desc: "Restaurer le libellé d'origine (visible uniquement si l'onglet a été renommé)." },
-                { keys: ["Fermer"], desc: "Fermer la session vidéo et retirer l'onglet." }
-            ]
-        }
-    ];
+    function getWifiGuide() {
+        return tObject("help.wifi");
+    }
 
-    const TROUBLESHOOTING = [
-        "Aucun appareil visible : vérifiez le câble USB (données, pas charge seule) et le mode MTP.",
-        "« Autoriser le débogage USB » ne s'affiche pas : déverrouillez l'écran, rebranchez le câble.",
-        "Appareil déconnecté aléatoirement : branchez directement sur le PC, évitez les hubs USB.",
-        "Mirroring ne démarre pas : fermez les autres outils ADB (Android Studio, scrcpy en CLI).",
-        "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser."
-    ];
+    function getShortcutGroups() {
+        const groups = t("help.shortcuts.groups");
+        return Array.isArray(groups) ? groups : [];
+    }
+
+    function getTroubleshootingItems() {
+        return tArray("help.troubleshoot.items");
+    }
 
     let currentGuideStep = 0;
     let overlayEl = null;
@@ -234,25 +124,26 @@
     }
 
     function renderWifiGuideSection() {
-        const stepsHtml = WIFI_GUIDE.steps.map((step) => `<li>${step}</li>`).join("");
+        const wifiGuide = getWifiGuide();
+        const stepsHtml = (wifiGuide.steps || []).map((step) => `<li>${step}</li>`).join("");
         return `
             <div class="help-guide-content help-guide-content--static">
                 <div class="help-guide-text">
-                    <h3 class="help-guide-heading">${WIFI_GUIDE.title}</h3>
+                    <h3 class="help-guide-heading">${wifiGuide.title || ""}</h3>
                     <ol class="help-guide-steps">${stepsHtml}</ol>
-                    <div class="help-guide-tip"><strong>Remarque :</strong> ${WIFI_GUIDE.note}</div>
+                    <div class="help-guide-tip"><strong>${t("help.guide.notePrefix")}</strong> ${wifiGuide.note || ""}</div>
                 </div>
             </div>
         `;
     }
 
     function renderShortcutsSection() {
-        return SHORTCUT_GROUPS.map((group) => `
+        return getShortcutGroups().map((group) => `
             <div class="help-shortcuts-group">
                 <div class="help-shortcuts-group-title">${group.title}</div>
-                ${group.items.map((item) => `
+                ${(group.items || []).map((item) => `
                     <div class="help-shortcut-row">
-                        <div class="help-shortcut-keys">${renderShortcutKeys(item.keys)}</div>
+                        <div class="help-shortcut-keys">${renderShortcutKeys(item.keys || [])}</div>
                         <div class="help-shortcut-desc">${item.desc}</div>
                     </div>
                 `).join("")}
@@ -261,8 +152,9 @@
     }
 
     function renderStepper() {
+        const guideSteps = getGuideSteps();
         const parts = [];
-        for (let i = 0; i < GUIDE_STEPS.length; i++) {
+        for (let i = 0; i < guideSteps.length; i++) {
             if (i > 0) {
                 parts.push(`<div class="help-stepper-line${i <= currentGuideStep ? " done" : ""}"></div>`);
             }
@@ -274,25 +166,28 @@
     }
 
     function renderGuideStep() {
-        const step = GUIDE_STEPS[currentGuideStep];
-        const total = GUIDE_STEPS.length;
-        const stepsHtml = step.steps.map((s) => `<li>${s}</li>`).join("");
+        const guideSteps = getGuideSteps();
+        const step = guideSteps[currentGuideStep];
+        if (!step) return "";
+
+        const total = guideSteps.length;
+        const stepsHtml = (step.steps || []).map((s) => `<li>${s}</li>`).join("");
         const tipHtml = step.tip
-            ? `<div class="help-guide-tip"><strong>Astuce :</strong> ${step.tip}</div>`
+            ? `<div class="help-guide-tip"><strong>${t("help.guide.tipPrefix")}</strong> ${step.tip}</div>`
             : "";
 
         return `
             <div class="help-guide-stepper" id="help-guide-stepper">${renderStepper()}</div>
             <div class="help-guide-content">
                 <div class="help-guide-visual">
-                    <div class="help-guide-visual-label">${step.visualLabel}</div>
+                    <div class="help-guide-visual-label">${step.visualLabel || ""}</div>
                     ${step.illustration()}
-                    <div class="help-guide-visual-caption">${step.visualCaption}</div>
+                    <div class="help-guide-visual-caption">${step.visualCaption || ""}</div>
                 </div>
                 <div class="help-guide-text">
-                    <div class="help-guide-step-label">Étape ${currentGuideStep + 1} sur ${total}</div>
-                    <h3 class="help-guide-heading">${step.title}</h3>
-                    <p class="help-guide-lead">${step.lead}</p>
+                    <div class="help-guide-step-label">${t("help.guide.stepLabel", { current: currentGuideStep + 1, total })}</div>
+                    <h3 class="help-guide-heading">${step.title || ""}</h3>
+                    <p class="help-guide-lead">${step.lead || ""}</p>
                     <ol class="help-guide-steps">${stepsHtml}</ol>
                     ${tipHtml}
                 </div>
@@ -303,8 +198,8 @@
     function renderTroubleshootPanel() {
         return `
             <div class="help-troubleshoot-panel" id="help-troubleshoot-panel">
-                <h4>Dépannage rapide</h4>
-                <ul>${TROUBLESHOOTING.map((t) => `<li>${t}</li>`).join("")}</ul>
+                <h4>${t("help.troubleshoot.title")}</h4>
+                <ul>${getTroubleshootingItems().map((item) => `<li>${item}</li>`).join("")}</ul>
             </div>
         `;
     }
@@ -316,26 +211,21 @@
                 <div class="help-modal-header">
                     <div class="help-modal-title-row">
                         <div class="help-modal-icon" aria-hidden="true">?</div>
-                        <h2 class="help-modal-title" id="help-modal-title">Aide &amp; Raccourcis</h2>
+                        <h2 class="help-modal-title" id="help-modal-title">${t("help.tab.title")}</h2>
                     </div>
                     <div class="hub-panel-header-actions">
-                        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="help" title="Rafraîchir">Rafraîchir</button>
-                        <button type="button" class="help-modal-close" data-hub-modal-close id="help-modal-close" title="Fermer">&#10005;</button>
+                        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="help" title="${t("help.tab.refresh")}">${t("help.tab.refresh")}</button>
+                        <button type="button" class="help-modal-close" data-hub-modal-close id="help-modal-close" title="${t("help.tab.close")}">&#10005;</button>
                     </div>
                 </div>
                 <div class="help-modal-tabs">
-                    <button type="button" class="help-tab-btn active" data-help-tab="shortcuts">Raccourcis</button>
-                    <button type="button" class="help-tab-btn" data-help-tab="guide">Guide mirroring</button>
-                    <button type="button" class="help-tab-btn" data-help-tab="wifi">Connexion WiFi</button>
+                    <button type="button" class="help-tab-btn active" data-help-tab="shortcuts">${t("help.tab.shortcuts")}</button>
+                    <button type="button" class="help-tab-btn" data-help-tab="guide">${t("help.tab.guide")}</button>
+                    <button type="button" class="help-tab-btn" data-help-tab="wifi">${t("help.tab.wifi")}</button>
                 </div>
                 <div class="help-modal-body">
                     <section class="help-section active" id="help-section-shortcuts" data-section="shortcuts">
-                        <p class="help-shortcuts-intro">
-                            Raccourcis clavier et actions disponibles dans Android Hub. Les raccourcis de navigation
-                            ne s'appliquent pas lorsque vous tapez dans un champ texte.
-                            <strong>Clic droit</strong> sur un appareil dans « Appareils connectés » ou sur un onglet
-                            de session pour ouvrir un menu contextuel (renommer, couleur, fermer…).
-                        </p>
+                        <p class="help-shortcuts-intro">${t("help.shortcuts.intro")}</p>
                         ${renderShortcutsSection()}
                     </section>
                     <section class="help-section" id="help-section-guide" data-section="guide">
@@ -347,10 +237,10 @@
                     </section>
                 </div>
                 <div class="help-guide-footer" id="help-guide-footer">
-                    <button type="button" class="help-troubleshoot-link" id="help-troubleshoot-toggle">Voir le dépannage</button>
+                    <button type="button" class="help-troubleshoot-link" id="help-troubleshoot-toggle">${t("help.guide.showTroubleshoot")}</button>
                     <div class="help-guide-nav">
-                        <button type="button" class="help-btn help-btn-secondary" id="help-guide-prev">Précédent</button>
-                        <button type="button" class="help-btn help-btn-primary" id="help-guide-next">Suivant</button>
+                        <button type="button" class="help-btn help-btn-secondary" id="help-guide-prev">${t("help.guide.prev")}</button>
+                        <button type="button" class="help-btn help-btn-primary" id="help-guide-next">${t("help.guide.next")}</button>
                     </div>
                 </div>
             </div>
@@ -389,8 +279,11 @@
         const nextBtn = root.querySelector("#help-guide-next");
         if (!prevBtn || !nextBtn) return;
 
+        const guideSteps = getGuideSteps();
         prevBtn.disabled = currentGuideStep === 0;
-        nextBtn.textContent = currentGuideStep >= GUIDE_STEPS.length - 1 ? "Terminer" : "Suivant";
+        nextBtn.textContent = currentGuideStep >= guideSteps.length - 1
+            ? t("help.guide.finish")
+            : t("help.guide.next");
     }
 
     function refreshGuideView() {
@@ -430,7 +323,8 @@
         });
 
         overlayEl.querySelector("#help-guide-next")?.addEventListener("click", () => {
-            if (currentGuideStep >= GUIDE_STEPS.length - 1) {
+            const guideSteps = getGuideSteps();
+            if (currentGuideStep >= guideSteps.length - 1) {
                 closeHelpPanel();
                 return;
             }
@@ -441,24 +335,33 @@
         overlayEl.querySelector("#help-troubleshoot-toggle")?.addEventListener("click", () => {
             overlayEl.querySelector("#help-troubleshoot-panel")?.classList.toggle("visible");
         });
+    }
 
-        document.addEventListener("keydown", (event) => {
-            if (event.key !== "Escape") return;
-            closeHelpPanel();
-        });
+    function refreshHelpPanel() {
+        const root = overlayEl?.querySelector(".help-modal") || overlayEl;
+        const activeTab = root?.querySelector(".help-tab-btn.active")?.dataset.helpTab || "shortcuts";
+        const savedStep = currentGuideStep;
+        overlayEl = buildModal();
+        wireEvents();
+        currentGuideStep = Math.min(savedStep, Math.max(0, getGuideSteps().length - 1));
+        refreshGuideView();
+        setActiveTab(activeTab);
+        overlayEl.querySelector("#help-troubleshoot-panel")?.classList.remove("visible");
     }
 
     overlayEl = buildModal();
     wireEvents();
 
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        closeHelpPanel();
+    });
+
+    globalThis.HubI18n?.onChange?.(() => {
+        refreshHelpPanel();
+    });
+
     window.openHelpPanel = openHelpPanel;
     window.closeHelpPanel = closeHelpPanel;
-    window.refreshHelpPanel = function refreshHelpPanel() {
-        const root = overlayEl?.querySelector(".help-modal") || overlayEl;
-        const activeTab = root?.querySelector(".help-tab-btn.active")?.dataset.helpTab || "shortcuts";
-        currentGuideStep = 0;
-        refreshGuideView();
-        setActiveTab(activeTab);
-        root?.querySelector("#help-troubleshoot-panel")?.classList.remove("visible");
-    };
+    window.refreshHelpPanel = refreshHelpPanel;
 })();

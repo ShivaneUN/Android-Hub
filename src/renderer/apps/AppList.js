@@ -3,6 +3,8 @@
  * Affiche icone + nom lisible, filtrage live optionnel, tri alphabetique.
  */
 (function initAppList(global) {
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
     const DEFAULT_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><circle cx="12" cy="12" r="2.5"/></svg>`;
 
     function escapeHtml(value) {
@@ -45,8 +47,8 @@
             this.container = container;
             this.options = {
                 mode: options.mode || "select",
-                emptyMessage: options.emptyMessage || "Aucune application trouvee",
-                loadingMessage: options.loadingMessage || "Chargement...",
+                emptyMessage: options.emptyMessage || t("apps.noResults"),
+                loadingMessage: options.loadingMessage || t("apps.loading"),
                 sortAlphabetically: options.sortAlphabetically !== false,
                 showPackageAsSubtitle: Boolean(options.showPackageAsSubtitle),
                 getItemKey: options.getItemKey || defaultGetItemKey,

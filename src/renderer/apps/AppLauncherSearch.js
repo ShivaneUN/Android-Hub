@@ -3,6 +3,7 @@
  * Composant independant de l'historique (AppList / historyEntries).
  */
 (function initAppLauncherSearch(global) {
+    const t = (key, vars) => global.HubI18n?.t(key, vars) ?? key;
     const DEFAULT_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><circle cx="12" cy="12" r="2.5"/></svg>`;
 
     function escapeHtml(value) {
@@ -80,7 +81,7 @@
             this._launching = true;
             Promise.resolve(this.onLaunch?.(app))
                 .catch((err) => {
-                    this.onStatus?.(`Erreur lancement: ${err.message}`, true);
+                    this.onStatus?.(t("newSession.launchError", { message: err.message }), true);
                 })
                 .finally(() => {
                     this._launching = false;
@@ -92,14 +93,14 @@
             if (this.searchInput) {
                 this.searchInput.value = "";
                 this.searchInput.disabled = true;
-                this.searchInput.placeholder = "Rechercher une application à lancer...";
+                this.searchInput.placeholder = t("newSession.searchAppPlaceholder");
             }
             if (this.launcherHint) {
-                this.launcherHint.textContent = "Sélectionnez un appareil pour afficher ses applications.";
+                this.launcherHint.textContent = t("newSession.selectDeviceHint");
                 this.launcherHint.classList.remove("hidden");
             }
             if (this.resultsContainer) {
-                this.resultsContainer.innerHTML = '<p class="apps-loading">Aucun appareil sélectionné</p>';
+                this.resultsContainer.innerHTML = `<p class="apps-loading">${escapeHtml(t("newSession.noDeviceSelected"))}</p>`;
             }
         }
 
@@ -113,19 +114,20 @@
             if (this.searchInput) {
                 this.searchInput.disabled = false;
                 this.searchInput.value = "";
-                this.searchInput.placeholder = `Rechercher une application sur ${deviceLabel}...`;
+                this.searchInput.placeholder = t("newSession.searchAppOnDevice", { deviceName: deviceLabel });
                 this.searchInput.focus();
             }
             if (this.launcherHint) {
-                this.launcherHint.textContent = `Applications installées sur ${deviceLabel}`;
+                this.launcherHint.textContent = t("newSession.appsOnDevice", { deviceName: deviceLabel });
                 this.launcherHint.classList.remove("hidden");
             }
             this.setLoading();
         }
 
-        setLoading(message = "Chargement des applications...") {
+        setLoading(message = null) {
+            const text = message || t("newSession.loadingApps");
             if (this.resultsContainer) {
-                this.resultsContainer.innerHTML = `<p class="apps-loading">${escapeHtml(message)}</p>`;
+                this.resultsContainer.innerHTML = `<p class="apps-loading">${escapeHtml(text)}</p>`;
             }
         }
 
@@ -146,7 +148,7 @@
             try {
                 const response = await global.electronAPI?.getAppsWithDetails?.(serial);
                 if (response?.success === false) {
-                    throw new Error(response.error || "Impossible de charger les applications");
+                    throw new Error(response.error || t("newSession.cannotLoadApps"));
                 }
 
                 const apps = Array.isArray(response)
@@ -162,7 +164,7 @@
             } catch (err) {
                 this.allApps = [];
                 if (this.resultsContainer) {
-                    this.resultsContainer.innerHTML = '<p class="apps-loading">Erreur lors du chargement des applications</p>';
+                    this.resultsContainer.innerHTML = `<p class="apps-loading">${escapeHtml(t("newSession.loadAppsError"))}</p>`;
                 }
                 throw err;
             }
@@ -233,7 +235,8 @@
                 });
             }
 
-            list.sort((a, b) => getAppLabel(a).localeCompare(getAppLabel(b), "fr", { sensitivity: "base" }));
+            const sortLocale = global.HubI18n?.getLocale?.() || "fr";
+            list.sort((a, b) => getAppLabel(a).localeCompare(getAppLabel(b), sortLocale, { sensitivity: "base" }));
             this.render(list);
             this.scheduleMetadataPrefetch(list);
         }
@@ -251,8 +254,8 @@
 
             if (!apps.length) {
                 const message = this.searchQuery.trim()
-                    ? "Aucune application ne correspond a la recherche"
-                    : "Aucune application trouvee";
+                    ? t("newSession.noAppsSearchResults")
+                    : t("newSession.noAppsFound");
                 this.resultsContainer.innerHTML = `<p class="apps-loading">${escapeHtml(message)}</p>`;
                 return;
             }
@@ -263,7 +266,7 @@
                 const iconPath = app.iconPath ? escapeHtml(app.iconPath) : "";
                 const iconUrl = app.iconUrl ? escapeHtml(app.iconUrl) : "";
                 const profileSuffix = app.userId !== undefined && app.userId !== null
-                    ? ` (profil ${app.userId})`
+                    ? ` (${t("newSession.profile", { userId: app.userId })})`
                     : "";
 
                 return `

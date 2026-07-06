@@ -1,0 +1,458 @@
+module.exports = {
+    sidebar: {
+        newInstance: "New instance",
+        connectedDevices: "Connected devices",
+        screen: "Screen",
+        portrait: "Portrait",
+        audio: "Audio",
+        devices: "Devices",
+        control: "Control",
+        help: "Help",
+        language: "Language",
+        languageFr: "Français",
+        languageEn: "English",
+        tabs: {
+            close: "Close tab",
+            mirroring: "Mirroring",
+            instance: "Instance"
+        },
+        devicePanel: {
+            loading: "Loading...",
+            empty: "No connected devices",
+            mirroring: "Mirroring",
+            wifiToggle: "WiFi ADB connection",
+            battery: "Battery",
+            transportAdb: "ADB transport",
+            usb: "USB",
+            wifiConnected: "WiFi connected",
+            deviceFallback: "Device"
+        }
+    },
+    titlebar: {
+        appTitle: "Android Hub",
+        minimize: "Minimize",
+        maximize: "Maximize",
+        close: "Close",
+        checkUpdates: "Check for updates",
+        version: "v{version}"
+    },
+    emptyState: {
+        title: "Android Hub",
+        subtitle: "Multi-device Android display and control",
+        hint: "Connect a device via USB"
+    },
+    update: {
+        banner: {
+            download: "Download",
+            install: "Restart and install",
+            retry: "Retry",
+            later: "Later"
+        },
+        status: {
+            checking: "Checking for updates…",
+            currentVersion: "Current version: v{version}",
+            upToDate: "You're up to date",
+            upToDateDetail: "Version v{version} — no update available.",
+            notConfigured: "Updates not configured",
+            available: "Update v{version} available",
+            availableDetail: "A new version is ready (current: v{currentVersion}).",
+            downloading: "Downloading v{version}…",
+            downloaded: "Update v{version} ready",
+            downloadedInstall: "Restart the application to complete installation.",
+            downloadedManual: "Download complete — install via Setup.exe to apply the update.",
+            devMode: "Updates",
+            devModeDetail: "Available only in the installed release.",
+            progress: "{percent} %"
+        },
+        error: {
+            title: "Update error",
+            checkFailed: "Unable to check for updates."
+        }
+    },
+    hubModal: {
+        refresh: "Refresh",
+        refreshDeviceList: "Refresh list",
+        refreshSessions: "Refresh sessions",
+        close: "Close",
+        newSession: "New instance",
+        control: "Session control",
+        devices: "Devices",
+        help: "Help & Shortcuts"
+    },
+    colors: {
+        red: "Red",
+        orange: "Orange",
+        yellow: "Yellow",
+        green: "Green",
+        teal: "Teal",
+        blue: "Blue",
+        purple: "Purple",
+        pink: "Pink",
+        brown: "Brown",
+        slate: "Slate"
+    },
+    contextMenu: {
+        rename: "Rename",
+        resetName: "Reset name",
+        color: "Color",
+        auto: "Auto",
+        close: "Close",
+        confirmResetTitle: "Reset name",
+        confirmResetMessage: "Reset to the original name?",
+        cancel: "Cancel",
+        reset: "Reset",
+        windowNotFound: "Window not found.",
+        invalidTarget: "Invalid target."
+    },
+    toggles: {
+        screenTitle: "Turn the device screen on or off (active mirroring session)",
+        screenOn: "ON",
+        screenOff: "OFF",
+        portraitTitle: "Enable or disable portrait mode",
+        portraitOn: "P",
+        portraitOff: "L",
+        audioTitle: "Mute or unmute audio for all sessions",
+        audioOn: "ON",
+        audioOff: "OFF",
+        devicesTitle: "USB and WiFi devices",
+        helpTitle: "Help and keyboard shortcuts"
+    },
+    devicePanel: {
+        wifiEnabled: "WiFi enabled",
+        wifiDisconnected: "WiFi disconnected",
+        wifiFailed: "WiFi connection failed",
+        wifiError: "WiFi error",
+        wifiConnected: "Connected over WiFi",
+        errors: {
+            tcpip: "Unable to enable WiFi mode on this device",
+            ip: "IP address not found — make sure WiFi is enabled on the phone",
+            connect: "Connection failed — make sure the phone is on the same network"
+        },
+        progress: {
+            ip: "Retrieving IP address...",
+            tcpip: "Enabling WiFi...",
+            connect: "Connecting..."
+        }
+    },
+    devicesPanel: {
+        usb: "USB",
+        wifi: "WiFi",
+        maintenance: "Maintenance",
+        loading: "Loading...",
+        loadError: "Failed to load",
+        noUsb: "No registered USB devices",
+        noWifi: "No configured WiFi devices",
+        rename: "Rename",
+        reconnect: "Reconnect",
+        remove: "Remove",
+        cleanupNow: "Clean up now",
+        maintenanceHint: "Logs/cache: {days} days. History: entries visible in the hub.",
+        autoCleanup: "Automatic cleanup",
+        autoLogs: "Logs",
+        autoCache: "Cache",
+        autoHistory: "App history",
+        maintenanceUnavailable: "Maintenance unavailable",
+        previewFailed: "Preview failed",
+        selectCategory: "Select at least one category",
+        nothingToClean: "Nothing to clean for the current selection",
+        cleanupFailed: "Cleanup failed",
+        cleanupDone: "Cleanup complete",
+        confirmRemoveWifi: "Permanently delete this device WiFi configuration?",
+        confirmRemoveUsb: "Remove this device from USB history? Associated WiFi configuration will also be deleted.",
+        toastReconnected: "Reconnected via WiFi",
+        toastReconnectFailed: "Reconnection failed",
+        toastWifiRemoved: "WiFi configuration deleted",
+        toastUsbRemoved: "Device removed from history",
+        toastRemoveFailed: "Deletion failed"
+    },
+    maintenance: {
+        selectiveCleanup: "Selective cleanup",
+        selectAll: "Select all",
+        deselectAll: "Deselect all",
+        logs: "Logs",
+        cache: "Cache",
+        history: "App history",
+        hint: "Logs and cache: files older than {days} days. History: all displayed entries.",
+        cancel: "Cancel",
+        run: "Clean up",
+        serviceUnavailable: "Maintenance service unavailable.",
+        cleanupFailed: "Cleanup failed.",
+        categoryNotSelected: "{label}: not selected",
+        historyRemoved: "{label}: {count} entry(ies) removed",
+        bytesRemoved: "{label}: {size} removed",
+        entriesDetail: "{count} entry(ies)"
+    },
+    newSession: {
+        connectedDevices: "Connected devices",
+        installedApps: "Installed apps",
+        history: "History",
+        selectDeviceHint: "Select a device to show its applications.",
+        searchAppPlaceholder: "Search for an app to launch...",
+        searchAppOnDevice: "Search for an app on {deviceName}...",
+        appsOnDevice: "Installed apps on {deviceName}",
+        launchError: "Launch error: {message}",
+        searchHistoryPlaceholder: "Search history...",
+        noDeviceSelected: "No device selected",
+        loadingDevices: "Loading devices...",
+        loadingHistory: "Loading history...",
+        noDeviceConnected: "No connected devices",
+        selectDevice: "Select a device",
+        noAppsFound: "No applications found",
+        noAppsSearchResults: "No app matches your search",
+        cannotLoadApps: "Unable to load apps",
+        searchAppOnDevice: "Search for an app on {deviceName}...",
+        appsOnDevice: "Installed apps on {deviceName}",
+        launchError: "Launch error: {message}",
+        loadingApps: "Loading applications...",
+        loadAppsError: "Failed to load applications",
+        noAppsDetected: "No applications detected on this device.",
+        launchInstance: "Launch instance",
+        mirroring: "Mirroring",
+        selectDeviceFirst: "Select a device",
+        selectApp: "Select an application",
+        readyToLaunch: "Ready to launch the new instance",
+        noHistory: "No recent history",
+        noSearchResults: "No items match your search",
+        delete: "Delete",
+        today: "Today {time}",
+        yesterday: "Yesterday {time}",
+        profile: "profile {userId}",
+        deviceNotConnected: "The device for this entry is not connected.",
+        historyIncomplete: "Incomplete history entry.",
+        deviceDisconnected: "The selected device is no longer connected.",
+        launchingMirror: "Starting mirroring...",
+        mirrorActive: "Mirroring active for {deviceName}",
+        actionFailed: "Action failed",
+        launchFailed: "Failed to launch scrcpy",
+        virtualDisplayMissing: "Virtual display not detected after scrcpy launch",
+        instanceManagerUnavailable: "Instance manager unavailable"
+    },
+    controlPanel: {
+        title: "Session control",
+        loading: "Application in progress…",
+        openSessions: "Open instances",
+        selectedSession: "Selected instance",
+        noSessionSelected: "No instance selected",
+        noSessionSelectedHint: "No instance selected — choose a session above",
+        selectSessionHint: "Select an instance to view its active settings",
+        parameters: "Settings",
+        apply: "Apply",
+        cancel: "Cancel",
+        reset: "Reset",
+        noSessions: "No instances detected — settings remain editable",
+        sessionType: "Type {type}",
+        sessionMeta: "{label} · Type {type}",
+        active: "Active",
+        resolution: {
+            label: "Resolution",
+            fullHd: "FULL HD",
+            hd: "HD",
+            qhd: "qHD"
+        },
+        fps: "FPS",
+        dpi: {
+            label: "DPI",
+            native: "Native",
+            normal: "Normal",
+            medium: "Medium",
+            veryLarge: "Very large"
+        },
+        bitrate: "Bitrate (Mbps)",
+        gop: {
+            label: "I-frame interval (GOP)",
+            fast: "Fast",
+            slow: "Slow",
+            seconds: "{value} s"
+        },
+        validation: {
+            selectBeforeApply: "Select an instance before applying settings.",
+            selectBeforeReset: "Select an instance before resetting.",
+            apiUnavailable: "Backend API unavailable.",
+            loadFailed: "Unable to load settings",
+            applyFailed: "Failed to apply settings",
+            resetFailed: "Failed to reset settings",
+            unexpectedError: "Unexpected error",
+            applying: "Applying settings…",
+            applied: "Settings applied successfully.",
+            resetting: "Resetting…",
+            resetDone: "Original settings restored.",
+            cancelWithSession: "Changes discarded — session values reloaded.",
+            cancelDefault: "Changes discarded — default values reloaded.",
+            resetConfirm: "Reset this session's settings to their original values?\n\nThe stream will restart.",
+            paramsSummary: "{width}×{height} · {dpi} dpi · {fps} fps · {bitrate} Mbps · GOP {gop}s"
+        }
+    },
+    rename: {
+        title: "Rename",
+        save: "Save",
+        cancel: "Cancel",
+        confirmReset: "Reset to the original name?",
+        nameTooLong: "Name cannot exceed {max} characters.",
+        nameEmpty: "Name cannot be empty.",
+        saveFailed: "Unable to save name."
+    },
+    apps: {
+        loading: "Loading...",
+        noResults: "No applications found",
+        searchPlaceholder: "Search for an application..."
+    },
+    help: {
+        tab: {
+            title: "Help & Shortcuts",
+            shortcuts: "Shortcuts",
+            guide: "Mirroring guide",
+            wifi: "WiFi connection",
+            refresh: "Refresh",
+            close: "Close"
+        },
+        shortcuts: {
+            intro: "Keyboard shortcuts and actions available in Android Hub. Navigation shortcuts do not apply while typing in a text field. Right-click a device in Connected devices or a session tab to open a context menu (rename, color, close…).",
+            groups: [
+                {
+                    title: "Navigation",
+                    items: [
+                        { keys: ["Ctrl", "Tab"], desc: "Switch to the next session tab." },
+                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous session tab." }
+                    ]
+                },
+                {
+                    title: "Stream control (active session)",
+                    items: [
+                        { keys: ["Click"], desc: "Tap / click on the Android screen (focused video canvas)." },
+                        { keys: ["Right-click"], desc: "Android Back button." }
+                    ]
+                },
+                {
+                    title: "New instance",
+                    items: [
+                        { keys: ["Double-click"], desc: "Relaunch an application from the History section." }
+                    ]
+                },
+                {
+                    title: "Dialogs",
+                    items: [
+                        { keys: ["Enter"], desc: "Confirm renaming a session or device." },
+                        { keys: ["Esc"], desc: "Cancel renaming." }
+                    ]
+                },
+                {
+                    title: "Connected devices (sidebar)",
+                    items: [
+                        { keys: ["Double-click"], desc: "Start full-screen mirroring for the device (same as the Mirroring button)." }
+                    ]
+                },
+                {
+                    title: "Right-click — Connected devices (sidebar)",
+                    items: [
+                        { keys: ["Rename"], desc: "Open the dialog to customize the name shown in the device list." },
+                        { keys: ["Reset name"], desc: "Restore the original name (shown only if the device was renamed)." },
+                        { keys: ["Color → Auto"], desc: "Automatically assign a distinct color to each connected device." },
+                        { keys: ["Color → shade"], desc: "Choose a fixed color (Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Brown, Slate) to identify the device in the sidebar and tabs." }
+                    ]
+                },
+                {
+                    title: "Right-click — Session tabs",
+                    items: [
+                        { keys: ["Rename"], desc: "Customize the tab label (mirroring or application instance)." },
+                        { keys: ["Reset name"], desc: "Restore the original label (shown only if the tab was renamed)." },
+                        { keys: ["Close"], desc: "Close the video session and remove the tab." }
+                    ]
+                }
+            ]
+        },
+        wifi: {
+            title: "Connect a device over WiFi",
+            steps: [
+                "Connect your device via USB and make sure it is detected in the Hub (USB debugging enabled on the phone).",
+                "Make sure your phone is connected to WiFi on the same network as this computer.",
+                "Click the WiFi toggle next to the device in the sidebar.",
+                "On first connection, the Hub will automatically configure the device and ask you to give it a name. Once connected, a Connected over WiFi message appears.",
+                "You can now unplug the USB cable — the device stays reachable as long as it is on the same WiFi network.",
+                "To switch back to USB, simply click the toggle again (WiFi will be disabled, but the configuration is saved for next time).",
+                "Find all your WiFi and USB devices, along with their history, in the Devices panel (📶 icon in the main bar)."
+            ],
+            note: "If the phone's WiFi network changes or its IP address changes, you may need to reconnect the device using the toggle."
+        },
+        guide: {
+            stepLabel: "Step {current} of {total}",
+            tipPrefix: "Tip:",
+            notePrefix: "Note:",
+            prev: "Previous",
+            next: "Next",
+            finish: "Finish",
+            showTroubleshoot: "View troubleshooting",
+            steps: [
+                {
+                    visualLabel: "USB connection",
+                    visualCaption: "Use a data cable",
+                    title: "Connect your phone",
+                    lead: "Use a USB data cable (not charge-only).",
+                    steps: [
+                        "Connect your Android phone to your computer via USB.",
+                        "On the phone, choose File transfer (MTP) if Android asks for the USB mode.",
+                        "Avoid cheap USB hubs — plug directly into the computer if possible."
+                    ],
+                    tip: "If nothing happens when you plug in the cable, it is often a charge-only cable. Try the one that came with your phone."
+                },
+                {
+                    visualLabel: "Developer options",
+                    visualCaption: "One-time setup",
+                    title: "Enable developer options",
+                    lead: "This step is only required once per device.",
+                    steps: [
+                        "Open Settings → About phone.",
+                        "Find Build number (or Version number).",
+                        "Tap it 7 times until you see the You are now a developer message."
+                    ],
+                    tip: "The exact label varies by brand (Samsung, Xiaomi, etc.) but the principle is the same."
+                },
+                {
+                    visualLabel: "USB debugging",
+                    visualCaption: "Developer settings",
+                    title: "Enable USB debugging",
+                    lead: "Android Hub communicates with your phone via ADB — USB debugging is required.",
+                    steps: [
+                        "Go to Settings → System → Developer options.",
+                        "Enable USB debugging.",
+                        "On Xiaomi / Realme / Oppo: also allow USB debugging (Security settings) if offered."
+                    ],
+                    tip: "On some brands, developer options are under Settings → Additional settings."
+                },
+                {
+                    visualLabel: "Authorization",
+                    visualCaption: "Prompt on the phone",
+                    title: "Authorize the connection",
+                    lead: "Your phone will ask you to trust this computer.",
+                    steps: [
+                        "An Allow USB debugging? prompt appears on the phone.",
+                        "Check Always allow from this computer.",
+                        "Tap Allow."
+                    ],
+                    tip: "If the prompt does not appear, unplug/replug the cable and unlock the phone screen."
+                },
+                {
+                    visualLabel: "Android Hub",
+                    visualCaption: "Device detected",
+                    title: "You're all set!",
+                    lead: "Your phone is now detected by Android Hub.",
+                    steps: [
+                        "The device appears in the Connected devices panel on the left.",
+                        "Open New instance, select the device and an application — or click Mirroring to display the full screen.",
+                        "Each session opens in a dedicated tab that you can control with the mouse and keyboard."
+                    ],
+                    tip: "Double-click a history entry to quickly relaunch an application you have used before."
+                }
+            ]
+        },
+        troubleshoot: {
+            title: "Quick troubleshooting",
+            items: [
+                "No device visible: check the USB cable (data, not charge-only) and MTP mode.",
+                "Allow USB debugging does not appear: unlock the screen and replug the cable.",
+                "Device disconnects randomly: plug directly into the PC and avoid USB hubs.",
+                "Mirroring does not start: close other ADB tools (Android Studio, scrcpy CLI).",
+                "Keyboard input ignored: click once on the video stream to focus it."
+            ]
+        }
+    }
+};

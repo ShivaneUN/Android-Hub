@@ -8,6 +8,8 @@
  * - Lancement pipeline dedie (session/tab/canvas/input independants)
  */
 
+const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
 let selectedDevice = null;
 let selectedApp = null;
 let launcherApps = [];
@@ -42,7 +44,7 @@ function dismissHubModalPanel() {
 async function invokeMainAction(action, args = []) {
     const response = await window.hubModalWindowAPI.invokeMain(action, args);
     if (!response?.success) {
-        throw new Error(response?.error || "Action impossible");
+        throw new Error(response?.error || t("newSession.actionFailed"));
     }
     return response.result;
 }
@@ -102,8 +104,8 @@ function formatHistoryDate(timestamp) {
     const isYesterday = date.toDateString() === yesterday.toDateString();
 
     const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    if (isToday) return `Aujourd'hui ${time}`;
-    if (isYesterday) return `Hier ${time}`;
+    if (isToday) return t("newSession.today", { time });
+    if (isYesterday) return t("newSession.yesterday", { time });
     return date.toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
@@ -157,9 +159,9 @@ function resetLauncherApps() {
     launcherApps = [];
     const { appSearchInput, appResults } = getNewInstanceElements();
     if (appSearchInput) appSearchInput.value = "";
-    updateLauncherHint("Selectionnez un appareil pour afficher ses applications.");
+    updateLauncherHint(t("newSession.selectDeviceHint"));
     if (appResults) {
-        appResults.innerHTML = '<p class="apps-loading">Aucun appareil selectionne</p>';
+        appResults.innerHTML = `<p class="apps-loading">${t("newSession.noDeviceSelected")}</p>`;
     }
 }
 
@@ -168,12 +170,12 @@ function renderLauncherAppsList(apps) {
     if (!appResults) return;
 
     if (!selectedDevice) {
-        appResults.innerHTML = '<p class="apps-loading">Selectionnez un appareil</p>';
+        appResults.innerHTML = `<p class="apps-loading">${t("newSession.selectDevice")}</p>`;
         return;
     }
 
     if (!apps.length) {
-        appResults.innerHTML = '<p class="apps-loading">Aucune application trouvee</p>';
+        appResults.innerHTML = `<p class="apps-loading">${t("newSession.noAppsFound")}</p>`;
         return;
     }
 
@@ -186,7 +188,7 @@ function renderLauncherAppsList(apps) {
             ${renderLauncherAppIcon(app)}
             <span class="new-instance-app-main">
                 <span class="new-instance-app-name">${escapeHtml(label)}</span>
-                <span class="new-instance-app-package">${escapeHtml(app.package)}${app.userId !== undefined && app.userId !== null ? ` (profil ${app.userId})` : ""}</span>
+                <span class="new-instance-app-package">${escapeHtml(app.package)}${app.userId !== undefined && app.userId !== null ? ` (${t("newSession.profile", { userId: app.userId })})` : ""}</span>
             </span>
         </button>
     `;
@@ -203,7 +205,7 @@ function renderLauncherAppsList(apps) {
 
 function selectAppFromLauncher(app) {
     if (!selectedDevice) {
-        setStatus("Selectionnez d'abord un appareil", true);
+        setStatus(t("newSession.selectDeviceFirst"), true);
         return;
     }
 
@@ -212,7 +214,7 @@ function selectAppFromLauncher(app) {
 
     const { appSearchInput } = getNewInstanceElements();
     filterLauncherAppsAndRender(appSearchInput?.value || "");
-    setStatus(`Application selectionnee : ${getAppLabel(selectedApp)} — cliquez « Lancer instance »`);
+    setStatus(`${t("newSession.selectApp")}: ${getAppLabel(selectedApp)}`);
 }
 
 function scheduleVisibleAppsMetadataPrefetch(apps = []) {
@@ -268,8 +270,8 @@ function createHistoryAppList() {
     historyList.classList.add("app-list");
     historyAppList = new AppList(historyList, {
         mode: "history",
-        emptyMessage: "Aucun historique recent",
-        noResultsMessage: "Aucun element ne correspond a la recherche",
+        emptyMessage: t("newSession.noHistory"),
+        noResultsMessage: t("newSession.noSearchResults"),
         sortAlphabetically: false,
         searchInput: historySearchInput || null,
         itemClassName: "app-list-item new-instance-history-item",
@@ -283,12 +285,12 @@ function createHistoryAppList() {
             const dateLabel = formatHistoryDate(entry.lastLaunchedAt);
             const countLabel = entry.launchCount > 1 ? ` · ${entry.launchCount} lancements` : "";
             const userLabel = Number.isInteger(entry.userId) && entry.userId !== 0
-                ? ` · profil ${entry.userId}`
+                ? ` · ${t("newSession.profile", { userId: entry.userId })}`
                 : "";
             return `<span class="app-list-item-meta">${deviceLabel}${userLabel} · ${dateLabel}${countLabel}</span>`;
         },
         renderActions: (entry) => `
-            <button type="button" class="app-list-action-btn new-instance-history-delete" data-app-list-action="delete" title="Supprimer" data-history-key="${escapeHtml(entry.key || "")}" data-device-id="${escapeHtml(entry.deviceId)}" data-package="${escapeHtml(entry.packageName)}" data-user-id="${entry.userId ?? ""}" aria-label="Supprimer">${DELETE_ICON_SVG}</button>
+            <button type="button" class="app-list-action-btn new-instance-history-delete" data-app-list-action="delete" title="${t("newSession.delete")}" data-history-key="${escapeHtml(entry.key || "")}" data-device-id="${escapeHtml(entry.deviceId)}" data-package="${escapeHtml(entry.packageName)}" data-user-id="${entry.userId ?? ""}" aria-label="${t("newSession.delete")}">${DELETE_ICON_SVG}</button>
         `,
         onSelect: (entry) => {
             selectFromHistory({
@@ -508,18 +510,18 @@ function updateLaunchState() {
     launchBtn.classList.toggle("is-active", isReady);
 
     if (!hasDevice) {
-        launchHint.textContent = "Selectionnez un appareil";
+        launchHint.textContent = t("newSession.selectDeviceFirst");
         updateCommandPreview();
         return;
     }
 
     if (!hasApp) {
-        launchHint.textContent = "Selectionnez une application";
+        launchHint.textContent = t("newSession.selectApp");
         updateCommandPreview();
         return;
     }
 
-    launchHint.textContent = "Pret a lancer la nouvelle instance";
+    launchHint.textContent = t("newSession.readyToLaunch");
     updateCommandPreview();
 }
 
@@ -530,7 +532,7 @@ function renderDeviceList(devices) {
     const connected = (Array.isArray(devices) ? devices : []).filter((d) => d?.connected !== false);
 
     if (!connected.length) {
-        deviceList.innerHTML = '<p class="apps-loading">Aucun appareil connecte</p>';
+        deviceList.innerHTML = `<p class="apps-loading">${t("newSession.noDeviceConnected")}</p>`;
         return;
     }
 
@@ -539,7 +541,7 @@ function renderDeviceList(devices) {
             selectedDevice.deviceId === d.deviceId
             || selectedDevice.serial === d.serial
         );
-        const transport = d.transportLabel || (d.transport === "wifi" ? "WiFi" : "USB");
+        const transport = d.transportLabel || (d.transport === "wifi" ? t("devicesPanel.wifi") : t("devicesPanel.usb"));
         return `
         <button type="button" class="new-instance-device-item ${isSelected ? "selected" : ""}" data-serial="${d.serial}" data-device-id="${d.deviceId || d.serial}" data-name="${d.name}">
             <span class="status-dot status-${d.status}"></span>
@@ -565,8 +567,8 @@ async function loadAppsForSelectedDevice() {
     if (!appResults) return;
 
     updateLauncherHint(`Applications installees sur ${selectedDevice.name || selectedDevice.serial}`);
-    appResults.innerHTML = '<p class="apps-loading">Chargement des applications...</p>';
-    setStatus("Chargement des applications...");
+    appResults.innerHTML = `<p class="apps-loading">${t("newSession.loadingApps")}</p>`;
+    setStatus(t("newSession.loadingApps"));
 
     try {
         const response = await window.electronAPI.getAppsWithDetails(selectedDevice.serial);
@@ -591,14 +593,14 @@ async function loadAppsForSelectedDevice() {
         filterLauncherAppsAndRender(appSearchInput?.value || "");
 
         if (!launcherApps.length) {
-            setStatus("Aucune application detectee sur cet appareil.", true);
+            setStatus(t("newSession.noAppsDetected"), true);
             return;
         }
 
         setStatus(`${launcherApps.length} application(s) chargee(s).`);
     } catch (err) {
         launcherApps = [];
-        appResults.innerHTML = '<p class="apps-loading">Erreur lors du chargement des applications</p>';
+        appResults.innerHTML = `<p class="apps-loading">${t("newSession.loadAppsError")}</p>`;
         setStatus(`Erreur apps: ${err.message}`, true);
         console.error("[NewSession] loadAppsForSelectedDevice:", err);
     }
@@ -774,12 +776,12 @@ async function launchTypeBSession({
 
     const scrcpyLaunch = await window.electronAPI.launchNewInstance(serial, packageName, normalizedUserId);
     if (!scrcpyLaunch?.success) {
-        throw new Error(scrcpyLaunch?.error || "Echec lancement scrcpy");
+        throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
     }
 
     const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
     if (!Number.isInteger(presetDisplayId)) {
-        throw new Error("Display virtuel non detecte apres lancement scrcpy");
+        throw new Error(t("newSession.virtualDisplayMissing"));
     }
 
     const streamOptions = {
@@ -874,7 +876,7 @@ async function selectFromHistory(entry) {
 
     const device = findDeviceForHistory(devices, deviceId);
     if (!device) {
-        setStatus("L'appareil de cette entree n'est pas connecte.", true);
+        setStatus(t("newSession.deviceNotConnected"), true);
         return;
     }
 
@@ -906,14 +908,14 @@ async function selectFromHistory(entry) {
 async function launchFromHistory(entry) {
     const { deviceId, packageName, appName, userId, iconPath } = entry;
     if (!deviceId || !packageName) {
-        setStatus("Entree historique incomplete.", true);
+        setStatus(t("newSession.historyIncomplete"), true);
         return;
     }
 
     const devices = await fetchConnectedDevices();
     const device = findDeviceForHistory(devices, deviceId);
     if (!device) {
-        setStatus("L'appareil de cette entree n'est pas connecte.", true);
+        setStatus(t("newSession.deviceNotConnected"), true);
         return;
     }
 
@@ -973,7 +975,7 @@ async function launchMirrorSession(options = {}) {
         const serial = options.serial || selectedDevice?.serial;
         const deviceName = options.deviceName || selectedDevice?.name || serial;
         if (!serial) {
-            setStatus("Selectionnez d'abord un appareil", true);
+            setStatus(t("newSession.selectDeviceFirst"), true);
             return;
         }
         dismissHubModalPanel();
@@ -988,7 +990,7 @@ async function launchMirrorSession(options = {}) {
     dismissHubModalPanel();
 
     if (!options.serial && !selectedDevice) {
-        setStatus("Selectionnez d'abord un appareil", true);
+        setStatus(t("newSession.selectDeviceFirst"), true);
         return;
     }
 
@@ -996,11 +998,11 @@ async function launchMirrorSession(options = {}) {
     const deviceName = options.deviceName || selectedDevice?.name || serial;
     const mirrorLabel = `${deviceName} (Mirror)`;
 
-    setStatus("Lancement du mirroring...");
+    setStatus(t("newSession.launchingMirror"));
 
     try {
         if (typeof createInstance !== "function") {
-            throw new Error("Gestionnaire d'instances indisponible");
+            throw new Error(t("newSession.instanceManagerUnavailable"));
         }
 
         const scrcpyOpts = typeof StreamParams !== "undefined"
@@ -1013,7 +1015,7 @@ async function launchMirrorSession(options = {}) {
             ...scrcpyOpts
         });
 
-        setStatus(`Mirroring actif pour ${deviceName}`);
+        setStatus(t("newSession.mirrorActive", { deviceName }));
     } catch (err) {
         setStatus(`Erreur mirroring: ${err.message}`, true);
     }
@@ -1149,7 +1151,7 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedDevice = null;
             selectedApp = null;
             resetLauncherApps();
-            setStatus("L'appareil selectionne n'est plus connecte.", true);
+            setStatus(t("newSession.deviceDisconnected"), true);
             await loadConnectedDevices();
             updateLaunchState();
             return;
@@ -1172,7 +1174,22 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    if (window.launchHistoryAPI?.onUpdated) {
+        window.launchHistoryAPI.onUpdated(() => {
+            scheduleLaunchHistoryRefresh();
+        });
+    }
+
     updateLaunchState();
+});
+
+globalThis.HubI18n?.onChange?.(() => {
+    globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-new-session") || document);
+    resetLauncherApps();
+    updateLaunchState();
+    if (typeof window.refreshNewSessionPanel === "function") {
+        void window.refreshNewSessionPanel();
+    }
 });
 
 function getAllNewInstanceSessions() {

@@ -18,30 +18,30 @@
   <div class="titlebar">
     <div class="titlebar-left">
       <img class="titlebar-icon" src="assets/android-hub-logo.png" alt="" width="28" height="28">
-      <span class="titlebar-title">Android Hub</span>
-      <button type="button" class="titlebar-version" id="titlebar-version" title="Vérifier les mises à jour">v…</button>
+      <span class="titlebar-title" data-i18n="titlebar.appTitle">Android Hub</span>
+      <button type="button" class="titlebar-version" id="titlebar-version" data-i18n-title="titlebar.checkUpdates" title="Vérifier les mises à jour">v…</button>
     </div>
     <div class="titlebar-controls">
-      <button id="btn-min" title="Réduire">&#8211;</button>
-      <button id="btn-max" title="Agrandir">&#9633;</button>
-      <button id="btn-close" class="close" title="Fermer">&#10005;</button>
+      <button id="btn-min" data-i18n-title="titlebar.minimize" title="Réduire">&#8211;</button>
+      <button id="btn-max" data-i18n-title="titlebar.maximize" title="Agrandir">&#9633;</button>
+      <button id="btn-close" class="close" data-i18n-title="titlebar.close" title="Fermer">&#10005;</button>
     </div>
   </div>
 
   <div class="update-banner hidden" id="update-banner">
     <div class="update-banner-content">
       <div class="update-banner-text">
-        <div class="update-banner-title" id="update-banner-title">Mise à jour disponible</div>
+        <div class="update-banner-title" id="update-banner-title" data-i18n="update.status.available">Mise à jour disponible</div>
         <div class="update-banner-detail" id="update-banner-detail"></div>
         <div class="update-banner-progress hidden" id="update-banner-progress">
           <div class="update-banner-progress-bar" id="update-banner-progress-bar"></div>
         </div>
       </div>
       <div class="update-banner-actions" id="update-banner-actions">
-        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-download">Télécharger</button>
-        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-install">Redémarrer et installer</button>
-        <button type="button" class="update-btn update-btn-secondary hidden" id="update-btn-check">Réessayer</button>
-        <button type="button" class="update-btn update-btn-ghost hidden" id="update-btn-later">Plus tard</button>
+        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-download" data-i18n="update.banner.download">Télécharger</button>
+        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-install" data-i18n="update.banner.install">Redémarrer et installer</button>
+        <button type="button" class="update-btn update-btn-secondary hidden" id="update-btn-check" data-i18n="update.banner.retry">Réessayer</button>
+        <button type="button" class="update-btn update-btn-ghost hidden" id="update-btn-later" data-i18n="update.banner.later">Plus tard</button>
       </div>
     </div>
   </div>
@@ -56,62 +56,62 @@
         <div class="icon">
           <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         </div>
-        <div class="label">Nouvelle instance</div>
+        <div class="label" data-i18n="sidebar.newInstance">Nouvelle instance</div>
       </div>
 
       <div class="sidebar-devices-section">
-        <div class="sidebar-devices-title">Appareils connectés</div>
+        <div class="sidebar-devices-title" data-i18n="sidebar.connectedDevices">Appareils connectés</div>
         <div class="sidebar-devices-panel" id="sidebar-devices-panel">
-          <div class="sidebar-devices-empty">Chargement...</div>
+          <div class="sidebar-devices-empty" data-i18n="sidebar.devicePanel.loading">Chargement...</div>
         </div>
       </div>
 
       <div class="sidebar-spacer"></div>
 
-      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
+      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
         <div class="icon">
           <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
         </div>
         <div class="sidebar-screen-badge" id="sidebar-screen-badge">—</div>
-        <div class="label">Ecran</div>
+        <div class="label" data-i18n="sidebar.screen">Ecran</div>
       </div>
 
-      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" title="Activer ou desactiver le mode portrait">
+      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
         <div class="icon">
           <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
         </div>
         <div class="sidebar-orientation-badge" id="sidebar-orientation-badge">—</div>
-        <div class="label">Portrait</div>
+        <div class="label" data-i18n="sidebar.portrait">Portrait</div>
       </div>
 
-      <div class="sidebar-item sidebar-global-audio-toggle audio-on" id="nav-toggle-global-audio" title="Couper ou reactiver l'audio de toutes les sessions">
+      <div class="sidebar-item sidebar-global-audio-toggle audio-on" id="nav-toggle-global-audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
         <div class="icon">
           <svg id="sidebar-global-audio-icon-on" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
           <svg id="sidebar-global-audio-icon-off" class="hidden" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
         </div>
         <div class="sidebar-global-audio-badge on" id="sidebar-global-audio-badge">ON</div>
-        <div class="label">Audio</div>
+        <div class="label" data-i18n="sidebar.audio">Audio</div>
       </div>
 
-      <div class="sidebar-item" id="nav-devices" title="Appareils USB et WiFi">
+      <div class="sidebar-item" id="nav-devices" data-i18n-title="toggles.devicesTitle" title="Appareils USB et WiFi">
         <div class="icon">
           <svg viewBox="0 0 24 24"><path d="M2 8.5a16 16 0 0 1 20 0"/><path d="M5 12.5a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
         </div>
-        <div class="label">Appareils</div>
+        <div class="label" data-i18n="sidebar.devices">Appareils</div>
       </div>
 
       <div class="sidebar-item" id="nav-control">
         <div class="icon">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/><circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="8" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
         </div>
-        <div class="label">Contrôle</div>
+        <div class="label" data-i18n="sidebar.control">Contrôle</div>
       </div>
 
-      <div class="sidebar-item" id="nav-aide" title="Aide et raccourcis clavier">
+      <div class="sidebar-item" id="nav-aide" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
         <div class="icon">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.8 1c0 1.5-1.5 2-2.5 2.5V14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none"/></svg>
         </div>
-        <div class="label">Aide</div>
+        <div class="label" data-i18n="sidebar.help">Aide</div>
       </div>
 
     </div>
@@ -121,9 +121,9 @@
       <div class="page" id="page-new">
         <div class="empty-state">
           <img class="empty-state-mascot" src="assets/android-hub-logo.png" alt="" width="120" height="120">
-          <h1>Android Hub</h1>
-          <p class="subtitle">Affichage et contrôle multi-appareils Android</p>
-          <p class="hint">Branchez un appareil en USB</p>
+          <h1 data-i18n="emptyState.title">Android Hub</h1>
+          <p class="subtitle" data-i18n="emptyState.subtitle">Affichage et contrôle multi-appareils Android</p>
+          <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
         </div>
       </div>
 
@@ -135,6 +135,7 @@
 
 </div>
 
+<script src="i18n/i18n.js"></script>
 <script src="../shared/app-name.js"></script>
 <script src="../shared/app-display.js"></script>
 <script src="../shared/stream-params.js"></script>
@@ -198,6 +199,7 @@
 <script src="sidebar/ScreenToggle.js"></script>
 <script src="sidebar/OrientationToggle.js"></script>
 <script src="sidebar/GlobalAudioToggle.js"></script>
+<script src="sidebar/LanguageToggle.js"></script>
 <script src="instance-manager.js"></script>
 <script src="video-player.js"></script>
 <script src="session/session-audio-player.js"></script>
@@ -208,5 +210,8 @@
 <script src="new-session.js"></script>
 <script src="session-stream-bridge.js"></script>
 <script src="update-notifier.js"></script>
+<script>
+  void globalThis.HubI18n?.init?.();
+</script>
 </body>
 </html>

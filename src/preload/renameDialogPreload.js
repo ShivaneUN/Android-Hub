@@ -7,3 +7,11 @@ contextBridge.exposeInMainWorld("renameDialogAPI", {
     submit: (name) => ipcRenderer.invoke("names:submitRenameDialog", { name }),
     cancel: () => ipcRenderer.invoke("names:cancelRenameDialog")
 });
+
+contextBridge.exposeInMainWorld("uiPreferencesAPI", {
+    getLocaleData: () => ipcRenderer.invoke("ui:get-locale-data"),
+    getLocale: () => ipcRenderer.invoke("ui:get-locale"),
+    setLocale: (locale) => ipcRenderer.invoke("ui:set-locale", { locale }),
+    onLocaleChanged: (callback) =>
+        ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data))
+});

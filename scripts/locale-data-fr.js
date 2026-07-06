@@ -1,0 +1,455 @@
+module.exports = {
+    sidebar: {
+        newInstance: "Nouvelle instance",
+        connectedDevices: "Appareils connectés",
+        screen: "Écran",
+        portrait: "Portrait",
+        audio: "Audio",
+        devices: "Appareils",
+        control: "Contrôle",
+        help: "Aide",
+        language: "Langue",
+        languageFr: "Français",
+        languageEn: "English",
+        tabs: {
+            close: "Fermer l'onglet",
+            mirroring: "Mirroring",
+            instance: "Instance"
+        },
+        devicePanel: {
+            loading: "Chargement...",
+            empty: "Aucun appareil connecté",
+            mirroring: "Mirroring",
+            wifiToggle: "Connexion WiFi ADB",
+            battery: "Batterie",
+            transportAdb: "Transport ADB",
+            usb: "USB",
+            wifiConnected: "WiFi connecté",
+            deviceFallback: "Appareil"
+        }
+    },
+    titlebar: {
+        appTitle: "Android Hub",
+        minimize: "Réduire",
+        maximize: "Agrandir",
+        close: "Fermer",
+        checkUpdates: "Vérifier les mises à jour",
+        version: "v{version}"
+    },
+    emptyState: {
+        title: "Android Hub",
+        subtitle: "Affichage et contrôle multi-appareils Android",
+        hint: "Branchez un appareil en USB"
+    },
+    update: {
+        banner: {
+            download: "Télécharger",
+            install: "Redémarrer et installer",
+            retry: "Réessayer",
+            later: "Plus tard"
+        },
+        status: {
+            checking: "Recherche de mises à jour…",
+            currentVersion: "Version actuelle : v{version}",
+            upToDate: "Vous êtes à jour",
+            upToDateDetail: "Version v{version} — aucune mise à jour disponible.",
+            notConfigured: "Mises à jour non configurées",
+            available: "Mise à jour v{version} disponible",
+            availableDetail: "Une nouvelle version est prête (actuelle : v{currentVersion}).",
+            downloading: "Téléchargement v{version}…",
+            downloaded: "Mise à jour v{version} prête",
+            downloadedInstall: "Redémarrez l'application pour terminer l'installation.",
+            downloadedManual: "Téléchargement terminé — installez via Setup.exe pour appliquer la mise à jour.",
+            devMode: "Mises à jour",
+            devModeDetail: "Disponible uniquement en version installée.",
+            progress: "{percent} %"
+        },
+        error: {
+            title: "Erreur de mise à jour",
+            checkFailed: "Impossible de vérifier les mises à jour."
+        }
+    },
+    hubModal: {
+        refresh: "Rafraîchir",
+        refreshDeviceList: "Rafraîchir la liste",
+        refreshSessions: "Rafraîchir les sessions",
+        close: "Fermer",
+        newSession: "Nouvelle instance",
+        control: "Contrôle session",
+        devices: "Appareils",
+        help: "Aide & Raccourcis"
+    },
+    colors: {
+        red: "Rouge",
+        orange: "Orange",
+        yellow: "Jaune",
+        green: "Vert",
+        teal: "Turquoise",
+        blue: "Bleu",
+        purple: "Violet",
+        pink: "Rose",
+        brown: "Marron",
+        slate: "Ardoise"
+    },
+    contextMenu: {
+        rename: "Renommer",
+        resetName: "Réinitialiser le nom",
+        color: "Couleur",
+        auto: "Auto",
+        close: "Fermer",
+        confirmResetTitle: "Réinitialiser le nom",
+        confirmResetMessage: "Réinitialiser le nom d'origine ?",
+        cancel: "Annuler",
+        reset: "Réinitialiser",
+        windowNotFound: "Fenêtre introuvable.",
+        invalidTarget: "Cible invalide."
+    },
+    toggles: {
+        screenTitle: "Éteindre ou rallumer l'écran de l'appareil (session mirroring active)",
+        screenOn: "ON",
+        screenOff: "OFF",
+        portraitTitle: "Activer ou désactiver le mode portrait",
+        portraitOn: "P",
+        portraitOff: "L",
+        audioTitle: "Couper ou réactiver l'audio de toutes les sessions",
+        audioOn: "ON",
+        audioOff: "OFF",
+        devicesTitle: "Appareils USB et WiFi",
+        helpTitle: "Aide et raccourcis clavier"
+    },
+    devicePanel: {
+        wifiEnabled: "WiFi activé",
+        wifiDisconnected: "WiFi déconnecté",
+        wifiFailed: "Échec connexion WiFi",
+        wifiError: "Erreur WiFi",
+        wifiConnected: "Connecté en WiFi",
+        errors: {
+            tcpip: "Impossible d'activer le mode WiFi sur cet appareil",
+            ip: "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
+            connect: "Connexion impossible — vérifie que le téléphone est sur le même réseau"
+        },
+        progress: {
+            ip: "Récupération de l'IP...",
+            tcpip: "Activation WiFi...",
+            connect: "Connexion..."
+        }
+    },
+    devicesPanel: {
+        usb: "USB",
+        wifi: "WiFi",
+        maintenance: "Maintenance",
+        loading: "Chargement...",
+        loadError: "Erreur de chargement",
+        noUsb: "Aucun appareil USB enregistré",
+        noWifi: "Aucun appareil WiFi configuré",
+        rename: "Renommer",
+        reconnect: "Reconnecter",
+        remove: "Supprimer",
+        cleanupNow: "Nettoyer maintenant",
+        maintenanceHint: "Logs/cache : {days} jours. Historique : entrées visibles dans le hub.",
+        autoCleanup: "Nettoyage automatique",
+        autoLogs: "Logs",
+        autoCache: "Cache",
+        autoHistory: "Historique des apps",
+        maintenanceUnavailable: "Maintenance indisponible",
+        previewFailed: "Prévisualisation impossible",
+        selectCategory: "Sélectionnez au moins une catégorie",
+        nothingToClean: "Aucun élément à nettoyer pour la sélection",
+        cleanupFailed: "Nettoyage impossible",
+        cleanupDone: "Nettoyage terminé",
+        confirmRemoveWifi: "Supprimer définitivement la configuration WiFi de cet appareil ?",
+        confirmRemoveUsb: "Retirer cet appareil de l'historique USB ? La configuration WiFi associée sera aussi supprimée.",
+        toastReconnected: "Reconnecté en WiFi",
+        toastReconnectFailed: "Reconnexion impossible",
+        toastWifiRemoved: "Configuration WiFi supprimée",
+        toastUsbRemoved: "Appareil retiré de l'historique",
+        toastRemoveFailed: "Suppression impossible"
+    },
+    maintenance: {
+        selectiveCleanup: "Nettoyage sélectif",
+        selectAll: "Tout sélectionner",
+        deselectAll: "Tout désélectionner",
+        logs: "Logs",
+        cache: "Cache",
+        history: "Historique des apps",
+        hint: "Logs et cache : fichiers de plus de {days} jours. Historique : toutes les entrées affichées.",
+        cancel: "Annuler",
+        run: "Nettoyer",
+        serviceUnavailable: "Service de maintenance indisponible.",
+        cleanupFailed: "Nettoyage impossible.",
+        categoryNotSelected: "{label} : non sélectionné",
+        historyRemoved: "{label} : {count} entrée(s) supprimée(s)",
+        bytesRemoved: "{label} : {size} supprimés",
+        entriesDetail: "{count} entrée(s)"
+    },
+    newSession: {
+        connectedDevices: "Appareils connectés",
+        installedApps: "Applications installées",
+        history: "Historique",
+        selectDeviceHint: "Sélectionnez un appareil pour afficher ses applications.",
+        searchAppPlaceholder: "Rechercher une application à lancer...",
+        searchAppOnDevice: "Rechercher une application sur {deviceName}...",
+        appsOnDevice: "Applications installées sur {deviceName}",
+        launchError: "Erreur lancement: {message}",
+        searchHistoryPlaceholder: "Rechercher dans l'historique...",
+        noDeviceSelected: "Aucun appareil sélectionné",
+        loadingDevices: "Chargement des appareils...",
+        loadingHistory: "Chargement de l'historique...",
+        noDeviceConnected: "Aucun appareil connecté",
+        selectDevice: "Sélectionnez un appareil",
+        noAppsFound: "Aucune application trouvée",
+        noAppsSearchResults: "Aucune application ne correspond à la recherche",
+        cannotLoadApps: "Impossible de charger les applications",
+        loadingApps: "Chargement des applications...",
+        loadAppsError: "Erreur lors du chargement des applications",
+        noAppsDetected: "Aucune application détectée sur cet appareil.",
+        launchInstance: "Lancer instance",
+        mirroring: "Mirroring",
+        selectDeviceFirst: "Sélectionnez un appareil",
+        selectApp: "Sélectionnez une application",
+        readyToLaunch: "Prêt à lancer la nouvelle instance",
+        noHistory: "Aucun historique récent",
+        noSearchResults: "Aucun élément ne correspond à la recherche",
+        delete: "Supprimer",
+        today: "Aujourd'hui {time}",
+        yesterday: "Hier {time}",
+        profile: "profil {userId}",
+        deviceNotConnected: "L'appareil de cette entrée n'est pas connecté.",
+        historyIncomplete: "Entrée historique incomplète.",
+        deviceDisconnected: "L'appareil sélectionné n'est plus connecté.",
+        launchingMirror: "Lancement du mirroring...",
+        mirrorActive: "Mirroring actif pour {deviceName}",
+        actionFailed: "Action impossible",
+        launchFailed: "Échec lancement scrcpy",
+        virtualDisplayMissing: "Display virtuel non détecté après lancement scrcpy",
+        instanceManagerUnavailable: "Gestionnaire d'instances indisponible"
+    },
+    controlPanel: {
+        title: "Contrôle session",
+        loading: "Application en cours…",
+        openSessions: "Instances ouvertes",
+        selectedSession: "Instance sélectionnée",
+        noSessionSelected: "Aucune instance sélectionnée",
+        noSessionSelectedHint: "Aucune instance sélectionnée — choisissez une session ci-dessus",
+        selectSessionHint: "Sélectionnez une instance pour afficher ses paramètres actifs",
+        parameters: "Paramètres",
+        apply: "Appliquer",
+        cancel: "Annuler",
+        reset: "Réinitialiser",
+        noSessions: "Aucune instance détectée — les paramètres restent modifiables",
+        sessionType: "Type {type}",
+        sessionMeta: "{label} · Type {type}",
+        active: "Active",
+        resolution: {
+            label: "Résolution",
+            fullHd: "FULL HD",
+            hd: "HD",
+            qhd: "qHD"
+        },
+        fps: "FPS",
+        dpi: {
+            label: "DPI",
+            native: "Natif",
+            normal: "Normal",
+            medium: "Moyen",
+            veryLarge: "Très gros"
+        },
+        bitrate: "Bitrate (Mbps)",
+        gop: {
+            label: "I-frame Interval (GOP)",
+            fast: "Rapide",
+            slow: "Lent",
+            seconds: "{value} s"
+        },
+        validation: {
+            selectBeforeApply: "Sélectionnez une instance avant d'appliquer les paramètres.",
+            selectBeforeReset: "Sélectionnez une instance avant de réinitialiser.",
+            apiUnavailable: "API backend indisponible.",
+            loadFailed: "Impossible de charger les paramètres",
+            applyFailed: "Échec de l'application",
+            resetFailed: "Échec de la réinitialisation",
+            unexpectedError: "Erreur inattendue",
+            applying: "Application des paramètres…",
+            applied: "Paramètres appliqués avec succès.",
+            resetting: "Réinitialisation en cours…",
+            resetDone: "Paramètres d'origine restaurés.",
+            cancelWithSession: "Modifications annulées — valeurs de la session rechargées.",
+            cancelDefault: "Modifications annulées — valeurs par défaut rechargées.",
+            resetConfirm: "Réinitialiser les paramètres de cette session à leurs valeurs d'origine ?\n\nLe flux sera redémarré.",
+            paramsSummary: "{width}×{height} · {dpi} dpi · {fps} fps · {bitrate} Mbps · GOP {gop}s"
+        }
+    },
+    rename: {
+        title: "Renommer",
+        save: "Enregistrer",
+        cancel: "Annuler",
+        confirmReset: "Réinitialiser le nom d'origine ?",
+        nameTooLong: "Le nom ne peut pas dépasser {max} caractères.",
+        nameEmpty: "Le nom ne peut pas être vide.",
+        saveFailed: "Impossible d'enregistrer le nom."
+    },
+    apps: {
+        loading: "Chargement...",
+        noResults: "Aucune application trouvée",
+        searchPlaceholder: "Rechercher une application..."
+    },
+    help: {
+        tab: {
+            title: "Aide & Raccourcis",
+            shortcuts: "Raccourcis",
+            guide: "Guide mirroring",
+            wifi: "Connexion WiFi",
+            refresh: "Rafraîchir",
+            close: "Fermer"
+        },
+        shortcuts: {
+            intro: "Raccourcis clavier et actions disponibles dans Android Hub. Les raccourcis de navigation ne s'appliquent pas lorsque vous tapez dans un champ texte. Clic droit sur un appareil dans « Appareils connectés » ou sur un onglet de session pour ouvrir un menu contextuel (renommer, couleur, fermer…).",
+            groups: [
+                {
+                    title: "Navigation",
+                    items: [
+                        { keys: ["Ctrl", "Tab"], desc: "Passer à l'onglet session suivant." },
+                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Revenir à l'onglet session précédent." }
+                    ]
+                },
+                {
+                    title: "Contrôle du flux (session active)",
+                    items: [
+                        { keys: ["Clic"], desc: "Taper / cliquer sur l'écran Android (canvas vidéo focalisé)." },
+                        { keys: ["Clic droit"], desc: "Touche Retour Android." }
+                    ]
+                },
+                {
+                    title: "Nouvelle instance",
+                    items: [
+                        { keys: ["Double-clic"], desc: "Relancer une application depuis la section Historique." }
+                    ]
+                },
+                {
+                    title: "Dialogues",
+                    items: [
+                        { keys: ["Entrée"], desc: "Valider le renommage d'une session ou d'un appareil." },
+                        { keys: ["Échap"], desc: "Annuler le renommage." }
+                    ]
+                },
+                {
+                    title: "Appareils connectés (sidebar)",
+                    items: [
+                        { keys: ["Double-clic"], desc: "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)." }
+                    ]
+                },
+                {
+                    title: "Clic droit — Appareils connectés (sidebar)",
+                    items: [
+                        { keys: ["Renommer"], desc: "Ouvrir le dialogue pour personnaliser le nom affiché dans la liste des appareils." },
+                        { keys: ["Réinitialiser le nom"], desc: "Revenir au nom d'origine (visible uniquement si l'appareil a été renommé)." },
+                        { keys: ["Couleur → Auto"], desc: "Attribuer automatiquement une couleur distincte à chaque appareil connecté." },
+                        { keys: ["Couleur → teinte"], desc: "Choisir une couleur fixe (Rouge, Orange, Jaune, Vert, Turquoise, Bleu, Violet, Rose, Marron, Ardoise) pour identifier l'appareil dans la sidebar et les onglets." }
+                    ]
+                },
+                {
+                    title: "Clic droit — Onglets de session",
+                    items: [
+                        { keys: ["Renommer"], desc: "Personnaliser le libellé de l'onglet (mirroring ou instance d'application)." },
+                        { keys: ["Réinitialiser le nom"], desc: "Restaurer le libellé d'origine (visible uniquement si l'onglet a été renommé)." },
+                        { keys: ["Fermer"], desc: "Fermer la session vidéo et retirer l'onglet." }
+                    ]
+                }
+            ]
+        },
+        wifi: {
+            title: "Connecter un appareil en WiFi",
+            steps: [
+                "Branche ton appareil en USB et assure-toi qu'il est bien détecté dans le Hub (débogage USB activé sur le téléphone).",
+                "Vérifie que ton téléphone est connecté au WiFi, sur le même réseau que cet ordinateur.",
+                "Clique sur le toggle WiFi à côté de l'appareil dans la sidebar.",
+                "À la première connexion, le Hub va automatiquement configurer l'appareil et te demander de lui donner un nom. Une fois connecté, un message « Connecté en WiFi » s'affiche.",
+                "Tu peux maintenant débrancher le câble USB — l'appareil reste joignable tant qu'il est sur le même réseau WiFi.",
+                "Pour repasser en USB, reclique simplement sur le toggle (le WiFi sera désactivé, mais la configuration reste enregistrée pour la prochaine fois).",
+                "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans le panneau « Appareils » (icône 📶 dans la barre principale)."
+            ],
+            note: "Si le WiFi du téléphone change de réseau ou si son adresse IP change, il se peut que tu doives reconnecter l'appareil via le toggle."
+        },
+        guide: {
+            stepLabel: "Étape {current} sur {total}",
+            tipPrefix: "Astuce :",
+            notePrefix: "Remarque :",
+            prev: "Précédent",
+            next: "Suivant",
+            finish: "Terminer",
+            showTroubleshoot: "Voir le dépannage",
+            steps: [
+                {
+                    visualLabel: "Connexion USB",
+                    visualCaption: "Utilisez un câble de données",
+                    title: "Branchez votre téléphone",
+                    lead: "Utilisez un câble USB de données (pas seulement de charge).",
+                    steps: [
+                        "Branchez votre téléphone Android à votre ordinateur via USB.",
+                        "Sur le téléphone, choisissez « Transfert de fichiers » (MTP) si Android demande le mode USB.",
+                        "Évitez les hubs USB bon marché — branchez directement à l'ordinateur si possible."
+                    ],
+                    tip: "Si rien ne se passe en branchant le câble, c'est souvent un câble de charge uniquement. Essayez celui fourni avec votre téléphone."
+                },
+                {
+                    visualLabel: "Options développeur",
+                    visualCaption: "À faire une seule fois",
+                    title: "Activez les options développeur",
+                    lead: "Cette étape n'est nécessaire qu'une seule fois par appareil.",
+                    steps: [
+                        "Ouvrez Paramètres → À propos du téléphone.",
+                        "Repérez « Numéro de build » (ou « Numéro de version »).",
+                        "Appuyez 7 fois dessus jusqu'au message « Vous êtes développeur »."
+                    ],
+                    tip: "Le libellé exact varie selon la marque (Samsung, Xiaomi, etc.) mais le principe reste le même."
+                },
+                {
+                    visualLabel: "Débogage USB",
+                    visualCaption: "Paramètres développeur",
+                    title: "Activez le débogage USB",
+                    lead: "Android Hub communique avec votre téléphone via ADB — le débogage USB est requis.",
+                    steps: [
+                        "Allez dans Paramètres → Système → Options pour les développeurs.",
+                        "Activez l'option « Débogage USB ».",
+                        "Sur Xiaomi / Realme / Oppo : autorisez aussi « Débogage USB (paramètres de sécurité) » si proposé."
+                    ],
+                    tip: "Sur certaines marques, les options développeur sont dans Paramètres → Paramètres supplémentaires."
+                },
+                {
+                    visualLabel: "Autorisation",
+                    visualCaption: "Fenêtre sur le téléphone",
+                    title: "Autorisez la connexion",
+                    lead: "Votre téléphone va demander de faire confiance à cet ordinateur.",
+                    steps: [
+                        "Une fenêtre « Autoriser le débogage USB ? » apparaît sur le téléphone.",
+                        "Cochez « Toujours autoriser depuis cet ordinateur ».",
+                        "Appuyez sur « Autoriser »."
+                    ],
+                    tip: "Si la fenêtre n'apparaît pas, débranchez/rebranchez le câble et déverrouillez l'écran du téléphone."
+                },
+                {
+                    visualLabel: "Android Hub",
+                    visualCaption: "Appareil détecté",
+                    title: "Vous êtes prêt !",
+                    lead: "Votre téléphone est maintenant détecté par Android Hub.",
+                    steps: [
+                        "L'appareil apparaît dans le panneau « Appareils connectés » à gauche.",
+                        "Ouvrez « Nouvelle instance », sélectionnez l'appareil puis une application — ou cliquez « Mirroring » pour afficher l'écran complet.",
+                        "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier."
+                    ],
+                    tip: "Double-cliquez une entrée de l'historique pour relancer rapidement une application déjà utilisée."
+                }
+            ]
+        },
+        troubleshoot: {
+            title: "Dépannage rapide",
+            items: [
+                "Aucun appareil visible : vérifiez le câble USB (données, pas charge seule) et le mode MTP.",
+                "« Autoriser le débogage USB » ne s'affiche pas : déverrouillez l'écran, rebranchez le câble.",
+                "Appareil déconnecté aléatoirement : branchez directement sur le PC, évitez les hubs USB.",
+                "Mirroring ne démarre pas : fermez les autres outils ADB (Android Studio, scrcpy en CLI).",
+                "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser."
+            ]
+        }
+    }
+};

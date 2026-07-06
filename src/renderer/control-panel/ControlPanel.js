@@ -2,32 +2,36 @@
  * Panneau de contrôle — entièrement autonome (ne dépend pas du chargement externe de StreamParams).
  */
 (function initControlPanel() {
-    const FALLBACK_OPTIONS = {
-        resolutions: [
-            { width: 1920, height: 1080, label: "FULL HD" },
-            { width: 1600, height: 900, label: "1600×900" },
-            { width: 1280, height: 720, label: "HD" },
-            { width: 960, height: 540, label: "qHD" }
-        ],
-        fps: [120, 60, 30],
-        dpi: [
-            { value: 420, label: "Natif" },
-            { value: 320, label: "320" },
-            { value: 280, label: "280" },
-            { value: 240, label: "Normal" },
-            { value: 200, label: "200" },
-            { value: 160, label: "Moyen" },
-            { value: 120, label: "Très gros" }
-        ],
-        bitRateMbps: [1, 2, 4, 6, 8, 12, 16, 24],
-        iFrameInterval: [
-            { value: 1, label: "Rapide" },
-            { value: 2, label: "2 s" },
-            { value: 3, label: "3 s" },
-            { value: 5, label: "5 s" },
-            { value: 10, label: "Lent" }
-        ]
-    };
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
+    function getFallbackOptions() {
+        return {
+            resolutions: [
+                { width: 1920, height: 1080, label: t("controlPanel.resolution.fullHd") },
+                { width: 1600, height: 900, label: "1600×900" },
+                { width: 1280, height: 720, label: t("controlPanel.resolution.hd") },
+                { width: 960, height: 540, label: t("controlPanel.resolution.qhd") }
+            ],
+            fps: [120, 60, 30],
+            dpi: [
+                { value: 420, label: t("controlPanel.dpi.native") },
+                { value: 320, label: "320" },
+                { value: 280, label: "280" },
+                { value: 240, label: t("controlPanel.dpi.normal") },
+                { value: 200, label: "200" },
+                { value: 160, label: t("controlPanel.dpi.medium") },
+                { value: 120, label: t("controlPanel.dpi.veryLarge") }
+            ],
+            bitRateMbps: [1, 2, 4, 6, 8, 12, 16, 24],
+            iFrameInterval: [
+                { value: 1, label: t("controlPanel.gop.fast") },
+                { value: 2, label: t("controlPanel.gop.seconds", { value: 2 }) },
+                { value: 3, label: t("controlPanel.gop.seconds", { value: 3 }) },
+                { value: 5, label: t("controlPanel.gop.seconds", { value: 5 }) },
+                { value: 10, label: t("controlPanel.gop.slow") }
+            ]
+        };
+    }
 
     const DEFAULT_PARAMS = {
         width: 1920,
@@ -40,6 +44,7 @@
 
     function getSP() {
         const ext = globalThis.StreamParams;
+        const FALLBACK_OPTIONS = getFallbackOptions();
         if (ext?.CONTROL_OPTIONS && ext?.normalizeParams) return ext;
         return {
             CONTROL_OPTIONS: FALLBACK_OPTIONS,
@@ -65,7 +70,14 @@
             paramsEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
             formatParamsSummary: (p) => {
                 const n = { ...DEFAULT_PARAMS, ...p };
-                return `${n.width}×${n.height} · ${n.dpi} dpi · ${n.maxFps} fps · ${n.bitRateMbps} Mbps · GOP ${n.iFrameInterval}s`;
+                return t("controlPanel.validation.paramsSummary", {
+                    width: n.width,
+                    height: n.height,
+                    dpi: n.dpi,
+                    fps: n.maxFps,
+                    bitrate: n.bitRateMbps,
+                    gop: n.iFrameInterval
+                });
             }
         };
     }
@@ -168,13 +180,13 @@
     function updateSessionMeta() {
         if (!els.sessionMeta) return;
         if (!state.selectedSessionId) {
-            els.sessionMeta.textContent = "Aucune instance sélectionnée — choisissez une session ci-dessus";
+            els.sessionMeta.textContent = t("controlPanel.noSessionSelectedHint");
             return;
         }
         const session = state.sessions.find((s) => s.sessionId === state.selectedSessionId);
         const label = session?.label || state.selectedSessionId;
         const type = session?.type || state.sessionType || "?";
-        els.sessionMeta.textContent = `${label} · Type ${type}`;
+        els.sessionMeta.textContent = t("controlPanel.sessionMeta", { label, type });
     }
 
     function updateAppliedDisplay() {
@@ -182,7 +194,7 @@
         if (state.appliedParams && state.selectedSessionId) {
             els.currentValues.textContent = SP.formatParamsSummary(state.appliedParams);
         } else {
-            els.currentValues.textContent = "Sélectionnez une instance pour afficher ses paramètres actifs";
+            els.currentValues.textContent = t("controlPanel.selectSessionHint");
         }
     }
 
@@ -251,7 +263,7 @@
         segmentGroups.resolution = createSegmentGroup(
             els.paramGroups,
             "resolution",
-            "Résolution",
+            t("controlPanel.resolution.label"),
             OPT.resolutions.map((r) => ({
                 value: `${r.width}x${r.height}`,
                 label: r.label === "1600×900" ? "1600×900" : `${r.width}×${r.height}\n(${r.label})`
@@ -261,31 +273,35 @@
         segmentGroups.fps = createSegmentGroup(
             els.paramGroups,
             "fps",
-            "FPS",
+            t("controlPanel.fps"),
             OPT.fps.map((v) => ({ value: String(v), label: String(v) }))
         );
 
         segmentGroups.dpi = createSegmentGroup(
             els.paramGroups,
             "dpi",
-            "DPI",
+            t("controlPanel.dpi.label"),
             OPT.dpi.map((d) => ({ value: String(d.value), label: `${d.value}\n${d.label}` }))
         );
 
         segmentGroups.bitrate = createSegmentGroup(
             els.paramGroups,
             "bitrate",
-            "Bitrate (Mbps)",
+            t("controlPanel.bitrate"),
             OPT.bitRateMbps.map((v) => ({ value: String(v), label: String(v) }))
         );
 
         segmentGroups.gop = createSegmentGroup(
             els.paramGroups,
             "gop",
-            "I-frame Interval (GOP)",
+            t("controlPanel.gop.label"),
             OPT.iFrameInterval.map((g) => ({
                 value: String(g.value),
-                label: g.value === 1 ? "1 s\n(Rapide)" : g.value === 10 ? "10 s\n(Lent)" : `${g.value} s`
+                label: g.value === 1
+                    ? `1 s\n(${t("controlPanel.gop.fast")})`
+                    : g.value === 10
+                        ? `10 s\n(${t("controlPanel.gop.slow")})`
+                        : t("controlPanel.gop.seconds", { value: g.value })
             }))
         );
 
@@ -331,7 +347,7 @@
         if (!state.sessions.length) {
             const empty = document.createElement("p");
             empty.className = "control-empty";
-            empty.textContent = "Aucune instance détectée — les paramètres restent modifiables";
+            empty.textContent = t("controlPanel.noSessions");
             els.sessionList.appendChild(empty);
             updateSessionMeta();
             return;
@@ -345,9 +361,9 @@
             if (session.active) item.classList.add("is-focused");
 
             item.innerHTML = `
-                <span class="control-session-type">Type ${session.type}</span>
+                <span class="control-session-type">${t("controlPanel.sessionType", { type: session.type })}</span>
                 <span class="control-session-label">${session.label || session.sessionId}</span>
-                ${session.active ? '<span class="control-session-badge">Active</span>' : ""}
+                ${session.active ? `<span class="control-session-badge">${t("controlPanel.active")}</span>` : ""}
             `;
 
             item.addEventListener("click", () => {
@@ -378,7 +394,7 @@
 
         const result = await window.sessionAPI.getStreamParams(sessionId);
         if (!result?.success) {
-            setStatus(result?.error || "Impossible de charger les paramètres", "error");
+            setStatus(result?.error || t("controlPanel.validation.loadFailed"), "error");
             return;
         }
 
@@ -427,7 +443,7 @@
 
     async function applyChanges() {
         if (!state.selectedSessionId) {
-            setStatus("Sélectionnez une instance avant d'appliquer les paramètres.", "error");
+            setStatus(t("controlPanel.validation.selectBeforeApply"), "error");
             return;
         }
 
@@ -438,12 +454,12 @@
         }
 
         if (!window.sessionAPI?.applyStreamParams) {
-            setStatus("API backend indisponible.", "error");
+            setStatus(t("controlPanel.validation.apiUnavailable"), "error");
             return;
         }
 
         setLoading(true);
-        setStatus("Application des paramètres…");
+        setStatus(t("controlPanel.validation.applying"));
 
         try {
             const result = await window.sessionAPI.applyStreamParams(
@@ -452,7 +468,7 @@
             );
 
             if (!result?.success) {
-                setStatus(result?.error || "Échec de l'application", "error");
+                setStatus(result?.error || t("controlPanel.validation.applyFailed"), "error");
                 return;
             }
 
@@ -460,9 +476,9 @@
             state.draftParams = SP.cloneParams(state.appliedParams);
             updateAppliedDisplay();
             syncSegmentUI();
-            setStatus(result.message || "Paramètres appliqués avec succès.", "success");
+            setStatus(result.message || t("controlPanel.validation.applied"), "success");
         } catch (err) {
-            setStatus(err.message || "Erreur inattendue", "error");
+            setStatus(err.message || t("controlPanel.validation.unexpectedError"), "error");
         } finally {
             setLoading(false);
         }
@@ -471,10 +487,10 @@
     function cancelChanges() {
         if (state.appliedParams && state.selectedSessionId) {
             state.draftParams = SP.cloneParams(state.appliedParams);
-            setStatus("Modifications annulées — valeurs de la session rechargées.");
+            setStatus(t("controlPanel.validation.cancelWithSession"));
         } else {
             state.draftParams = SP.cloneParams(DEFAULT_PARAMS);
-            setStatus("Modifications annulées — valeurs par défaut rechargées.");
+            setStatus(t("controlPanel.validation.cancelDefault"));
         }
         syncSegmentUI();
         updateDirtyState();
@@ -482,29 +498,27 @@
 
     async function resetToOriginal() {
         if (!state.selectedSessionId) {
-            setStatus("Sélectionnez une instance avant de réinitialiser.", "error");
+            setStatus(t("controlPanel.validation.selectBeforeReset"), "error");
             return;
         }
 
-        const confirmed = window.confirm(
-            "Réinitialiser les paramètres de cette session à leurs valeurs d'origine ?\n\nLe flux sera redémarré."
-        );
+        const confirmed = window.confirm(t("controlPanel.validation.resetConfirm"));
         if (!confirmed) return;
 
         setLoading(true);
-        setStatus("Réinitialisation en cours…");
+        setStatus(t("controlPanel.validation.resetting"));
 
         try {
             const result = await window.sessionAPI.resetStreamParams(state.selectedSessionId);
             if (!result?.success) {
-                setStatus(result?.error || "Échec de la réinitialisation", "error");
+                setStatus(result?.error || t("controlPanel.validation.resetFailed"), "error");
                 return;
             }
 
             await loadSessionParams(state.selectedSessionId);
-            setStatus("Paramètres d'origine restaurés.", "success");
+            setStatus(t("controlPanel.validation.resetDone"), "success");
         } catch (err) {
-            setStatus(err.message || "Erreur inattendue", "error");
+            setStatus(err.message || t("controlPanel.validation.unexpectedError"), "error");
         } finally {
             setLoading(false);
         }
@@ -552,7 +566,7 @@
 
     function ensureUI() {
         SP = getSP();
-        OPT = SP.CONTROL_OPTIONS || FALLBACK_OPTIONS;
+        OPT = SP.CONTROL_OPTIONS || getFallbackOptions();
         cacheElements();
         if (!els.paramGroups) {
             console.error("[ControlPanel] #control-param-groups introuvable");
@@ -576,7 +590,7 @@
         }
 
         if (!ensureUI()) {
-            setStatus("Erreur d'initialisation du panneau.", "error");
+            setStatus(t("controlPanel.validation.unexpectedError"), "error");
             return;
         }
 
@@ -593,6 +607,17 @@
             console.error("[ControlPanel] Erreur initialisation:", err);
         }
     }
+
+    globalThis.HubI18n?.onChange?.(() => {
+        if (!state.uiReady) return;
+        SP = getSP();
+        OPT = SP.CONTROL_OPTIONS || getFallbackOptions();
+        buildParamGroups();
+        updateSessionMeta();
+        updateAppliedDisplay();
+        renderSessionList();
+        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-control") || document);
+    });
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", boot);

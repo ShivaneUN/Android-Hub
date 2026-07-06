@@ -17,14 +17,16 @@
 </head>
 <body>
   <div id="rename-root" class="rename-dialog rename-dialog--window" role="dialog" aria-modal="true">
-    <div class="rename-dialog-title">Renommer</div>
+    <div class="rename-dialog-title" data-i18n="rename.title">Renommer</div>
     <input id="rename-input" class="rename-dialog-input" type="text" maxlength="50" autocomplete="off">
     <div id="rename-error" class="rename-dialog-error"></div>
     <div class="rename-dialog-actions">
-      <button type="button" class="rename-dialog-btn" data-action="cancel">Annuler</button>
-      <button type="button" class="rename-dialog-btn rename-dialog-btn-primary" data-action="save">Enregistrer</button>
+      <button type="button" class="rename-dialog-btn" data-action="cancel" data-i18n="rename.cancel">Annuler</button>
+      <button type="button" class="rename-dialog-btn rename-dialog-btn-primary" data-action="save" data-i18n="rename.save">Enregistrer</button>
     </div>
   </div>
+  <script src="../i18n/i18n.js"></script>
   <script src="./rename-dialog-overlay.js"></script>
+  <script>void globalThis.HubI18n?.init?.();</script>
 </body>
 </html>

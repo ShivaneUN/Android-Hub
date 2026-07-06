@@ -1,5 +1,6 @@
 const { Menu, MenuItem, dialog, nativeImage, ipcMain } = require("electron");
 const { DEVICE_COLORS } = require("../../shared/device-colors");
+const { getColorLabel } = require("../../shared/locale");
 const { resolveStableDeviceId, collectDeviceAliasKeys, performSessionReset } = require("./namesHandlers");
 
 const colorSwatchCache = new Map();
@@ -35,14 +36,17 @@ function buildDeviceColorSubmenu(target, deps) {
     const getDeviceColorsManager = deps.getDeviceColorsManager;
     const getMainWindow = deps.getMainWindow;
     const getConnectedDeviceIds = deps.getConnectedDeviceIds;
+    const getUiPreferencesManager = deps.getUiPreferencesManager;
     const manager = getDeviceColorsManager?.();
     if (!manager || !target.serial) return null;
 
+    const localeApi = getUiPreferencesManager?.()?.localeApi;
+    const t = (key) => localeApi?.t(key) || key;
     const current = manager.getColorForDevice(target.serial);
     const colorMenu = new Menu();
 
     colorMenu.append(new MenuItem({
-        label: "Auto",
+        label: t("contextMenu.auto"),
         type: current?.mode === "auto" ? "checkbox" : "normal",
         checked: current?.mode === "auto",
         click: () => {
@@ -60,7 +64,7 @@ function buildDeviceColorSubmenu(target, deps) {
 
     for (const color of DEVICE_COLORS) {
         colorMenu.append(new MenuItem({
-            label: color.name,
+            label: getColorLabel(localeApi, color.id) || color.name,
             icon: createColorSwatchIcon(color.hex),
             type: current?.colorId === color.id && current?.mode === "manual" ? "checkbox" : "normal",
             checked: current?.colorId === color.id && current?.mode === "manual",
@@ -76,14 +80,15 @@ function buildDeviceColorSubmenu(target, deps) {
     return colorMenu;
 }
 
-async function confirmReset(mainWindow) {
+async function confirmReset(mainWindow, getUiPreferencesManager) {
+    const t = (key) => getUiPreferencesManager?.()?.t(key) || key;
     const result = await dialog.showMessageBox(mainWindow, {
         type: "question",
-        buttons: ["Annuler", "Réinitialiser"],
+        buttons: [t("contextMenu.cancel"), t("contextMenu.reset")],
         defaultId: 0,
         cancelId: 0,
-        title: "Réinitialiser le nom",
-        message: "Réinitialiser le nom d'origine ?"
+        title: t("contextMenu.confirmResetTitle"),
+        message: t("contextMenu.confirmResetMessage")
     });
     return result.response === 1;
 }
@@ -95,26 +100,28 @@ function registerContextMenuHandlers(deps) {
     const getRenameDialogManager = deps.getRenameDialogManager;
     const getDeviceColorsManager = deps.getDeviceColorsManager;
     const getConnectedDeviceIds = deps.getConnectedDeviceIds;
+    const getUiPreferencesManager = deps.getUiPreferencesManager;
 
     ipcMain.handle("context-menu:show", async (event, payload = {}) => {
+        const t = (key) => getUiPreferencesManager?.()?.t(key) || key;
         const mainWindow = getMainWindow();
         const popupWindow = mainWindow && !mainWindow.isDestroyed()
             ? mainWindow
             : require("electron").BrowserWindow.fromWebContents(event.sender);
 
         if (!popupWindow) {
-            return { success: false, error: "Fenêtre introuvable." };
+            return { success: false, error: t("contextMenu.windowNotFound") };
         }
 
         const { x, y, target } = payload;
         if (!target?.kind) {
-            return { success: false, error: "Cible invalide." };
+            return { success: false, error: t("contextMenu.invalidTarget") };
         }
 
         const menu = new Menu();
 
         menu.append(new MenuItem({
-            label: "Renommer",
+            label: t("contextMenu.rename"),
             click: async () => {
                 const dialogManager = getRenameDialogManager?.();
                 if (!dialogManager) return;
@@ -138,11 +145,11 @@ function registerContextMenuHandlers(deps) {
 
         if (target.hasCustomName) {
             menu.append(new MenuItem({
-                label: "Réinitialiser le nom",
+                label: t("contextMenu.resetName"),
                 click: async () => {
                     const manager = getCustomNamesManager?.();
                     const mainWin = getMainWindow();
-                    if (!manager || !(await confirmReset(mainWin))) return;
+                    if (!manager || !(await confirmReset(mainWin, getUiPreferencesManager))) return;
 
                     if (target.kind === "device" && target.serial) {
                         const stableId = await resolveStableDeviceId(target.serial);
@@ -168,12 +175,13 @@ function registerContextMenuHandlers(deps) {
             const colorSubmenu = buildDeviceColorSubmenu(target, {
                 getDeviceColorsManager,
                 getMainWindow,
-                getConnectedDeviceIds
+                getConnectedDeviceIds,
+                getUiPreferencesManager
             });
             if (colorSubmenu) {
                 menu.append(new MenuItem({ type: "separator" }));
                 menu.append(new MenuItem({
-                    label: "Couleur",
+                    label: t("contextMenu.color"),
                     submenu: colorSubmenu
                 }));
             }
@@ -182,7 +190,7 @@ function registerContextMenuHandlers(deps) {
         if (target.kind === "session" && target.sessionId) {
             menu.append(new MenuItem({ type: "separator" }));
             menu.append(new MenuItem({
-                label: "Fermer",
+                label: t("contextMenu.close"),
                 click: () => {
                     const mainWin = getMainWindow();
                     if (mainWin && !mainWin.isDestroyed()) {

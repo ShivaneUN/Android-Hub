@@ -161,7 +161,8 @@ contextBridge.exposeInMainWorld("wifiAPI", {
 contextBridge.exposeInMainWorld("launchHistoryAPI", {
     list: () => ipcRenderer.invoke("launch-history:list"),
     record: (payload) => ipcRenderer.invoke("launch-history:record", payload),
-    remove: (payload) => ipcRenderer.invoke("launch-history:remove", payload)
+    remove: (payload) => ipcRenderer.invoke("launch-history:remove", payload),
+    onUpdated: (callback) => ipcRenderer.on("launch-history:updated", () => callback())
 });
 
 contextBridge.exposeInMainWorld("deviceColorsAPI", {
@@ -170,6 +171,14 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
     setManual: (payload) => ipcRenderer.invoke("device-colors:setManual", payload),
     setAuto: (payload) => ipcRenderer.invoke("device-colors:setAuto", payload),
     onUpdated: (callback) => ipcRenderer.on("device-colors:updated", () => callback())
+});
+
+contextBridge.exposeInMainWorld("uiPreferencesAPI", {
+    getLocaleData: () => ipcRenderer.invoke("ui:get-locale-data"),
+    getLocale: () => ipcRenderer.invoke("ui:get-locale"),
+    setLocale: (locale) => ipcRenderer.invoke("ui:set-locale", { locale }),
+    onLocaleChanged: (callback) =>
+        ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data))
 });
 
 contextBridge.exposeInMainWorld("maintenanceAPI", {

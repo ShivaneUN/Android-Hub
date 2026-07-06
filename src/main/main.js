@@ -51,6 +51,8 @@ const { AppMetadataManager } = require("./managers/app-metadata-manager");
 const { registerAppMetadataHandlers, attachAppMetadataPrefetch } = require("./ipc/appMetadataHandlers");
 const { MaintenanceCleanupManager } = require("./managers/maintenance-cleanup-manager");
 const { registerMaintenanceHandlers } = require("./ipc/maintenanceHandlers");
+const { UiPreferencesManager } = require("./managers/ui-preferences-manager");
+const { registerUiPreferencesHandlers } = require("./ipc/uiPreferencesHandlers");
 const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
 const { SessionAudioProcessManager } = require("./managers/session-audio-process-manager");
@@ -901,6 +903,7 @@ function notifyNewInstanceDisplayReady(launchId, serial, packageName, displayId,
 app.whenReady().then(() => {
     historyPath = path.join(app.getPath("userData"), "device-history.json");
     global.customNamesManager = new CustomNamesManager(app.getPath("userData"));
+    global.uiPreferencesManager = new UiPreferencesManager(app.getPath("userData"));
     global.deviceColorsManager = new DeviceColorsManager(app.getPath("userData"));
     deviceManager = new DeviceManager(adbPath);
     wifiDevicesManager = new WifiDevicesManager(app.getPath("userData"));
@@ -1006,6 +1009,18 @@ function requestRendererDeviceRefresh() {
         && hubModal.getCurrentPanel?.() === "devices"
     ) {
         overlay.webContents.send("devices:refresh-request");
+    }
+}
+
+function requestLaunchHistoryRefresh() {
+    if (win && !win.isDestroyed()) {
+        win.webContents.send("launch-history:updated");
+    }
+
+    const hubModal = global.hubModalOverlayManager;
+    const overlay = hubModal?.overlayWindow;
+    if (overlay && !overlay.isDestroyed()) {
+        overlay.webContents.send("launch-history:updated");
     }
 }
 
@@ -2174,7 +2189,13 @@ async function listDevicesForUI() {
         getMainWindow: () => win,
         getRenameDialogManager: () => global.renameDialogManager,
         getDeviceColorsManager: () => global.deviceColorsManager,
-        getConnectedDeviceIds
+        getConnectedDeviceIds,
+        getUiPreferencesManager: () => global.uiPreferencesManager
+    });
+    registerUiPreferencesHandlers({
+        getUiPreferencesManager: () => global.uiPreferencesManager,
+        getMainWindow: () => win,
+        getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null
     });
     registerDeviceColorsHandlers({
         getDeviceColorsManager: () => global.deviceColorsManager,
@@ -2192,7 +2213,12 @@ async function listDevicesForUI() {
     });
     registerMaintenanceHandlers({
         ipcMain,
-        getMaintenanceCleanupManager: () => maintenanceCleanupManager
+        getMaintenanceCleanupManager: () => maintenanceCleanupManager,
+        notifyCleanupCompleted: (result) => {
+            if (result?.categories?.history) {
+                requestLaunchHistoryRefresh();
+            }
+        }
     });
     registerUpdateHandlers(ipcMain);
     initAutoUpdater(win);

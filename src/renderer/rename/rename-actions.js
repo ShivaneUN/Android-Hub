@@ -2,6 +2,8 @@
  * Actions de renommage partagées (appareils et sessions).
  */
 (function initRenameActions() {
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
     async function syncLocalSessionLabels() {
         if (!window.sessionAPI?.list) return;
 
@@ -43,7 +45,7 @@
     }
 
     function confirmReset() {
-        return window.confirm("Réinitialiser le nom d'origine ?");
+        return window.confirm(t("rename.confirmReset"));
     }
 
     function openDeviceRename(serial, currentName, originalName) {

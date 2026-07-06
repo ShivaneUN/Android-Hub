@@ -4,6 +4,19 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Support multi-langue FR/EN (2026-07-06)
+
+**Statut : implémenté.**
+
+- i18n léger côté Renderer (`HubI18n` : `t()`, `setLocale`, `applyDomI18n`, événement `hub:locale-changed`).
+- Fichiers de traduction : `src/shared/locales/fr.json` + `en.json` (clés identiques, ~260+ entrées dont aide complète). Miroir généré dans `src/renderer/locales/` via `node scripts/build-locales.js`.
+- Persistance : `ui-preferences.json` (`locale: fr|en`) via `UiPreferencesManager` + IPC `ui:get/set-locale`.
+- Bouton langue dans la sidebar, sous « Aide » : badge FR/EN, bascule immédiate + broadcast vers fenêtre modale.
+- Menus contextuels natifs (Main) traduits via la même locale.
+- Zones LOCK (input, vidéo, audio, orientation) non modifiées.
+
+---
+
 ## TÂCHE — Contour vert fenêtre/onglet actif (2026-07-06)
 
 **Statut : implémenté.**
