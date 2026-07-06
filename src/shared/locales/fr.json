@@ -7,6 +7,7 @@
     "audio": "Audio",
     "devices": "Appareils",
     "control": "Contrôle",
+    "settings": "Paramètres",
     "help": "Aide",
     "language": "Langue",
     "languageFr": "Français",
@@ -77,7 +78,8 @@
     "newSession": "Nouvelle instance",
     "control": "Contrôle session",
     "devices": "Appareils",
-    "help": "Aide & Raccourcis"
+    "help": "Aide & Raccourcis",
+    "settings": "Paramètres"
   },
   "colors": {
     "red": "Rouge",
@@ -115,7 +117,14 @@
     "audioOn": "ON",
     "audioOff": "OFF",
     "devicesTitle": "Appareils USB et WiFi",
-    "helpTitle": "Aide et raccourcis clavier"
+    "helpTitle": "Aide et raccourcis clavier",
+    "settingsTitle": "Appareils, contrôle et nettoyage"
+  },
+  "settingsPanel": {
+    "title": "Paramètres",
+    "tabDevices": "Appareils",
+    "tabControl": "Contrôle",
+    "tabMaintenance": "Nettoyage"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -444,7 +453,7 @@
         "À la première connexion, le Hub va automatiquement configurer l'appareil et te demander de lui donner un nom. Une fois connecté, un message « Connecté en WiFi » s'affiche.",
         "Tu peux maintenant débrancher le câble USB — l'appareil reste joignable tant qu'il est sur le même réseau WiFi.",
         "Pour repasser en USB, reclique simplement sur le toggle (le WiFi sera désactivé, mais la configuration reste enregistrée pour la prochaine fois).",
-        "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans le panneau « Appareils » (icône 📶 dans la barre principale)."
+        "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans Paramètres → Appareils (icône engrenage dans la barre principale)."
       ],
       "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, il se peut que tu doives reconnecter l'appareil via le toggle."
     },

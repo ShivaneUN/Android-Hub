@@ -3,9 +3,8 @@ const path = require("path");
 
 const PANEL_SIZES = {
     "new-session": { width: 460, height: 760 },
-    control: { width: 420, height: 680 },
-    help: { width: 920, height: 680 },
-    devices: { width: 480, height: 620 }
+    settings: { width: 500, height: 700 },
+    help: { width: 920, height: 680 }
 };
 
 class HubModalOverlayManager {

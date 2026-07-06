@@ -40,10 +40,13 @@
         return `<span class="devices-panel-color device-color-pill"${style} aria-hidden="true"></span>`;
     }
 
+    function isDevicesTabActive() {
+        if (!window.isSettingsPanelActive?.()) return false;
+        return window.getCurrentSettingsTab?.() === "devices";
+    }
+
     function isDevicesPanelActive() {
-        const panel = document.getElementById("panel-devices");
-        if (!panel) return false;
-        return panel.classList.contains("active");
+        return isDevicesTabActive();
     }
 
     async function syncAfterPanelAction() {
@@ -497,25 +500,30 @@
 
     async function openDevicesPanel(options = {}) {
         if (!options.inChildWindow && !/hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"))) {
-            if (window.hubModalAPI) {
-                await window.hubModalAPI.open({ panel: "devices" });
+            if (window.openSettingsPanel) {
+                await window.openSettingsPanel({ tab: "devices" });
+            } else if (window.hubModalAPI) {
+                await window.hubModalAPI.open({ panel: "settings", tab: "devices" });
             }
-            document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
-            document.getElementById("nav-devices")?.classList.add("active");
             return;
         }
 
         await renderPanel();
-        bindCleanupAction();
         startDevicesPanelLiveRefresh();
     }
+
+    function bindMaintenanceSection() {
+        bindCleanupAction();
+    }
+
+    window.bindMaintenanceSection = bindMaintenanceSection;
 
     window.openDevicesPanel = openDevicesPanel;
     window.stopDevicesPanelLiveRefresh = stopDevicesPanelLiveRefresh;
     window.refreshDevicesPanel = (options) => renderPanel(options || { silent: true });
 
     globalThis.HubI18n?.onChange?.(() => {
-        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-devices") || document);
+        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-settings") || document);
         globalThis.HubI18n?.applyDomI18n?.(document.getElementById("cleanup-modal-overlay") || document);
         applyMaintenanceHintLabels();
         if (isDevicesPanelActive()) {

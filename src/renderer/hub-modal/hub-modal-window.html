@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../styles/control-panel.css">
 <link rel="stylesheet" href="../apps/app-list.css">
 <link rel="stylesheet" href="../help/help-panel.css">
+<link rel="stylesheet" href="../settings-panel/settings-panel.css">
 <link rel="stylesheet" href="hub-modal-window.css">
 </head>
 <body>
@@ -55,96 +56,86 @@
   </div>
 </div>
 
-<div id="panel-control" class="hub-modal-panel">
-  <div class="hub-modal hub-modal--control" role="dialog" aria-labelledby="control-modal-title">
+<div id="panel-settings" class="hub-modal-panel">
+  <div class="hub-modal hub-modal--settings" role="dialog" aria-labelledby="settings-modal-title">
     <div class="hub-panel-header">
       <div class="hub-panel-title-row">
         <div class="hub-panel-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="3" rx="1"/><rect x="3" y="11" width="18" height="3" rx="1"/><rect x="3" y="17" width="18" height="3" rx="1"/><circle cx="8" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="18.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.41 1.15H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </div>
-        <h2 class="hub-panel-title" id="control-modal-title" data-i18n="controlPanel.title">Contrôle session</h2>
+        <h2 class="hub-panel-title" id="settings-modal-title" data-i18n="settingsPanel.title">Paramètres</h2>
       </div>
       <div class="hub-panel-header-actions">
-        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="control" data-i18n-title="hubModal.refreshSessions" title="Rafraîchir les sessions" data-i18n="hubModal.refresh">Rafraîchir</button>
-        <button type="button" class="hub-panel-close" data-hub-modal-close id="close-control-panel" data-i18n-title="hubModal.close" title="Fermer">&#10005;</button>
+        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="settings" data-i18n-title="hubModal.refresh" title="Rafraîchir" data-i18n="hubModal.refresh">Rafraîchir</button>
+        <button type="button" class="hub-panel-close" data-hub-modal-close id="close-settings-panel" data-i18n-title="hubModal.close" title="Fermer">&#10005;</button>
       </div>
     </div>
-    <div class="hub-panel-body">
-      <div class="control-panel-body">
-        <div class="control-loading-overlay hidden" id="control-loading-overlay">
-          <div class="control-spinner"></div>
-          <span data-i18n="controlPanel.loading">Application en cours…</span>
+    <nav class="settings-tab-bar" aria-label="Paramètres">
+      <button type="button" class="settings-tab-btn active" data-settings-tab="devices" data-i18n="settingsPanel.tabDevices">Appareils</button>
+      <button type="button" class="settings-tab-btn" data-settings-tab="control" data-i18n="settingsPanel.tabControl">Contrôle</button>
+      <button type="button" class="settings-tab-btn" data-settings-tab="maintenance" data-i18n="settingsPanel.tabMaintenance">Nettoyage</button>
+    </nav>
+    <div class="hub-panel-body settings-panel-body">
+      <div id="settings-pane-devices" class="settings-tab-pane active" data-settings-pane="devices">
+        <div class="settings-section-label" data-i18n="devicesPanel.usb">USB</div>
+        <div class="devices-panel-list" id="devices-panel-usb-list">
+          <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
         </div>
-        <div>
-          <div class="control-section-label" data-i18n="controlPanel.openSessions">Instances ouvertes</div>
-          <div class="control-session-list" id="control-session-list"></div>
+        <div class="settings-divider"></div>
+        <div class="settings-section-label" data-i18n="devicesPanel.wifi">WiFi</div>
+        <div class="devices-panel-list" id="devices-panel-wifi-list">
+          <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
         </div>
-        <div class="control-divider"></div>
-        <div id="control-params-section">
-          <div class="control-section-label" data-i18n="controlPanel.selectedSession">Instance sélectionnée</div>
-          <div class="control-session-meta" id="control-session-meta" data-i18n="controlPanel.noSessionSelected">Aucune instance sélectionnée</div>
-          <div class="control-current-values" id="control-current-values" data-i18n="controlPanel.selectSessionHint">Sélectionnez une instance pour afficher ses paramètres actifs</div>
-          <div class="control-section-label" data-i18n="controlPanel.parameters">Paramètres</div>
-          <div class="control-param-groups" id="control-param-groups"></div>
-        </div>
-        <div class="control-divider"></div>
-        <div id="control-actions-section">
-          <div class="control-actions">
-            <button type="button" class="control-btn control-btn-primary" id="control-btn-apply" data-i18n="controlPanel.apply">Appliquer</button>
-            <button type="button" class="control-btn" id="control-btn-cancel" data-i18n="controlPanel.cancel">Annuler</button>
-            <button type="button" class="control-btn control-btn-danger" id="control-btn-reset" data-i18n="controlPanel.reset">Réinitialiser</button>
+      </div>
+      <div id="settings-pane-control" class="settings-tab-pane" data-settings-pane="control">
+        <div class="control-panel-body">
+          <div class="control-loading-overlay hidden" id="control-loading-overlay">
+            <div class="control-spinner"></div>
+            <span data-i18n="controlPanel.loading">Application en cours…</span>
           </div>
-          <div class="control-status" id="control-status-message"></div>
+          <div>
+            <div class="control-section-label" data-i18n="controlPanel.openSessions">Instances ouvertes</div>
+            <div class="control-session-list" id="control-session-list"></div>
+          </div>
+          <div class="control-divider"></div>
+          <div id="control-params-section">
+            <div class="control-section-label" data-i18n="controlPanel.selectedSession">Instance sélectionnée</div>
+            <div class="control-session-meta" id="control-session-meta" data-i18n="controlPanel.noSessionSelected">Aucune instance sélectionnée</div>
+            <div class="control-current-values" id="control-current-values" data-i18n="controlPanel.selectSessionHint">Sélectionnez une instance pour afficher ses paramètres actifs</div>
+            <div class="control-section-label" data-i18n="controlPanel.parameters">Paramètres</div>
+            <div class="control-param-groups" id="control-param-groups"></div>
+          </div>
+          <div class="control-divider"></div>
+          <div id="control-actions-section">
+            <div class="control-actions">
+              <button type="button" class="control-btn control-btn-primary" id="control-btn-apply" data-i18n="controlPanel.apply">Appliquer</button>
+              <button type="button" class="control-btn" id="control-btn-cancel" data-i18n="controlPanel.cancel">Annuler</button>
+              <button type="button" class="control-btn control-btn-danger" id="control-btn-reset" data-i18n="controlPanel.reset">Réinitialiser</button>
+            </div>
+            <div class="control-status" id="control-status-message"></div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
-
-<div id="panel-devices" class="hub-modal-panel">
-  <div class="hub-modal hub-modal--devices" role="dialog" aria-labelledby="devices-modal-title">
-    <div class="hub-panel-header">
-      <div class="hub-panel-title-row">
-        <div class="hub-panel-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M2 8.5a16 16 0 0 1 20 0"/><path d="M5 12.5a11 11 0 0 1 14 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
+      <div id="settings-pane-maintenance" class="settings-tab-pane" data-settings-pane="maintenance">
+        <div class="devices-maintenance-row">
+          <button type="button" class="devices-panel-btn" id="devices-cleanup-now-btn" data-i18n="devicesPanel.cleanupNow">Nettoyer maintenant</button>
+          <span class="devices-maintenance-hint" data-i18n="devicesPanel.maintenanceHint" data-i18n-vars='{"days":7}'>Logs/cache : 7 jours. Historique : entrées visibles dans le hub.</span>
         </div>
-        <h2 class="hub-panel-title" id="devices-modal-title" data-i18n="hubModal.devices">Appareils</h2>
-      </div>
-      <div class="hub-panel-header-actions">
-        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="devices" data-i18n-title="hubModal.refreshDeviceList" title="Rafraîchir la liste" data-i18n="hubModal.refresh">Rafraîchir</button>
-        <button type="button" class="hub-panel-close" data-hub-modal-close id="close-devices-panel" data-i18n-title="hubModal.close" title="Fermer">&#10005;</button>
-      </div>
-    </div>
-    <div class="hub-panel-body">
-      <div class="settings-section-label" data-i18n="devicesPanel.usb">USB</div>
-      <div class="devices-panel-list" id="devices-panel-usb-list">
-        <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
-      </div>
-      <div class="settings-divider"></div>
-      <div class="settings-section-label" data-i18n="devicesPanel.wifi">WiFi</div>
-      <div class="devices-panel-list" id="devices-panel-wifi-list">
-        <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
-      </div>
-      <div class="settings-divider"></div>
-      <div class="settings-section-label" data-i18n="devicesPanel.maintenance">Maintenance</div>
-      <div class="devices-maintenance-row">
-        <button type="button" class="devices-panel-btn" id="devices-cleanup-now-btn" data-i18n="devicesPanel.cleanupNow">Nettoyer maintenant</button>
-        <span class="devices-maintenance-hint" data-i18n="devicesPanel.maintenanceHint" data-i18n-vars='{"days":7}'>Logs/cache : 7 jours. Historique : entrées visibles dans le hub.</span>
-      </div>
-      <div class="devices-maintenance-auto">
-        <div class="devices-maintenance-auto-title" data-i18n="devicesPanel.autoCleanup">Nettoyage automatique</div>
-        <label class="devices-maintenance-toggle">
-          <input type="checkbox" id="devices-auto-clean-logs" checked>
-          <span data-i18n="devicesPanel.autoLogs">Logs</span>
-        </label>
-        <label class="devices-maintenance-toggle">
-          <input type="checkbox" id="devices-auto-clean-cache" checked>
-          <span data-i18n="devicesPanel.autoCache">Cache</span>
-        </label>
-        <label class="devices-maintenance-toggle">
-          <input type="checkbox" id="devices-auto-clean-history" checked>
-          <span data-i18n="devicesPanel.autoHistory">Historique des apps</span>
-        </label>
+        <div class="devices-maintenance-auto">
+          <div class="devices-maintenance-auto-title" data-i18n="devicesPanel.autoCleanup">Nettoyage automatique</div>
+          <label class="devices-maintenance-toggle">
+            <input type="checkbox" id="devices-auto-clean-logs" checked>
+            <span data-i18n="devicesPanel.autoLogs">Logs</span>
+          </label>
+          <label class="devices-maintenance-toggle">
+            <input type="checkbox" id="devices-auto-clean-cache" checked>
+            <span data-i18n="devicesPanel.autoCache">Cache</span>
+          </label>
+          <label class="devices-maintenance-toggle">
+            <input type="checkbox" id="devices-auto-clean-history" checked>
+            <span data-i18n="devicesPanel.autoHistory">Historique des apps</span>
+          </label>
+        </div>
       </div>
     </div>
   </div>
@@ -196,6 +187,7 @@
 <script src="../apps/AppList.js"></script>
 <script src="../new-instance/new-instance-pipeline.js"></script>
 <script src="../new-session.js"></script>
+<script src="../settings-panel/SettingsPanel.js"></script>
 <script src="../control-panel/ControlPanel.js"></script>
 <script src="../help/HelpPanel.js"></script>
 <script src="hub-modal-window.js"></script>

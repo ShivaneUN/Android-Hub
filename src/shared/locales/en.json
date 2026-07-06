@@ -7,6 +7,7 @@
     "audio": "Audio",
     "devices": "Devices",
     "control": "Control",
+    "settings": "Settings",
     "help": "Help",
     "language": "Language",
     "languageFr": "Français",
@@ -77,7 +78,8 @@
     "newSession": "New instance",
     "control": "Session control",
     "devices": "Devices",
-    "help": "Help & Shortcuts"
+    "help": "Help & Shortcuts",
+    "settings": "Settings"
   },
   "colors": {
     "red": "Red",
@@ -115,7 +117,14 @@
     "audioOn": "ON",
     "audioOff": "OFF",
     "devicesTitle": "USB and WiFi devices",
-    "helpTitle": "Help and keyboard shortcuts"
+    "helpTitle": "Help and keyboard shortcuts",
+    "settingsTitle": "Devices, control and cleanup"
+  },
+  "settingsPanel": {
+    "title": "Settings",
+    "tabDevices": "Devices",
+    "tabControl": "Control",
+    "tabMaintenance": "Cleanup"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",
@@ -444,7 +453,7 @@
         "On first connection, the Hub will automatically configure the device and ask you to give it a name. Once connected, a Connected over WiFi message appears.",
         "You can now unplug the USB cable — the device stays reachable as long as it is on the same WiFi network.",
         "To switch back to USB, simply click the toggle again (WiFi will be disabled, but the configuration is saved for next time).",
-        "Find all your WiFi and USB devices, along with their history, in the Devices panel (📶 icon in the main bar)."
+        "Find all your WiFi and USB devices, along with their history, in Settings → Devices (gear icon in the main bar)."
       ],
       "note": "If the phone's WiFi network changes or its IP address changes, you may need to reconnect the device using the toggle."
     },

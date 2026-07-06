@@ -1,9 +1,18 @@
 (function initHubModalWindow() {
     const PANELS = {
         "new-session": "panel-new-session",
-        control: "panel-control",
-        devices: "panel-devices",
+        settings: "panel-settings",
         help: "panel-help"
+    };
+
+    const LEGACY_PANEL_MAP = {
+        devices: "settings",
+        control: "settings"
+    };
+
+    const LEGACY_TAB_MAP = {
+        devices: "devices",
+        control: "control"
     };
 
     function showPanel(panelId) {
@@ -19,11 +28,8 @@
             case "new-session":
                 await window.refreshNewSessionPanel?.();
                 break;
-            case "control":
-                await window.refreshControlPanel?.();
-                break;
-            case "devices":
-                await window.refreshDevicesPanel?.({ silent: false });
+            case "settings":
+                await window.refreshSettingsPanel?.();
                 break;
             case "help":
                 window.refreshHelpPanel?.();
@@ -53,7 +59,14 @@
     }
 
     async function onOpen(payload = {}) {
-        const panel = payload.panel;
+        let panel = payload.panel;
+        let tab = payload.tab;
+
+        if (LEGACY_PANEL_MAP[panel]) {
+            tab = tab || LEGACY_TAB_MAP[panel];
+            panel = LEGACY_PANEL_MAP[panel];
+        }
+
         if (!panel || !PANELS[panel]) return;
 
         showPanel(panel);
@@ -62,11 +75,8 @@
         if (panel === "new-session" && typeof openNewSessionPanel === "function") {
             window.stopDevicesPanelLiveRefresh?.();
             await openNewSessionPanel({ inChildWindow: true });
-        } else if (panel === "control" && typeof openControlPanel === "function") {
-            window.stopDevicesPanelLiveRefresh?.();
-            await openControlPanel({ inChildWindow: true });
-        } else if (panel === "devices" && typeof openDevicesPanel === "function") {
-            await openDevicesPanel({ inChildWindow: true });
+        } else if (panel === "settings" && typeof openSettingsPanel === "function") {
+            await openSettingsPanel({ inChildWindow: true, tab: tab || "devices" });
         } else if (panel === "help" && typeof openHelpPanel === "function") {
             window.stopDevicesPanelLiveRefresh?.();
             openHelpPanel(payload.tab || "shortcuts");

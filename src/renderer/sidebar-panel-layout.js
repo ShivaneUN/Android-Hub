@@ -10,7 +10,7 @@ const CONTROL_PANEL_WIDTH = 360;
 
 const PANEL_PREFERRED_WIDTHS = {
     "page-new-session": DEFAULT_PANEL_WIDTH,
-    "page-control-panel": CONTROL_PANEL_WIDTH
+    "page-settings-panel": CONTROL_PANEL_WIDTH
 };
 
 function measureChromeTop() {

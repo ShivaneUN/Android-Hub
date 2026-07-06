@@ -4,6 +4,18 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Sidebar Paramètres (regroupement Appareils / Contrôle / Nettoyage) (2026-07-06)
+
+**Statut : implémenté.**
+
+- Nouveau bouton **Paramètres** dans la sidebar (remplace Appareils + Contrôle).
+- Modal unique `panel-settings` avec onglets : Appareils | Contrôle | Nettoyage.
+- Logique inchangée : `DevicesPanel.js`, `ControlPanel.js`, maintenance/cleanup (mêmes IDs DOM).
+- Rétrocompatibilité : `openDevicesPanel` / `openControlPanel` et `panel: devices|control` redirigent vers Paramètres.
+- i18n : `settingsPanel.*`, `sidebar.settings`.
+
+---
+
 ## TÂCHE — Support multi-langue FR/EN (2026-07-06)
 
 **Statut : implémenté.**

@@ -1,7 +1,14 @@
 const HUB_PANEL_MAP = {
     "page-new-session": "new-session",
-    "page-control-panel": "control",
-    "page-devices-panel": "devices"
+    "page-settings-panel": "settings",
+    "page-devices-panel": "settings",
+    "page-control-panel": "settings"
+};
+
+const HUB_PANEL_TAB_MAP = {
+    "page-settings-panel": "devices",
+    "page-devices-panel": "devices",
+    "page-control-panel": "control"
 };
 
 function showPage(pageId) {
@@ -24,8 +31,9 @@ function showPage(pageId) {
 
 async function openHubModal(pageId, options = {}) {
     const panel = HUB_PANEL_MAP[pageId] || options.panel || pageId;
+    const tab = options.tab || HUB_PANEL_TAB_MAP[pageId];
     if (!window.hubModalAPI?.open) return;
-    await window.hubModalAPI.open({ panel, ...options });
+    await window.hubModalAPI.open({ panel, tab, ...options });
 }
 
 async function closeHubModal() {
@@ -45,6 +53,10 @@ async function isHubModalOpen(pageId) {
 
 window.openHelpPanel = (tab) => {
     void openHubModal("help", { panel: "help", tab: tab || "shortcuts" });
+};
+
+window.openSettingsPanelFromMain = (tab = "devices") => {
+    void openHubModal("page-settings-panel", { panel: "settings", tab });
 };
 
 window.closeHelpPanel = () => {

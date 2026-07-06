@@ -583,8 +583,10 @@
 
     window.openControlPanel = async function openControlPanel(options = {}) {
         if (!options.inChildWindow && !/hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"))) {
-            if (window.hubModalAPI) {
-                await window.hubModalAPI.open({ panel: "control" });
+            if (window.openSettingsPanel) {
+                await window.openSettingsPanel({ tab: "control" });
+            } else if (window.hubModalAPI) {
+                await window.hubModalAPI.open({ panel: "settings", tab: "control" });
             }
             return;
         }
@@ -616,7 +618,7 @@
         updateSessionMeta();
         updateAppliedDisplay();
         renderSessionList();
-        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-control") || document);
+        globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-settings") || document);
     });
 
     if (document.readyState === "loading") {
