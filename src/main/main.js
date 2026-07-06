@@ -49,6 +49,8 @@ const { DeviceColorsManager } = require("./managers/device-colors-manager");
 const { registerDeviceColorsHandlers } = require("./ipc/deviceColorsHandlers");
 const { AppMetadataManager } = require("./managers/app-metadata-manager");
 const { registerAppMetadataHandlers, attachAppMetadataPrefetch } = require("./ipc/appMetadataHandlers");
+const { MaintenanceCleanupManager } = require("./managers/maintenance-cleanup-manager");
+const { registerMaintenanceHandlers } = require("./ipc/maintenanceHandlers");
 const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
 const { SessionAudioProcessManager } = require("./managers/session-audio-process-manager");
@@ -194,6 +196,7 @@ let wifiDevicesManager;
 let wifiAdbService;
 let wifiStartupPromise = null;
 let appMetadataManager;
+let maintenanceCleanupManager;
 let newInstanceManager;
 let launchHistoryManager;
 let devicePowerManager;
@@ -934,6 +937,9 @@ app.whenReady().then(() => {
         }
     });
     global.appMetadataManager = appMetadataManager;
+    maintenanceCleanupManager = new MaintenanceCleanupManager(app.getPath("userData"));
+    global.maintenanceCleanupManager = maintenanceCleanupManager;
+    void maintenanceCleanupManager.startAutoCleanup();
     attachAppMetadataPrefetch(deviceManager, appMetadataManager);
     newInstanceManager = new NewInstanceManager({
         adbPath,
@@ -2182,6 +2188,10 @@ async function listDevicesForUI() {
         getAppMetadataManager: () => appMetadataManager,
         getWindow: () => win
     });
+    registerMaintenanceHandlers({
+        ipcMain,
+        getMaintenanceCleanupManager: () => maintenanceCleanupManager
+    });
     registerUpdateHandlers(ipcMain);
     initAutoUpdater(win);
 
@@ -2209,5 +2219,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+    if (global.maintenanceCleanupManager?.stopAutoCleanup) {
+        global.maintenanceCleanupManager.stopAutoCleanup();
+    }
     flushDeviceHistoryNow();
 });

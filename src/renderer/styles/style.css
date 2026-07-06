@@ -1958,3 +1958,14 @@ html, body {
   color: #ffb4b6;
   border-color: rgba(229, 72, 77, 0.35);
 }
+
+.devices-maintenance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.devices-maintenance-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}

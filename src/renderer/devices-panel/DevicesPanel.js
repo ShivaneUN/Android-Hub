@@ -6,6 +6,7 @@
     let panelPollTimer = null;
     let panelListenersBound = false;
     let renderInFlight = false;
+    let cleanupActionBound = false;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -48,6 +49,65 @@
     function bindRowActions(container) {
         container.querySelectorAll("[data-action]").forEach((btn) => {
             btn.addEventListener("click", () => void handlePanelAction(btn));
+        });
+    }
+
+    function formatBytes(bytes) {
+        const value = Number(bytes);
+        if (!Number.isFinite(value) || value <= 0) return "0 B";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let size = value;
+        let index = 0;
+        while (size >= 1024 && index < units.length - 1) {
+            size /= 1024;
+            index += 1;
+        }
+        return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+    }
+
+    async function onCleanupNow() {
+        if (!window.maintenanceAPI?.previewCleanup || !window.maintenanceAPI?.runCleanup) {
+            window.showHubToast?.("Maintenance indisponible", "error");
+            return;
+        }
+
+        const preview = await window.maintenanceAPI.previewCleanup();
+        if (!preview?.success) {
+            window.showHubToast?.(preview?.error || "Prévisualisation impossible", "error");
+            return;
+        }
+
+        const bytes = preview.bytesEligible || 0;
+        const files = preview.matchedFiles || 0;
+        if (files === 0) {
+            window.showHubToast?.("Aucun fichier à nettoyer", "info");
+            return;
+        }
+
+        const shouldRun = window.confirm(
+            `Supprimer ${formatBytes(bytes)} de logs/cache (${files} fichier(s)) ?`
+        );
+        if (!shouldRun) return;
+
+        const result = await window.maintenanceAPI.runCleanup({ reason: "manual-panel-devices" });
+        if (!result?.success) {
+            window.showHubToast?.(result?.error || "Nettoyage impossible", "error");
+            return;
+        }
+
+        const summary = result.summary?.message
+            || `${formatBytes(result.bytesFreed)} libérés, ${result.deletedFiles || 0} fichier(s) supprimé(s)`;
+        window.showHubToast?.(summary, "success");
+    }
+
+    function bindCleanupAction() {
+        if (cleanupActionBound) return;
+        cleanupActionBound = true;
+
+        const cleanupBtn = document.getElementById("devices-cleanup-now-btn");
+        if (!cleanupBtn) return;
+        cleanupBtn.addEventListener("click", () => {
+            void onCleanupNow();
         });
     }
 
@@ -245,6 +305,7 @@
         }
 
         await renderPanel();
+        bindCleanupAction();
         startDevicesPanelLiveRefresh();
     }
 

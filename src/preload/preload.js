@@ -172,6 +172,11 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
     onUpdated: (callback) => ipcRenderer.on("device-colors:updated", () => callback())
 });
 
+contextBridge.exposeInMainWorld("maintenanceAPI", {
+    previewCleanup: () => ipcRenderer.invoke("maintenance:cleanup-preview"),
+    runCleanup: (payload = {}) => ipcRenderer.invoke("maintenance:cleanup-run", payload)
+});
+
 contextBridge.exposeInMainWorld("hubModalAPI", {
     open: (payload) => ipcRenderer.invoke("hub-modal:open", payload),
     close: () => ipcRenderer.invoke("hub-modal:close"),

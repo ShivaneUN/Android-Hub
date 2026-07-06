@@ -4,6 +4,26 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Nettoyage logs/cache auto + bouton manuel (2026-07-06)
+
+**Statut : implémenté (main + preload + panneau Appareils).**
+
+### Diagnostic
+
+- Les artefacts réellement "nettoyables" côté Hub sont principalement sous `userData`: `app-icons/` (cache icônes APK), `app-metadata-cache.json` (index cache), `update.log`; dossiers `logs/` et `cache/` pris en charge s'ils existent.
+- Les fichiers de configuration/historique (`custom-names.json`, `wifi-devices.json`, `device-history.json`, `launch-history.json`, `device-colors.json`) ne doivent jamais être ciblés.
+- Le panneau `Appareils` est déjà le bon point d'entrée UX (`DevicesPanel.js` + `hub-modal-window.html`).
+
+### Implémentation
+
+- **Main** : `MaintenanceCleanupManager` modulaire (preview/run, auto au démarrage + intervalle, prune dossiers vides, skip fichiers verrouillés `EBUSY/EPERM/EACCES`).
+- **IPC** : `maintenance:cleanup-preview` + `maintenance:cleanup-run` (`maintenanceHandlers.js`) avec résumé UI.
+- **Preload** : `maintenanceAPI.previewCleanup()` / `maintenanceAPI.runCleanup()`.
+- **Renderer** : bouton `Nettoyer maintenant` dans le panneau `Appareils`, confirmation utilisateur avec taille estimée, toast de résultat (`X Mo libérés, N fichiers supprimés`).
+- Seuil par défaut: **7 jours**, configurable via `ANDROID_HUB_CLEANUP_MAX_AGE_DAYS`.
+
+---
+
 ## TÂCHE — Logo application sur onglets/fenêtres (2026-07-06)
 
 **Statut : implémenté (async + fallback).**
