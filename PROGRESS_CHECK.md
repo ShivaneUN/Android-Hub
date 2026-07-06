@@ -4,6 +4,26 @@ Dernière mise à jour : 2026-07-06
 
 ---
 
+## TÂCHE — Nettoyage sélectif logs / cache / historique (2026-07-06)
+
+**Statut : implémenté (main + preload + panneau Appareils).**
+
+### Diagnostic
+
+- Le nettoyage global existant (`MaintenanceCleanupManager`) ciblait logs + cache sans distinction ; l'historique (`launch-history.json`) était exclu.
+- Les catégories naturelles : **logs** (`update.log`, `logs/`), **cache** (`app-icons/`, `app-metadata-cache.json`, `cache/`), **historique** (entrées `LaunchHistoryManager` plus anciennes que le seuil).
+- Le panneau `Appareils` est le point d'entrée UX ; les préférences auto-clean sont regroupées dans la section Maintenance (pas de panneau Paramètres global dédié).
+
+### Implémentation
+
+- **Main** : refactor `MaintenanceCleanupManager` par catégorie (`logs`, `cache`, `history`), préférences persistées (`maintenance-preferences.json`), auto-clean respecte les toggles par catégorie.
+- **LaunchHistoryManager** : `purgeOlderThan(cutoff, { dryRun })` pour preview/run historique (respecte sessions Type B actives).
+- **IPC** : `maintenance:cleanup-preview` / `maintenance:cleanup-run` acceptent `{ categories }` ; `maintenance:get-preferences` / `maintenance:set-preferences`.
+- **Preload** : `maintenanceAPI` étendu (preview/run avec catégories, get/set preferences).
+- **Renderer** : modal de sélection avec 3 cases + tailles/comptes, boutons tout sélectionner/désélectionner, résumé détaillé par catégorie en toast ; 3 toggles auto-clean dans la section Maintenance.
+
+---
+
 ## TÂCHE — Nettoyage logs/cache auto + bouton manuel (2026-07-06)
 
 **Statut : implémenté (main + preload + panneau Appareils).**

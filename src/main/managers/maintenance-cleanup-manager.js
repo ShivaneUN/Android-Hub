@@ -4,6 +4,20 @@ const path = require("path");
 const DEFAULT_MAX_AGE_DAYS = 7;
 const DEFAULT_AUTO_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+const CLEANUP_CATEGORIES = {
+    logs: { label: "Logs" },
+    cache: { label: "Cache" },
+    history: { label: "Historique des apps" }
+};
+
+const DEFAULT_PREFERENCES = {
+    autoClean: {
+        logs: true,
+        cache: true,
+        history: true
+    }
+};
+
 function toBytes(value) {
     if (!Number.isFinite(value) || value <= 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
@@ -26,6 +40,28 @@ function parseMaxAgeDaysFromEnv() {
     return DEFAULT_MAX_AGE_DAYS;
 }
 
+function normalizeCategories(categories = {}) {
+    return {
+        logs: categories.logs !== false,
+        cache: categories.cache !== false,
+        history: categories.history !== false
+    };
+}
+
+function createEmptyCategoryResult(selected = false) {
+    return {
+        selected,
+        matchedFiles: 0,
+        deletedFiles: 0,
+        skippedLocked: 0,
+        skippedErrors: 0,
+        bytesEligible: 0,
+        bytesFreed: 0,
+        entriesEligible: 0,
+        entriesRemoved: 0
+    };
+}
+
 class MaintenanceCleanupManager {
     constructor(userDataPath, options = {}) {
         this.userDataPath = userDataPath;
@@ -36,62 +72,145 @@ class MaintenanceCleanupManager {
         this.autoIntervalMs = Number.isFinite(options.autoIntervalMs) && options.autoIntervalMs > 0
             ? options.autoIntervalMs
             : DEFAULT_AUTO_INTERVAL_MS;
+        this.launchHistoryManager = options.launchHistoryManager || null;
+        this.preferencesPath = path.join(userDataPath, "maintenance-preferences.json");
+        this.preferences = this.loadPreferences();
         this.autoTimer = null;
         this.cleanupInFlight = false;
     }
 
-    buildTargets() {
-        const resolve = (...parts) => path.join(this.userDataPath, ...parts);
-        return [
-            {
-                key: "app-icons-dir",
-                type: "directory",
-                rootPath: resolve("app-icons"),
-                recursive: true
-            },
-            {
-                key: "app-metadata-cache-index",
-                type: "file",
-                rootPath: resolve("app-metadata-cache.json")
-            },
-            {
-                key: "update-log",
-                type: "file",
-                rootPath: resolve("update.log")
-            },
-            {
-                key: "logs-dir",
-                type: "directory",
-                rootPath: resolve("logs"),
-                recursive: true
-            },
-            {
-                key: "cache-dir",
-                type: "directory",
-                rootPath: resolve("cache"),
-                recursive: true
+    setLaunchHistoryManager(manager) {
+        this.launchHistoryManager = manager || null;
+    }
+
+    loadPreferences() {
+        try {
+            if (!fs.existsSync(this.preferencesPath)) {
+                return structuredClone(DEFAULT_PREFERENCES);
             }
-        ];
+
+            const parsed = JSON.parse(fs.readFileSync(this.preferencesPath, "utf-8"));
+            const autoClean = parsed?.autoClean && typeof parsed.autoClean === "object"
+                ? parsed.autoClean
+                : {};
+
+            return {
+                autoClean: {
+                    logs: autoClean.logs !== false,
+                    cache: autoClean.cache !== false,
+                    history: autoClean.history !== false
+                }
+            };
+        } catch (err) {
+            console.error("[MaintenanceCleanupManager] Erreur lecture préférences:", err.message);
+            return structuredClone(DEFAULT_PREFERENCES);
+        }
+    }
+
+    savePreferences() {
+        try {
+            fs.writeFileSync(this.preferencesPath, JSON.stringify(this.preferences, null, 2), "utf-8");
+        } catch (err) {
+            console.error("[MaintenanceCleanupManager] Erreur écriture préférences:", err.message);
+        }
+    }
+
+    getPreferences() {
+        return structuredClone(this.preferences);
+    }
+
+    setPreferences(nextPreferences = {}) {
+        const autoClean = nextPreferences?.autoClean && typeof nextPreferences.autoClean === "object"
+            ? nextPreferences.autoClean
+            : {};
+
+        this.preferences = {
+            autoClean: {
+                logs: autoClean.logs !== false,
+                cache: autoClean.cache !== false,
+                history: autoClean.history !== false
+            }
+        };
+        this.savePreferences();
+        return this.getPreferences();
+    }
+
+    getAutoCategories() {
+        const { autoClean } = this.preferences;
+        return {
+            logs: autoClean.logs !== false,
+            cache: autoClean.cache !== false,
+            history: autoClean.history !== false
+        };
+    }
+
+    buildTargetsByCategory() {
+        const resolve = (...parts) => path.join(this.userDataPath, ...parts);
+        return {
+            logs: [
+                {
+                    key: "update-log",
+                    type: "file",
+                    rootPath: resolve("update.log")
+                },
+                {
+                    key: "logs-dir",
+                    type: "directory",
+                    rootPath: resolve("logs"),
+                    recursive: true
+                }
+            ],
+            cache: [
+                {
+                    key: "app-icons-dir",
+                    type: "directory",
+                    rootPath: resolve("app-icons"),
+                    recursive: true
+                },
+                {
+                    key: "app-metadata-cache-index",
+                    type: "file",
+                    rootPath: resolve("app-metadata-cache.json")
+                },
+                {
+                    key: "cache-dir",
+                    type: "directory",
+                    rootPath: resolve("cache"),
+                    recursive: true
+                }
+            ]
+        };
     }
 
     getConfig() {
+        const targetsByCategory = this.buildTargetsByCategory();
         return {
             maxAgeDays: this.maxAgeDays,
             maxAgeMs: this.maxAgeMs,
             autoIntervalMs: this.autoIntervalMs,
-            targets: this.buildTargets().map((target) => ({
-                key: target.key,
-                rootPath: target.rootPath,
-                type: target.type
-            }))
+            categories: Object.keys(CLEANUP_CATEGORIES),
+            preferences: this.getPreferences(),
+            targets: Object.entries(targetsByCategory).flatMap(([category, targets]) =>
+                targets.map((target) => ({
+                    category,
+                    key: target.key,
+                    rootPath: target.rootPath,
+                    type: target.type
+                }))
+            )
         };
     }
 
     async startAutoCleanup() {
-        await this.runCleanup({ reason: "startup", dryRun: false });
+        const categories = this.getAutoCategories();
+        await this.runCleanup({ reason: "startup", dryRun: false, categories });
         this.stopAutoCleanup();
         this.autoTimer = setInterval(() => {
-            void this.runCleanup({ reason: "interval", dryRun: false });
+            void this.runCleanup({
+                reason: "interval",
+                dryRun: false,
+                categories: this.getAutoCategories()
+            });
         }, this.autoIntervalMs);
     }
 
@@ -102,11 +221,15 @@ class MaintenanceCleanupManager {
         }
     }
 
-    async previewCleanup() {
-        return this.runCleanup({ reason: "preview", dryRun: true });
+    async previewCleanup(categories) {
+        return this.runCleanup({
+            reason: "preview",
+            dryRun: true,
+            categories: normalizeCategories(categories)
+        });
     }
 
-    async runCleanup({ reason = "manual", dryRun = false } = {}) {
+    async runCleanup({ reason = "manual", dryRun = false, categories } = {}) {
         if (this.cleanupInFlight) {
             return {
                 success: false,
@@ -114,44 +237,77 @@ class MaintenanceCleanupManager {
             };
         }
 
+        const selectedCategories = normalizeCategories(categories);
         this.cleanupInFlight = true;
         const startedAt = Date.now();
+        const cutoff = Date.now() - this.maxAgeMs;
 
         try {
-            const candidates = await this.collectCandidates();
+            const categoryResults = {
+                logs: createEmptyCategoryResult(selectedCategories.logs),
+                cache: createEmptyCategoryResult(selectedCategories.cache),
+                history: createEmptyCategoryResult(selectedCategories.history)
+            };
+
+            let filesScanned = 0;
+            const touchedTargets = [];
+
+            if (selectedCategories.logs || selectedCategories.cache) {
+                const fileCandidates = await this.collectFileCandidates(selectedCategories, cutoff);
+                filesScanned += fileCandidates.scannedCount;
+                touchedTargets.push(...fileCandidates.touchedTargets);
+
+                for (const entry of fileCandidates.entries) {
+                    const bucket = categoryResults[entry.category];
+                    if (!bucket) continue;
+
+                    bucket.matchedFiles += 1;
+                    bucket.bytesEligible += entry.size;
+
+                    if (!dryRun) {
+                        const deletion = await this.tryDeleteFile(entry.filePath);
+                        if (deletion.deleted) {
+                            bucket.deletedFiles += 1;
+                            bucket.bytesFreed += entry.size;
+                        } else if (deletion.locked) {
+                            bucket.skippedLocked += 1;
+                        } else {
+                            bucket.skippedErrors += 1;
+                        }
+                    }
+                }
+
+                if (!dryRun) {
+                    await this.pruneEmptyTargetDirectories(selectedCategories);
+                }
+            }
+
+            if (selectedCategories.history) {
+                const historyResult = await this.cleanupHistory({ cutoff, dryRun });
+                categoryResults.history.entriesEligible = historyResult.entriesEligible;
+                categoryResults.history.entriesRemoved = historyResult.entriesRemoved;
+            }
+
             const result = {
                 success: true,
                 reason,
                 dryRun,
                 maxAgeDays: this.maxAgeDays,
-                filesScanned: candidates.scannedCount,
-                matchedFiles: candidates.entries.length,
-                deletedFiles: 0,
-                skippedLocked: 0,
-                skippedErrors: 0,
-                bytesEligible: candidates.entries.reduce((sum, entry) => sum + entry.size, 0),
-                bytesFreed: 0,
-                touchedTargets: candidates.touchedTargets,
-                durationMs: 0
+                categories: selectedCategories,
+                categoryResults,
+                filesScanned,
+                matchedFiles: categoryResults.logs.matchedFiles + categoryResults.cache.matchedFiles,
+                deletedFiles: categoryResults.logs.deletedFiles + categoryResults.cache.deletedFiles,
+                skippedLocked: categoryResults.logs.skippedLocked + categoryResults.cache.skippedLocked,
+                skippedErrors: categoryResults.logs.skippedErrors + categoryResults.cache.skippedErrors,
+                bytesEligible: categoryResults.logs.bytesEligible + categoryResults.cache.bytesEligible,
+                bytesFreed: categoryResults.logs.bytesFreed + categoryResults.cache.bytesFreed,
+                historyEntriesEligible: categoryResults.history.entriesEligible,
+                historyEntriesRemoved: categoryResults.history.entriesRemoved,
+                touchedTargets,
+                durationMs: Date.now() - startedAt
             };
 
-            if (!dryRun) {
-                for (const entry of candidates.entries) {
-                    const deletion = await this.tryDeleteFile(entry.filePath);
-                    if (deletion.deleted) {
-                        result.deletedFiles += 1;
-                        result.bytesFreed += entry.size;
-                    } else if (deletion.locked) {
-                        result.skippedLocked += 1;
-                    } else {
-                        result.skippedErrors += 1;
-                    }
-                }
-
-                await this.pruneEmptyTargetDirectories();
-            }
-
-            result.durationMs = Date.now() - startedAt;
             return result;
         } catch (err) {
             return {
@@ -163,34 +319,45 @@ class MaintenanceCleanupManager {
         }
     }
 
-    async collectCandidates() {
-        const cutoff = Date.now() - this.maxAgeMs;
+    async collectFileCandidates(selectedCategories, cutoff) {
         const entries = [];
         let scannedCount = 0;
         const touchedTargets = [];
+        const targetsByCategory = this.buildTargetsByCategory();
 
-        const targets = this.buildTargets();
-        for (const target of targets) {
-            if (!fs.existsSync(target.rootPath)) continue;
-            touchedTargets.push(target.rootPath);
+        for (const [category, targets] of Object.entries(targetsByCategory)) {
+            if (!selectedCategories[category]) continue;
 
-            if (target.type === "file") {
-                scannedCount += 1;
-                const stat = await fs.promises.stat(target.rootPath).catch(() => null);
-                if (!stat || !stat.isFile()) continue;
-                if (stat.mtimeMs <= cutoff) {
-                    entries.push({
-                        filePath: target.rootPath,
-                        size: stat.size
-                    });
+            for (const target of targets) {
+                if (!fs.existsSync(target.rootPath)) continue;
+                touchedTargets.push(target.rootPath);
+
+                if (target.type === "file") {
+                    scannedCount += 1;
+                    const stat = await fs.promises.stat(target.rootPath).catch(() => null);
+                    if (!stat || !stat.isFile()) continue;
+                    if (stat.mtimeMs <= cutoff) {
+                        entries.push({
+                            category,
+                            filePath: target.rootPath,
+                            size: stat.size
+                        });
+                    }
+                    continue;
                 }
-                continue;
-            }
 
-            if (target.type === "directory") {
-                const directoryEntries = await this.collectDirectoryCandidates(target.rootPath, cutoff, target.recursive);
-                scannedCount += directoryEntries.scannedCount;
-                entries.push(...directoryEntries.entries);
+                if (target.type === "directory") {
+                    const directoryEntries = await this.collectDirectoryCandidates(
+                        target.rootPath,
+                        cutoff,
+                        target.recursive
+                    );
+                    scannedCount += directoryEntries.scannedCount;
+                    entries.push(...directoryEntries.entries.map((entry) => ({
+                        ...entry,
+                        category
+                    })));
+                }
             }
         }
 
@@ -199,6 +366,15 @@ class MaintenanceCleanupManager {
             scannedCount,
             touchedTargets
         };
+    }
+
+    async cleanupHistory({ cutoff, dryRun }) {
+        const manager = this.launchHistoryManager;
+        if (!manager || typeof manager.purgeOlderThan !== "function") {
+            return { entriesEligible: 0, entriesRemoved: 0 };
+        }
+
+        return manager.purgeOlderThan(cutoff, { dryRun });
     }
 
     async collectDirectoryCandidates(rootPath, cutoff, recursive = true) {
@@ -245,7 +421,6 @@ class MaintenanceCleanupManager {
 
     async tryDeleteFile(filePath) {
         try {
-            // Best-effort lock check on Windows: opening in r+ fails if exclusively locked.
             const handle = await fs.promises.open(filePath, "r+");
             await handle.close();
         } catch (err) {
@@ -265,10 +440,18 @@ class MaintenanceCleanupManager {
         }
     }
 
-    async pruneEmptyTargetDirectories() {
-        const directories = this.buildTargets()
-            .filter((target) => target.type === "directory")
-            .map((target) => target.rootPath);
+    async pruneEmptyTargetDirectories(selectedCategories) {
+        const targetsByCategory = this.buildTargetsByCategory();
+        const directories = [];
+
+        for (const [category, targets] of Object.entries(targetsByCategory)) {
+            if (!selectedCategories[category]) continue;
+            for (const target of targets) {
+                if (target.type === "directory") {
+                    directories.push(target.rootPath);
+                }
+            }
+        }
 
         for (const rootPath of directories) {
             if (!fs.existsSync(rootPath)) continue;
@@ -315,15 +498,41 @@ class MaintenanceCleanupManager {
         if (!result?.success) {
             return "Nettoyage impossible.";
         }
-        const bytes = result.dryRun ? result.bytesEligible : result.bytesFreed;
-        const files = result.dryRun ? result.matchedFiles : result.deletedFiles;
-        return `${toBytes(bytes)} · ${files} fichier(s)`;
+        return this.formatCategorySummary(result, { dryRun: result.dryRun });
+    }
+
+    formatCategorySummary(result, { dryRun = false } = {}) {
+        const parts = [];
+        const categoryResults = result.categoryResults || {};
+        const selectedCategories = result.categories || {};
+
+        for (const [key, meta] of Object.entries(CLEANUP_CATEGORIES)) {
+            if (!selectedCategories[key]) {
+                parts.push(`${meta.label}: non sélectionné`);
+                continue;
+            }
+
+            const bucket = categoryResults[key] || {};
+            if (key === "history") {
+                const count = dryRun ? bucket.entriesEligible : bucket.entriesRemoved;
+                parts.push(`${meta.label}: ${count} entrée(s) supprimée(s)`);
+                continue;
+            }
+
+            const bytes = dryRun ? bucket.bytesEligible : bucket.bytesFreed;
+            parts.push(`${meta.label}: ${toBytes(bytes)} supprimés`);
+        }
+
+        return parts.join(" — ");
     }
 }
 
 module.exports = {
     MaintenanceCleanupManager,
+    CLEANUP_CATEGORIES,
     DEFAULT_MAX_AGE_DAYS,
     DEFAULT_AUTO_INTERVAL_MS,
-    toBytes
+    DEFAULT_PREFERENCES,
+    toBytes,
+    normalizeCategories
 };

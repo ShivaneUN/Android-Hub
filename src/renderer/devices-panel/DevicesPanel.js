@@ -7,6 +7,9 @@
     let panelListenersBound = false;
     let renderInFlight = false;
     let cleanupActionBound = false;
+    let cleanupModalBound = false;
+    let autoCleanPrefsBound = false;
+    let cleanupPreviewCache = null;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -52,17 +55,93 @@
         });
     }
 
-    function formatBytes(bytes) {
-        const value = Number(bytes);
-        if (!Number.isFinite(value) || value <= 0) return "0 B";
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let size = value;
-        let index = 0;
-        while (size >= 1024 && index < units.length - 1) {
-            size /= 1024;
-            index += 1;
+    function getCleanupModalElements() {
+        return {
+            overlay: document.getElementById("cleanup-modal-overlay"),
+            logsCheckbox: document.getElementById("cleanup-category-logs"),
+            cacheCheckbox: document.getElementById("cleanup-category-cache"),
+            historyCheckbox: document.getElementById("cleanup-category-history"),
+            logsDetail: document.getElementById("cleanup-category-logs-detail"),
+            cacheDetail: document.getElementById("cleanup-category-cache-detail"),
+            historyDetail: document.getElementById("cleanup-category-history-detail"),
+            selectAllBtn: document.getElementById("cleanup-select-all-btn"),
+            deselectAllBtn: document.getElementById("cleanup-deselect-all-btn"),
+            cancelBtn: document.getElementById("cleanup-modal-cancel-btn"),
+            runBtn: document.getElementById("cleanup-modal-run-btn")
+        };
+    }
+
+    function getSelectedCleanupCategories() {
+        const els = getCleanupModalElements();
+        return {
+            logs: Boolean(els.logsCheckbox?.checked),
+            cache: Boolean(els.cacheCheckbox?.checked),
+            history: Boolean(els.historyCheckbox?.checked)
+        };
+    }
+
+    function setCleanupCategoryChecks(checked) {
+        const els = getCleanupModalElements();
+        if (els.logsCheckbox) els.logsCheckbox.checked = checked;
+        if (els.cacheCheckbox) els.cacheCheckbox.checked = checked;
+        if (els.historyCheckbox) els.historyCheckbox.checked = checked;
+    }
+
+    function updateCleanupModalDetails(preview) {
+        const els = getCleanupModalElements();
+        const categoryPreview = preview?.summary?.categoryPreview || {};
+
+        if (els.logsDetail) {
+            els.logsDetail.textContent = categoryPreview.logs?.detail || "—";
         }
-        return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+        if (els.cacheDetail) {
+            els.cacheDetail.textContent = categoryPreview.cache?.detail || "—";
+        }
+        if (els.historyDetail) {
+            els.historyDetail.textContent = categoryPreview.history?.detail || "—";
+        }
+    }
+
+    function hasCleanupSelection(categories) {
+        return Boolean(categories.logs || categories.cache || categories.history);
+    }
+
+    function hasCleanupWork(preview, categories) {
+        const categoryResults = preview?.categoryResults || {};
+        if (categories.logs && ((categoryResults.logs?.matchedFiles || 0) > 0 || (categoryResults.logs?.bytesEligible || 0) > 0)) {
+            return true;
+        }
+        if (categories.cache && ((categoryResults.cache?.matchedFiles || 0) > 0 || (categoryResults.cache?.bytesEligible || 0) > 0)) {
+            return true;
+        }
+        if (categories.history && (categoryResults.history?.entriesEligible || 0) > 0) {
+            return true;
+        }
+        return false;
+    }
+
+    function openCleanupModal() {
+        const els = getCleanupModalElements();
+        if (!els.overlay) return;
+        els.overlay.classList.remove("hidden");
+    }
+
+    function closeCleanupModal() {
+        const els = getCleanupModalElements();
+        if (!els.overlay) return;
+        els.overlay.classList.add("hidden");
+    }
+
+    async function refreshCleanupPreview() {
+        if (!window.maintenanceAPI?.previewCleanup) return null;
+        const preview = await window.maintenanceAPI.previewCleanup({
+            categories: { logs: true, cache: true, history: true }
+        });
+        if (preview?.success) {
+            cleanupPreviewCache = preview;
+            updateCleanupModalDetails(preview);
+        }
+        return preview;
     }
 
     async function onCleanupNow() {
@@ -71,33 +150,140 @@
             return;
         }
 
-        const preview = await window.maintenanceAPI.previewCleanup();
+        setCleanupCategoryChecks(true);
+        const preview = await refreshCleanupPreview();
         if (!preview?.success) {
             window.showHubToast?.(preview?.error || "Prévisualisation impossible", "error");
             return;
         }
 
-        const bytes = preview.bytesEligible || 0;
-        const files = preview.matchedFiles || 0;
-        if (files === 0) {
-            window.showHubToast?.("Aucun fichier à nettoyer", "info");
+        openCleanupModal();
+    }
+
+    async function onCleanupModalRun() {
+        const els = getCleanupModalElements();
+        const categories = getSelectedCleanupCategories();
+        if (!hasCleanupSelection(categories)) {
+            window.showHubToast?.("Sélectionnez au moins une catégorie", "info");
             return;
         }
 
-        const shouldRun = window.confirm(
-            `Supprimer ${formatBytes(bytes)} de logs/cache (${files} fichier(s)) ?`
-        );
-        if (!shouldRun) return;
+        const preview = cleanupPreviewCache?.success
+            ? cleanupPreviewCache
+            : await refreshCleanupPreview();
+        if (!preview?.success) {
+            window.showHubToast?.(preview?.error || "Prévisualisation impossible", "error");
+            return;
+        }
 
-        const result = await window.maintenanceAPI.runCleanup({ reason: "manual-panel-devices" });
+        if (!hasCleanupWork(preview, categories)) {
+            window.showHubToast?.("Aucun élément à nettoyer pour la sélection", "info");
+            return;
+        }
+
+        if (els.runBtn) els.runBtn.disabled = true;
+        const result = await window.maintenanceAPI.runCleanup({
+            reason: "manual-panel-devices",
+            categories
+        });
+        if (els.runBtn) els.runBtn.disabled = false;
+
+        closeCleanupModal();
+
         if (!result?.success) {
             window.showHubToast?.(result?.error || "Nettoyage impossible", "error");
             return;
         }
 
-        const summary = result.summary?.message
-            || `${formatBytes(result.bytesFreed)} libérés, ${result.deletedFiles || 0} fichier(s) supprimé(s)`;
+        const summary = result.summary?.message || "Nettoyage terminé";
         window.showHubToast?.(summary, "success");
+    }
+
+    function bindCleanupModal() {
+        if (cleanupModalBound) return;
+        cleanupModalBound = true;
+
+        const els = getCleanupModalElements();
+        if (!els.overlay) return;
+
+        const onCategoryChange = () => {
+            // Les détails par catégorie restent affichés pour toutes les cases.
+        };
+
+        els.logsCheckbox?.addEventListener("change", onCategoryChange);
+        els.cacheCheckbox?.addEventListener("change", onCategoryChange);
+        els.historyCheckbox?.addEventListener("change", onCategoryChange);
+
+        els.selectAllBtn?.addEventListener("click", () => {
+            setCleanupCategoryChecks(true);
+        });
+
+        els.deselectAllBtn?.addEventListener("click", () => {
+            setCleanupCategoryChecks(false);
+        });
+
+        els.cancelBtn?.addEventListener("click", () => closeCleanupModal());
+        els.runBtn?.addEventListener("click", () => {
+            void onCleanupModalRun();
+        });
+
+        els.overlay.addEventListener("click", (event) => {
+            if (event.target === els.overlay) {
+                closeCleanupModal();
+            }
+        });
+    }
+
+    async function loadAutoCleanPreferences() {
+        if (!window.maintenanceAPI?.getPreferences) return;
+
+        const response = await window.maintenanceAPI.getPreferences();
+        if (!response?.success) return;
+
+        const autoClean = response.preferences?.autoClean || {};
+        const logsToggle = document.getElementById("devices-auto-clean-logs");
+        const cacheToggle = document.getElementById("devices-auto-clean-cache");
+        const historyToggle = document.getElementById("devices-auto-clean-history");
+
+        if (logsToggle) logsToggle.checked = autoClean.logs !== false;
+        if (cacheToggle) cacheToggle.checked = autoClean.cache !== false;
+        if (historyToggle) historyToggle.checked = autoClean.history !== false;
+    }
+
+    async function persistAutoCleanPreferences() {
+        if (!window.maintenanceAPI?.setPreferences) return;
+
+        const logsToggle = document.getElementById("devices-auto-clean-logs");
+        const cacheToggle = document.getElementById("devices-auto-clean-cache");
+        const historyToggle = document.getElementById("devices-auto-clean-history");
+
+        await window.maintenanceAPI.setPreferences({
+            preferences: {
+                autoClean: {
+                    logs: Boolean(logsToggle?.checked),
+                    cache: Boolean(cacheToggle?.checked),
+                    history: Boolean(historyToggle?.checked)
+                }
+            }
+        });
+    }
+
+    function bindAutoCleanPreferences() {
+        if (autoCleanPrefsBound) return;
+        autoCleanPrefsBound = true;
+
+        const toggles = [
+            document.getElementById("devices-auto-clean-logs"),
+            document.getElementById("devices-auto-clean-cache"),
+            document.getElementById("devices-auto-clean-history")
+        ];
+
+        toggles.forEach((toggle) => {
+            if (!toggle) return;
+            toggle.addEventListener("change", () => {
+                void persistAutoCleanPreferences();
+            });
+        });
     }
 
     function bindCleanupAction() {
@@ -109,6 +295,10 @@
         cleanupBtn.addEventListener("click", () => {
             void onCleanupNow();
         });
+
+        bindCleanupModal();
+        bindAutoCleanPreferences();
+        void loadAutoCleanPreferences();
     }
 
     function renderDeviceRow(entry, { section, subLine }) {

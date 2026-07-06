@@ -254,6 +254,40 @@ class LaunchHistoryManager {
         }
     }
 
+    collectOlderThan(cutoffMs) {
+        const activeKeys = this.getActiveTypeBKeys();
+        const keys = [];
+
+        for (const [key, entry] of Object.entries(this.entries)) {
+            if (!this.isValidEntry(entry)) continue;
+            if (activeKeys.has(key)) continue;
+            if ((entry.lastLaunchedAt || 0) <= cutoffMs) {
+                keys.push(key);
+            }
+        }
+
+        return keys;
+    }
+
+    purgeOlderThan(cutoffMs, { dryRun = false } = {}) {
+        const keys = this.collectOlderThan(cutoffMs);
+        const entriesEligible = keys.length;
+
+        if (dryRun || entriesEligible === 0) {
+            return { entriesEligible, entriesRemoved: 0 };
+        }
+
+        for (const key of keys) {
+            delete this.entries[key];
+        }
+        this.save();
+
+        return {
+            entriesEligible,
+            entriesRemoved: keys.length
+        };
+    }
+
     destroy() {
         if (this._pruneTimer) {
             clearInterval(this._pruneTimer);

@@ -129,8 +129,57 @@
       <div class="settings-section-label">Maintenance</div>
       <div class="devices-maintenance-row">
         <button type="button" class="devices-panel-btn" id="devices-cleanup-now-btn">Nettoyer maintenant</button>
-        <span class="devices-maintenance-hint">Suppression des logs/cache anciens (auto: 7 jours).</span>
+        <span class="devices-maintenance-hint">Sélection des catégories à supprimer (seuil: 7 jours).</span>
       </div>
+      <div class="devices-maintenance-auto">
+        <div class="devices-maintenance-auto-title">Nettoyage automatique</div>
+        <label class="devices-maintenance-toggle">
+          <input type="checkbox" id="devices-auto-clean-logs" checked>
+          <span>Logs</span>
+        </label>
+        <label class="devices-maintenance-toggle">
+          <input type="checkbox" id="devices-auto-clean-cache" checked>
+          <span>Cache</span>
+        </label>
+        <label class="devices-maintenance-toggle">
+          <input type="checkbox" id="devices-auto-clean-history" checked>
+          <span>Historique des apps</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="cleanup-modal-overlay" class="modal-overlay hidden" role="presentation">
+  <div class="modal-box cleanup-modal-box" role="dialog" aria-modal="true" aria-labelledby="cleanup-modal-title">
+    <div class="cleanup-modal-header">
+      <h3 class="modal-title" id="cleanup-modal-title">Nettoyage sélectif</h3>
+      <div class="cleanup-modal-bulk-actions">
+        <button type="button" class="devices-panel-btn" id="cleanup-select-all-btn">Tout sélectionner</button>
+        <button type="button" class="devices-panel-btn" id="cleanup-deselect-all-btn">Tout désélectionner</button>
+      </div>
+    </div>
+    <div class="cleanup-category-list">
+      <label class="cleanup-category-item">
+        <input type="checkbox" id="cleanup-category-logs" checked>
+        <span class="cleanup-category-label">Logs</span>
+        <span class="cleanup-category-detail" id="cleanup-category-logs-detail">—</span>
+      </label>
+      <label class="cleanup-category-item">
+        <input type="checkbox" id="cleanup-category-cache" checked>
+        <span class="cleanup-category-label">Cache</span>
+        <span class="cleanup-category-detail" id="cleanup-category-cache-detail">—</span>
+      </label>
+      <label class="cleanup-category-item">
+        <input type="checkbox" id="cleanup-category-history" checked>
+        <span class="cleanup-category-label">Historique des apps</span>
+        <span class="cleanup-category-detail" id="cleanup-category-history-detail">—</span>
+      </label>
+    </div>
+    <p class="cleanup-modal-hint">Seuls les éléments plus anciens que 7 jours seront supprimés.</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-cancel" id="cleanup-modal-cancel-btn">Annuler</button>
+      <button type="button" class="modal-btn modal-btn-launch" id="cleanup-modal-run-btn">Nettoyer</button>
     </div>
   </div>
 </div>

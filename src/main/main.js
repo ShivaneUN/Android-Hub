@@ -937,9 +937,6 @@ app.whenReady().then(() => {
         }
     });
     global.appMetadataManager = appMetadataManager;
-    maintenanceCleanupManager = new MaintenanceCleanupManager(app.getPath("userData"));
-    global.maintenanceCleanupManager = maintenanceCleanupManager;
-    void maintenanceCleanupManager.startAutoCleanup();
     attachAppMetadataPrefetch(deviceManager, appMetadataManager);
     newInstanceManager = new NewInstanceManager({
         adbPath,
@@ -963,6 +960,11 @@ app.whenReady().then(() => {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
     global.launchHistoryManager = launchHistoryManager;
+    maintenanceCleanupManager = new MaintenanceCleanupManager(app.getPath("userData"), {
+        launchHistoryManager
+    });
+    global.maintenanceCleanupManager = maintenanceCleanupManager;
+    void maintenanceCleanupManager.startAutoCleanup();
     void (async () => {
         if (wifiStartupPromise) await wifiStartupPromise;
         if (launchHistoryManager && deviceRegistry) {

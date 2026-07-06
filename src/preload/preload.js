@@ -173,8 +173,10 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
 });
 
 contextBridge.exposeInMainWorld("maintenanceAPI", {
-    previewCleanup: () => ipcRenderer.invoke("maintenance:cleanup-preview"),
-    runCleanup: (payload = {}) => ipcRenderer.invoke("maintenance:cleanup-run", payload)
+    previewCleanup: (payload = {}) => ipcRenderer.invoke("maintenance:cleanup-preview", payload),
+    runCleanup: (payload = {}) => ipcRenderer.invoke("maintenance:cleanup-run", payload),
+    getPreferences: () => ipcRenderer.invoke("maintenance:get-preferences"),
+    setPreferences: (payload = {}) => ipcRenderer.invoke("maintenance:set-preferences", payload)
 });
 
 contextBridge.exposeInMainWorld("hubModalAPI", {
