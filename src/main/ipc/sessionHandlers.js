@@ -335,11 +335,15 @@ function setupBrowserViewVideoForwarding(newInstanceManager, getMainWindow) {
         if (!sessionId || firstPacketSent.has(sessionId)) return;
         firstPacketSent.add(sessionId);
 
+        const ts = Date.now();
+        global.launchLatencyTracker?.mark?.({ sessionId, stage: "h264-first-packet", ts });
+
         const win = typeof getMainWindow === "function" ? getMainWindow() : null;
         if (win && !win.isDestroyed()) {
             win.webContents.send("video-stream-state", {
                 tabId: sessionId,
-                stage: "h264-first-packet"
+                stage: "h264-first-packet",
+                ts
             });
         }
     };
@@ -348,11 +352,15 @@ function setupBrowserViewVideoForwarding(newInstanceManager, getMainWindow) {
         if (!data?.sessionId) return;
         forward(data.sessionId, "new-instance:video-codec-meta", data);
 
+        const ts = Date.now();
+        global.launchLatencyTracker?.mark?.({ sessionId: data.sessionId, stage: "codec-meta", ts });
+
         const win = typeof getMainWindow === "function" ? getMainWindow() : null;
         if (win && !win.isDestroyed()) {
             win.webContents.send("video-stream-state", {
                 tabId: data.sessionId,
-                stage: "codec-meta"
+                stage: "codec-meta",
+                ts
             });
         }
     });

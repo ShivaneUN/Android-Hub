@@ -4,6 +4,590 @@ Dernière mise à jour : 2026-07-07
 
 ---
 
+## AUDIT — Latence ouverture fenêtres/instances + réglages par défaut (2026-07-07)
+
+**Statut : audit lecture seule (aucune modification code LOCK).**
+
+Objectif : cartographier les réglages par défaut et la chronologie clic → flux vidéo stable, pour choisir une piste d'optimisation.
+
+### 1. Réglages par défaut (utilisateur sans config manuelle)
+
+#### Source canonique
+
+Fichier unique : `src/shared/stream-params.js` — constante `DEFAULT_STREAM_PARAMS` (l.6–13).
+
+| Paramètre | Valeur par défaut | Remarque |
+|-----------|-------------------|----------|
+| Résolution | **1920 × 1080** | Preset « FULL HD » |
+| DPI | **240** | Label panneau : « Normal » |
+| FPS max | **60** | |
+| Bitrate | **8 Mbps** | `bitRateMbps: 8` → `8_000_000` bps côté scrcpy |
+| GOP / I-frame | **1 s** | `iFrameInterval: 1` → `video_codec_options=i-frame-interval=1` |
+| Orientation UI | **Paysage** | `DEFAULT_ORIENTATION = landscape` |
+
+**Pas de preset global persisté sur disque** pour ces valeurs : elles sont codées en dur dans `stream-params.js`. Le panneau Contrôle (`ControlPanel.js`) permet de modifier les params **par session active** via `StreamParamsManager` (mémoire + registry), mais au premier lancement sans action utilisateur c'est toujours `DEFAULT_STREAM_PARAMS`.
+
+#### Type A — Mirroring
+
+| Couche | Fichier | Valeurs effectives |
+|--------|---------|-------------------|
+| UI lancement | `new-session.js` l.1008–1016 | `StreamParams.toScrcpyOptions(DEFAULT_STREAM_PARAMS, "A")` |
+| Registry BrowserView | `browserViewManager.js` l.97–98 | `streamParams: cloneParams(extraQuery.streamParams \|\| DEFAULT_STREAM_PARAMS)` |
+| scrcpy-server | `scrcpy-socket.js` l.280–283 | Fallbacks identiques si option absente |
+
+**Args scrcpy-server Type A (défaut) :**
+- `video_bit_rate=8000000`, `max_fps=60`, `max_size=1920`, `i-frame-interval=1`
+- Pas de `new_display` (miroir écran physique, redimensionné `max_size`)
+- `capture_orientation` calculé selon dims appareil (`applyCaptureOrientationToOptions` dans `main.js`)
+
+#### Type B — Nouvelle instance (deux phases)
+
+**Phase 1 — scrcpy.exe externe (bootstrap display virtuel)**
+
+| Fichier | Valeurs |
+|---------|---------|
+| `main.js` `buildNewInstanceExternalBaseArgs` l.646–664 | `--new-display=1920x1080` (**sans DPI**), `--turn-screen-off`, `--stay-awake`, `--no-window`, `--record=NUL` |
+| `new-session.js` l.787–791 | `streamOptions` payload create : `{ stayAwake, turnScreenOff, audio: true }` seulement |
+
+→ Bitrate / FPS / GOP **non passés** au binaire scrcpy externe : **défauts internes du binaire scrcpy**.
+
+**Phase 2 — Hub socket (flux affiché)**
+
+| Fichier | Valeurs |
+|---------|---------|
+| `new-instance-manager.js` l.27–38, 98 | Fallback `newDisplay: "1920x1080/240"` via `toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B")` |
+| `scrcpy-socket.js` l.280–283 | `bitRate=8000000`, `maxFps=60`, `iFrameInterval=1` ; `display_id=<preset>` si phase 1 OK (pas de recréation display) |
+| Hub socket audio | `main.js` `resolveHubSocketAudioEnabled` | `audio=false` sur socket Hub ; son PC via scrcpy.exe séparé |
+
+---
+
+### 2. Méthode d'affichage actuelle
+
+**Pas de fenêtre SDL native visible.** scrcpy tourne avec `--no-window` ; la vidéo SDL du binaire n'est pas affichée.
+
+| Couche | Technologie |
+|--------|-------------|
+| Surface visible | **Electron `BrowserView`** → `session.html` → **`<canvas id="video-canvas">`** |
+| Décodage | **WebCodecs `VideoDecoder`** (`session.js`) |
+| Rendu | `CanvasRenderingContext2D.drawImage(VideoFrame)` via `createVideoFramePresenter` (RAF) |
+| Legacy | Canvas cachés `#video-stage` + `video-player.js` / `new-instance-pipeline.js` — **ne décodent plus** (commentaire `video-player.js` l.308) |
+
+#### Chemin des frames H.264
+
+```
+Android scrcpy-server.jar
+  → socket TCP ADB reverse (localhost)
+  → ScrcpySocketClient (main, scrcpy-socket.js)
+  → emit codec-meta + raw-packet
+  → IPC webContents.send vers BrowserView
+      Type A : video-codec-meta / video-packet
+      Type B : new-instance:video-codec-meta / new-instance:video-packet
+  → sessionPreload.js → session.js
+  → VideoDecoder → canvas
+```
+
+Pas de pipe fichier, pas de texture partagée GPU : **buffers binaires via IPC Electron**.
+
+---
+
+### 3. Chronologie du lancement (clic → flux stable)
+
+**Flux stable** = première frame décodée et dessinée sur le canvas BrowserView (`session.js` `framePresenter`).
+
+> ⚠️ **Aucun `performance.now()` ni timestamp dans le code actuel.** Les temps ci-dessous sont des **étapes identifiées** + **délais fixes codés en dur** (pas de mesures runtime effectuées dans cet audit).
+
+#### Jalons de diagnostic existants (sans timestamp)
+
+Événement IPC `video-stream-state` (`main.js` l.1768–1801, `sessionHandlers.js` l.340–355) :
+
+| Stage | Signification |
+|-------|----------------|
+| `adb-socket-connected` | Handshake socket vidéo (après device name) |
+| `codec-meta` | Dimensions flux connues (SPS/PPS header) |
+| `h264-first-packet` | Premier paquet H.264 reçu côté main |
+
+Logs console utiles : `[BrowserViewManager] Session créée`, `[ScrcpySocketClient] Device/Codec/Session vidéo`, `[scrcpy-server] args`.
+
+#### Type A — Mirroring (séquentiel critique)
+
+```
+Clic (DevicePanel dblclick / bouton Mirroring)
+  → launchMirrorSession / createInstance                    [renderer]
+  → setupInstance:
+      1. registerView (BrowserView create + load session.html)  [IPC, ATTEND did-finish-load]
+      2. player.start → start-video-stream                    [IPC, puis scrcpy]
+  → startVideoStreamLogic:
+      - resolveDeviceDimensions (ADB, cache ou requête)
+      - ScrcpySocketClient.start():
+          a. adb push jar
+          b. adb reverse tunnel
+          c. spawn scrcpy-server
+          d. pause fixe 350 ms                               [scrcpy-socket.js l.178]
+          e. _connectSockets (timeout 12 s max)              [l.428–494]
+      - waitForFirstPacket (timeout 5 s)                     [main.js l.1911]
+  → registerClientEvents → IPC packets → BrowserView
+  → WebCodecs configure + decode + RAF draw
+  → finalizeSessionUI → switchTo + reportContentBounds
+```
+
+**Goulots probables (qualitatif, à mesurer) :**
+1. **Séquentialité** `registerView` puis `start` — BrowserView doit charger avant le stream, mais le stream ne démarre qu'après.
+2. **ADB push + reverse + spawn server** — coût fixe par session.
+3. **Pause 350 ms** après spawn server.
+4. **Attente premier keyframe** (GOP 1 s → keyframe au plus tard ~1 s après début flux).
+5. **Init WebCodecs** + premier `drawImage` (généralement faible vs ADB).
+
+#### Type B — Nouvelle instance (double lancement scrcpy)
+
+```
+Clic Lancer
+  → launchTypeBSession
+  → PHASE 1 : electronAPI.launchNewInstance
+      - resolveDeviceDimensions (ADB, retry 400 ms si absent)   [main.js l.1518–1521]
+      - spawn scrcpy.exe --new-display=1920x1080
+      - attente regex display id (timeout IPC 10 s)            [main.js l.1609–1627]
+  → waitForVirtualDisplayId (jusqu'à 10 s)                   [new-session.js l.475–488]
+  → newInstanceCreate → createNewInstanceSession             [LOCK — non modifié]
+  → registerView (BrowserView Type B)
+  → createNewInstanceVideoPipeline (canvas legacy, non affiché)
+  → newInstanceStart → startNewInstanceSession
+  → PHASE 2 : ScrcpySocketClient.start (même pipeline ADB/socket)
+      - display_id=presetDisplayId (réutilise display phase 1)
+  → IPC video → BrowserView → WebCodecs → canvas
+  → finalizeSessionUI
+  → (parallèle) scrcpy.exe audio séparé
+```
+
+**Goulots probables Type B (qualitatif) :**
+1. **Double scrcpy** (externe + Hub socket) — **suspect #1** pour latence totale.
+2. **Double attente 10 s** (launch IPC + waitForVirtualDisplayId) en cas de lenteur display.
+3. Même coûts ADB/socket/WebCodecs que Type A en phase 2.
+4. Bug diagnostic : `new-instance:first-frame` (`new-instance-pipeline.js`) ne reflète que le canvas legacy masqué, pas le BrowserView.
+
+#### Délais fixes codés en dur (référence)
+
+| Délai | Fichier | Ligne |
+|-------|---------|-------|
+| 350 ms post-spawn server | `scrcpy-socket.js` | 178 |
+| 12 s timeout connexion sockets | `scrcpy-socket.js` | 494 |
+| 15 s attente socket contrôle (audio actif) | `scrcpy-socket.js` | 469 |
+| 5 s waitForFirstPacket | `main.js` | 1911 |
+| 10 s attente display externe | `main.js` | 1610 |
+| 10 s waitForVirtualDisplayId | `new-session.js` | 475 |
+| 400 ms retry dims device | `main.js` | 1520 |
+| 500 ms entre force-restart streams | `main.js` | 1680 |
+
+---
+
+### 4. Mesures runtime — non effectuées (proposition instrumentation)
+
+**Aucun log temporaire ajouté** (respect audit LOCK + lecture seule).
+
+Pour mesurer précisément, instrumentation recommandée **hors zones LOCK** :
+
+| Point | Fichier sûr | Événement |
+|-------|-------------|-----------|
+| T0 clic | `new-session.js` / `DevicePanel.js` | `performance.now()` au clic |
+| T1 BrowserView ready | `browserViewManager.js` | `did-finish-load` |
+| T2 stream IPC reçu | `main.js` `start-video-stream` handler | avant/après `startVideoStreamLogic` |
+| T3–T5 stages | enrichir `video-stream-state` payload | `{ stage, ts: performance.now() }` côté main |
+| T6 première frame canvas | `session.js` | premier `framePresenter.schedule` (hors LOCK input — zone sensible, valider avant) |
+
+Alternative : script DevTools branché sur `electronAPI.onVideoStreamState` dans la console renderer.
+
+---
+
+### 5. Pistes d'optimisation (à décider ensemble — non implémentées)
+
+| Piste | Impact estimé | Risque |
+|-------|---------------|--------|
+| **Paralléliser** `registerView` + `startVideoStream` (Type A) | Moyen–élevé | Régression ordre init input |
+| **Réduire/supprimer pause 350 ms** | Faible–moyen | Race socket/server |
+| **Type B : éviter double scrcpy** (socket direct sans bootstrap exe) | **Élevé** | Touche architecture Type B (LOCK `new-instance-manager`) |
+| **Preset launch plus léger** (720p / 30 fps / 4 Mbps) | Moyen (bitrate + keyframe) | Qualité visuelle |
+| **GOP 1 s → plus court au launch** | Faible au 1er frame | Bitrate / qualité |
+| **Pré-warm jar ADB / tunnel** par serial connecté | Moyen sur 2e+ session | Complexité |
+
+---
+
+### 6. Instrumentation latence (2026-07-07)
+
+**Statut : implémentée (diagnostic uniquement — aucun changement de comportement métier).**
+
+#### Fichiers instrumentés (hors LOCK)
+
+| Fichier | Rôle |
+|---------|------|
+| `main/managers/launch-latency-tracker.js` | Agrégation stages, résumé console + `launch-latency.log` |
+| `main/main.js` | IPC handlers, timestamps `video-stream-state`, marqueurs `new-instance:launch` |
+| `main/managers/browserViewManager.js` | `registerViewStart`, `browserViewReady` |
+| `main/ipc/sessionHandlers.js` | Timestamps Type B `codec-meta` / `h264-first-packet` |
+| `main/ipc/new-instance-ipc.js` | `hubSocketStart` |
+| `preload/preload.js` + `sessionPreload.js` | Bridges IPC |
+| `renderer/launch-latency.js` | `window.LaunchLatency.markClick()` |
+| `renderer/new-session.js` | Clic Type A/B, `waitForVirtualDisplayId` |
+| `renderer/sidebar/DevicePanel.js` | Clic double-clic mirroring |
+| `renderer/instance-manager.js` | `bindSession` |
+| `renderer/session/session.js` | Première frame canvas (`reportLaunchLatencyFirstFrame`) |
+| `main/managers/scrcpy-start-profiler.js` | Sous-décomposition ADB (`[LATENCE-ADB]`, monkey-patch externe) |
+
+#### Format console
+
+```
+[LATENCE] Type A - Total: XXXms | registerView: XXms | adb-socket: XXms | first-packet: XXms | decode+render: XXms
+[LATENCE] Type B - Total: XXXms | external-display: XXms | waitDisplayId: XXms | hub-socket: XXms | registerView: XXms | first-packet: XXms | decode+render: XXms
+```
+
+Après **3 lancements** du même type, une ligne **Moyenne** est imprimée automatiquement.
+
+Log fichier : `{userData}/launch-latency.log`
+
+#### Protocole de mesure (3× Type A + 3× Type B USB)
+
+1. `npm start` — ouvrir DevTools → onglet **Terminal** (main process) ou console renderer selon l'environnement.
+2. **Type A** : double-clic appareil sidebar (mirroring) × 3 — noter les 3 lignes `[LATENCE] Type A` + la moyenne.
+3. **Type B** : Nouvelle instance → choisir app → Lancer × 3 — noter les lignes `[LATENCE] Type B` + moyenne.
+4. Fermer les sessions entre chaque mesure pour éviter le cache tunnel ADB biaisant la 2e/3e mesure.
+
+#### Résultats mesurés (session 2026-07-07)
+
+**Non exécutés dans l'environnement agent** (`adb` absent du PATH — pas d'appareil USB accessible pour l'automatisation).
+
+| Étape | Type A (moy. n=3) | Type B (moy. n=3) |
+|-------|-------------------|-------------------|
+| Total | *à compléter* | *à compléter* |
+| registerView | *à compléter* | *à compléter* |
+| adb-socket / hub-socket | *à compléter* | *à compléter* |
+| external-display | — | *à compléter* |
+| waitDisplayId | — | *à compléter* |
+| first-packet | *à compléter* | *à compléter* |
+| decode+render | *à compléter* | *à compléter* |
+
+> Compléter ce tableau après 3 lancements de chaque type sur device USB réel. Coller les lignes `[LATENCE] Moyenne` de la console ou de `launch-latency.log`.
+
+---
+
+### 7. Diagnostic ciblé — intervalle `streamInvoke` → `adb-socket-connected` (Type A) (2026-07-07)
+
+**Statut : analysé + sous-instrumentation ajoutée (aucun correctif métier).**
+
+#### Constat utilisateur
+
+~**74 %** du temps Type A (ordre de grandeur **1200–1900 ms**) se situe entre `streamInvoke` et `adb-socket-connected`.
+
+#### Décomposition code (lecture `scrcpy-socket.js` — LOCK, non modifié)
+
+Séquence exacte de `ScrcpySocketClient.start()` (l.166–179) :
+
+| # | Étape | Fichier | Mécanisme | Bloquant ? |
+|---|--------|---------|-----------|------------|
+| 0 | Résolution dims appareil | `main.js` `startVideoStreamLogic` | `resolveDeviceDimensionsForSerial` si cache TTL 60 s expiré | Oui (avant `client.start`) |
+| 1 | **Push jar** | `scrcpy-socket.js` l.194–196 | `adb push "<jar>" /data/local/tmp/scrcpy-server.jar` | Oui — **à chaque lancement** |
+| 2 | **Tunnel ADB** | l.198–207 | `_findFreePort()` + `adb reverse --remove localabstract:scrcpy_<scid>` + `adb reverse … tcp:<port>` | Oui — **nouveau `scid` aléatoire par client** |
+| 3 | **Spawn serveur** | l.262–315 | `spawn(adb, shell app_process … Server 4.0 scid=…)` | Non bloquant côté Node (retour immédiat) |
+| 4 | **Pause fixe** | l.178 | `setTimeout(350)` | Oui — **350 ms garantis** |
+| 5 | **connectSockets** | l.335–494 | Écoute TCP locale ; attente sockets vidéo + contrôle ; timeout **12 s** | Oui |
+| 6 | **deviceMeta → `connected`** | l.498–522 | Réception **64 octets** (nom appareil) sur socket vidéo → `emit("connected")` = `adb-socket-connected` | Oui (souvent court une fois TCP établi) |
+
+**Formule approximative :**
+
+```
+streamInvoke → adb-socket-connected
+  ≈ dimsResolve
+  + jarPush
+  + tunnelSetup
+  + ~350 ms (fixe)
+  + connectSockets
+  + deviceMeta
+```
+
+(`serverSpawn` côté Node ≈ 0 ms — le coût réel du démarrage Java sur le device est absorbé dans `connectSockets` / `deviceMeta`.)
+
+#### Jar repoussé à chaque lancement ?
+
+**Oui — sans condition.**
+
+```194:196:src/native/scrcpy/scrcpy-socket.js
+    async _pushServer(serverJarPath) {
+        await this._runAdb(`push "${serverJarPath}" ${DEVICE_SERVER_PATH}`);
+    }
+```
+
+- **Aucun** `adb shell ls`, hash, taille ou version comparée avant push.
+- Chemin device fixe : `/data/local/tmp/scrcpy-server.jar`.
+- Même si le jar est déjà présent et identique, `adb push` est ré-exécuté (coût typique **300–800 ms** USB selon taille jar ~90 Ko et état link).
+
+#### Tunnel pré-établissable à la sélection sidebar ?
+
+**Pas en l'état actuel — tunnel lié au `scid` de la session.**
+
+- Chaque `ScrcpySocketClient` génère un **`scid` hex aléatoire** (l.34–37) → socket `localabstract:scrcpy_<scid>`.
+- À l'arrêt : `reverse --remove` sur ce nom (l.841).
+- **Impossible de réutiliser** un tunnel créé avant le clic sans figer le `scid` (collision multi-sessions / multi-fenêtres).
+
+**Pré-chauffage possible (hors LOCK, à décider) :**
+
+| Action | Faisabilité | Effet attendu |
+|--------|-------------|---------------|
+| `adb push` jar à la connexion / sélection device | ✅ Oui (couche amont sidebar / `devices-refreshed`) | Retire **jarPush** du chemin critique au clic |
+| `adb reverse` avant clic | ⚠️ Partiel | Nécessite **même `scid`** que la session → incompatible avec architecture actuelle |
+| Cache dims (déjà 60 s) + résolution au poll 8 s | ✅ Déjà partiel | Réduit **dimsResolve** si cache chaud |
+| Garder `ScrcpySocketClient` vivant entre sessions | ❌ Non trivial | Conflit avec `stop()` + lifecycle onglets |
+
+#### Nouvelle ligne de log (sous-décomposition)
+
+Monkey-patch externe `scrcpy-start-profiler.js` (installé depuis `main.js`, **sans modifier** `scrcpy-socket.js`) :
+
+```
+[LATENCE-ADB] <sessionId> | dims: XXms | jarPush: XXms | tunnel: XXms | spawn: 0ms | delay350~: ~350ms | connectSockets: XXms | deviceMeta: XXms | scrcpy.start total: XXms
+```
+
+Émis à chaque `adb-socket-connected`, en plus de la ligne `[LATENCE] Type A`.
+
+#### Temps mesurés — sous-étapes scrcpy.start (benchmark isolé USB, 2026-07-07)
+
+**Script :** `scripts/benchmark-type-a-latency.js` (3 runs, serial `e176518f`, audio=false).
+
+| Sous-étape | Run 1 | Run 2 | Run 3 | Moyenne | % du bloc scrcpy.start |
+|------------|-------|-------|-------|---------|------------------------|
+| dimsResolve | 0 | 0 | 0 | **0** | 0 % |
+| jarPush | 110 | 91 | 93 | **98** | ~17 % |
+| tunnelSetup | 127 | 119 | 122 | **123** | ~21 % |
+| delay350~ (fixe) | 333 | 337 | 347 | **339** | ~58 % |
+| connectSockets | 30 | 26 | 13 | **23** | ~4 % |
+| deviceMeta | 0 | 0 | 0 | **0** | 0 % |
+| **Total scrcpy.start** (fin `client.start()`) | ~610 | ~573 | ~565 | **~583** | 100 % |
+
+> Hypothèse §7 (jarPush 40–55 %, connectSockets 25–35 %) **invalidée** sur jar déjà présent : le goulot interne est `delay350~` (~58 %), pas le push.
+
+#### Mesures réelles Type A (UI, `%APPDATA%/android-hub/launch-latency.log`)
+
+| Run | streamInvoke | adb-socket-connected | **Δ streamInvoke→adb** | codec-meta | **Δ adb→codec** |
+|-----|-------------|----------------------|------------------------|------------|-----------------|
+| 1 | 79 ms | 1867 ms | **1788 ms** | 2770 ms | 903 ms |
+| 2 | 76 ms | 1571 ms | **1495 ms** | 1856 ms | 285 ms |
+| 3 | 74 ms | 1258 ms | **1184 ms** | 1541 ms | 283 ms |
+| **Moyenne** | **76 ms** | **1565 ms** | **≈ 1489 ms** | **2056 ms** | **≈ 490 ms** |
+
+**Écart à expliquer :** `streamInvoke → adb-socket-connected` (**≈ 1489 ms**) − `scrcpy.start` benchmark (**≈ 583 ms**) = **≈ 906 ms non capturés** par le benchmark isolé (fourchette réelle **601–1205 ms** selon run).
+
+---
+
+### 8. Diagnostic — écart benchmark isolé (~583 ms) vs lancement réel (~1489 ms streamInvoke→adb) (2026-07-07)
+
+**Statut : analysé (lecture code + corrélation logs existants). Aucun correctif.**
+
+#### Rappel sémantique des métriques
+
+| Métrique | Début | Fin | Piège |
+|----------|-------|-----|-------|
+| `[LATENCE] adb-socket` | **clic** | `adb-socket-connected` | ≠ intervalle streamInvoke→adb |
+| `streamInvoke → adb-socket-connected` | entrée IPC `start-video-stream` | `emit("connected")` (64 o nom appareil) | C'est le bon intervalle pour comparer au profiler |
+| `[LATENCE-ADB] scrcpy.start total` | `profiler.begin()` | fin `client.start()` (benchmark) ou `connected` (UI) | UI : log à `connected` ; benchmark corrigé : log après `start()` |
+
+`adb-socket-connected` est marqué **dès réception du nom appareil** sur la socket vidéo (`scrcpy-socket.js` l.509–522), **avant** la fin de `_connectSockets` (socket contrôle) et **avant** le codec-id (`codec-meta`). Le délai `adb-socket-connected → codec-meta` (**≈ 490 ms** en moyenne, jusqu'à **903 ms** run 1) est du temps **encore dans `client.start()`** mais **après** le marqueur `adb-socket-connected`.
+
+#### Chronologie réelle Type A (mirroring sidebar)
+
+```
+clic (0 ms)
+  │  IPC launch-latency:click
+  ├─► registerViewStart (~3 ms)
+  │     createSessionView → loadFile(session.html) → BrowserView
+  ├─► browserViewReady (~4 ms)
+  │     await registerView IPC retourne
+  ├─► player.start() → IPC start-video-stream
+  ├─► streamInvoke (~76 ms)                    ← marqueur IPC main
+  │     │
+  │     ├─ [A] resolveDeviceDimensionsForSerial   ← PAS dans le benchmark
+  │     │      ├─ resolveEffectiveAdbSerial(deviceId)
+  │     │      │    └─ deviceRegistry.listUnifiedDevices()
+  │     │      │         adb devices -l + getprop ro.serialno / device + import WiFi
+  │     │      └─ si cache dims miss → adb shell wm size
+  │     ├─ applyCaptureOrientationToOptions (sync, pas d'ADB)
+  │     ├─ new ScrcpySocketClient + registerClientEvents
+  │     └─ scrcpyStartProfiler.begin()
+  │     └─ await client.start()                 ← profiler [LATENCE-ADB]
+  │           ├─ jarPush / tunnel / delay350 / connectSockets…
+  │           ├─ emit("connected") → adb-socket-connected (~1565 ms clic)
+  │           └─ (suite) socket contrôle + codec-id → codec-meta (~2056 ms clic)
+  └─► firstFrame
+```
+
+**Réponses aux 3 vérifications demandées**
+
+**1. IPC renderer → main avant `client.start()` ?**
+
+Oui, mais **court** : `streamInvoke` arrive **~76 ms** après le clic (moyenne 3 runs). Décomposition clic → `streamInvoke` :
+
+| Étape | Durée observée | Mécanisme |
+|-------|----------------|-----------|
+| `markClick` IPC | inclus dans ~76 ms | `launch-latency.js` → main |
+| `registerView` IPC | `browserViewReady` ≈ **4 ms** | `instance-manager.js` → `session:registerView` → `BrowserViewManager.registerSessionView` (création BrowserView + `session.html`) |
+| `player.start` IPC | **~72 ms** (79−4) | `video-player.js` → `start-video-stream` |
+
+→ Les IPC + BrowserView expliquent **~76 ms**, pas **~900 ms**.
+
+**2. Résolution device / lookup / attente avant lancement effectif ?**
+
+**Oui — principal suspect hors `scrcpy.start`.** Dans `startVideoStreamLogic` (`main.js` l.1704–1713), **avant** `profiler.begin()` / `client.start()` :
+
+```1704:1713:src/main/main.js
+        if (isTypeA) {
+            const dimsT0 = Date.now();
+            let dims = readCachedDeviceDimensions(serial);
+            if (!dims) {
+                dims = await resolveDeviceDimensionsForSerial(serial);
+            }
+            dimsResolveMs = Date.now() - dimsT0;
+            global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "dimsResolve", ts: Date.now() });
+            const orientation = options.orientation || getOrientationFromScrcpyOptions(options);
+            applyCaptureOrientationToOptions(options, orientation, dims?.width, dims?.height);
+```
+
+`resolveDeviceDimensionsForSerial(serial)` est appelé **sans** `stableDeviceId` (`main.js` l.1708) — seul le serial transport est passé. Malgré tout, **`resolveEffectiveAdbSerial({ serial })` invoque toujours `listUnifiedDevices()`** (`device-registry.js` l.386–387) : `adb devices -l`, `attachStableIds` (`getprop ro.serialno` par appareil), import WiFi, merge JSON.
+2. Si cache dims absent → **`adb shell wm size`** (`device-orientation-manager.js` l.46–60).
+
+**Cache dims quasi toujours froid au lancement :** chaque poll `get-devices` (8 s, `devices.js`) appelle `deviceDimensionsCache.clear()` (`main.js` l.1115–1117). Le TTL 60 s ne protège pas si un poll a eu lieu depuis le dernier mirroring.
+
+**Contention ADB concurrente :** le même poll exécute `listUnifiedDevices` + `enrichDevicesWithStatus` (`dumpsys battery` + `dumpsys wifi` par appareil, `device-manager.js` l.302–318). Si un poll 8 s chevauche le double-clic, les commandes ADB du lancement (`listUnifiedDevices` dims + `jarPush` + `reverse` + `shell`) **sérialisent sur le device** → allongement de toutes les sous-étapes scrcpy.
+
+**3. Le benchmark isolé saute-t-il des étapes du vrai flux ?**
+
+**Oui.**
+
+| Étape présente en UI | Benchmark `benchmark-type-a-latency.js` |
+|----------------------|----------------------------------------|
+| `markClick` / `bindSession` IPC | ❌ absent |
+| `registerView` + BrowserView + `session.html` | ❌ absent (~4 ms mesuré UI) |
+| IPC `start-video-stream` (aller-retour) | ❌ appel direct `startVideoStreamLogic` / `client.start` |
+| `resolveEffectiveAdbSerial` → `listUnifiedDevices` | ❌ serial hardcodé via `adb devices` |
+| `resolveDeviceDimensionsForSerial` / `wm size` | ❌ `dimsResolveMs: 0` |
+| `stableDeviceId` | ❌ absent |
+| Poll `get-devices` concurrent | ❌ pas de polling renderer |
+| `startSessionAudioPlayback` | ❌ absent (après succès stream, n'impacte pas `adb-socket-connected`) |
+| Sémantique `onAdbSocketConnected` | benchmark : après `start()` ; UI : à `connected` (plus tôt) |
+
+#### Où passent les ~900 ms manquants (estimation par exclusion)
+
+```
+streamInvoke → adb-socket-connected   ≈ 1489 ms  (mesuré)
+− scrcpy.start benchmark (fin)        ≈  583 ms  (isolé, même jar/orientation)
+─────────────────────────────────────────────────
+= écart non expliqué par scrcpy seul  ≈  906 ms
+```
+
+| Poste | Estimation | Preuve / mécanisme |
+|-------|------------|-------------------|
+| **A. `dimsResolve` + `resolveEffectiveAdbSerial`** | **~200–800 ms** (variable) | Code obligatoire avant `client.start` en UI ; benchmark à 0 ms ; cache dims invalidé par `get-devices` ; `listUnifiedDevices` = scan ADB complet |
+| **B. Contention ADB (poll 8 s chevauchant)** | **0–1500 ms** | `get-devices` → `listUnifiedDevices` + `dumpsys` × N ; même fenêtre temporelle que `jarPush`/`reverse` ; explique run 1 (**1788 ms**) >> run 3 (**1184 ms**) |
+| **C. `scrcpy.start` plus lent en contexte app** | **~0–300 ms** | Même séquence mais file ADB device déjà occupée ; jar/tunnel mesurés 98+123 ms en isolé vs peut doubler sous charge |
+| **D. IPC + BrowserView (hors intervalle streamInvoke→adb)** | **~76 ms** | Déjà **avant** `streamInvoke` — ne compte pas dans les 906 ms |
+| **E. Queue `connected` → `codec-meta` (après marqueur adb)** | **~490 ms** moy. | Dans `client.start()` mais **après** `adb-socket-connected` ; attente socket contrôle + codec-id ; visible runs 2–3 (**~285 ms**), run 1 outlier (**903 ms**) |
+
+**Conclusion provisoire :** les **~900 ms** manquants ne sont **pas** un second `scrcpy.start` caché. Ils se situent principalement **entre `streamInvoke` et l'entrée effective dans `client.start()`** (poste **A** : résolution device/dims via `listUnifiedDevices`) et/ou en **ralentissement des mêmes commandes ADB** par contention avec le poll devices (poste **B**). Le benchmark mesure uniquement le tronçon **profiler.begin → fin `start()`** (~583 ms), sans le préambule métier ni la charge parallèle de l'app.
+
+#### Instrumentation manquante pour confirmer (sans correctif)
+
+| Stage à ajouter | Emplacement | Permet de trancher |
+|-----------------|-------------|-------------------|
+| `profilerBegin` | juste avant `client.start()` (`main.js` l.1940) | Mesurer **streamInvoke → profilerBegin** (= poste A) |
+| `dimsResolve` dans `[LATENCE] Détail` | `STAGE_ORDER` tracker | Déjà marqué mais **absent du JSON Détail** |
+| `[LATENCE-ADB]` sur lancement UI réel | même flux que mirroring | Comparer jarPush/tunnel réel vs benchmark |
+| `adbPollOverlap` | flag si `get-devices` en cours pendant `start-video-stream` | Valider poste B |
+
+**Prochaine mesure recommandée :** 3 mirroring UI avec `[LATENCE-ADB]` + ligne `[LATENCE] Détail` enrichie — comparer `dims` profiler et `streamInvoke→profilerBegin` avant tout correctif.
+
+#### Mesures UI réelles — dimsResolve + profilerBegin (2026-07-07)
+
+**Méthode :** 3 mirroring Type A via chemin UI (`markClick` + `launchMirrorSession`, équivalent double-clic sidebar). Script déclencheur : `node scripts/run-type-a-ui-latency.js` (`ANDROID_HUB_UI_LATENCY_RUNS=3`). Device USB `e176518f` (Xiaomi 21051182G). Log : `%APPDATA%/android-hub/launch-latency.log`.
+
+**Instrumentation ajoutée (diagnostic uniquement) :**
+- Stages `dimsResolveBegin`, `dimsResolve`, `profilerBegin` dans `[LATENCE] Détail`
+- Sous-décomposition dims : `listUnifiedMs`, `wmSizeMs`, `cacheHit`, `totalMs`
+- Flag `getDevicesPollOverlap` au clic (poll `get-devices` 8 s en cours ?)
+- Ligne `[LATENCE-DIMS]` par run
+
+##### Run 1 — `instance-1783438625780-376`
+
+| Mesure | Valeur |
+|--------|--------|
+| **dimsResolve total** | **205 ms** (listUnified **64 ms** + wmSize **141 ms**, cache **non**) |
+| **poll get-devices au clic** | **non** |
+| streamInvoke → profilerBegin | **205 ms** |
+| profilerBegin → adb-socket-connected | **1040 ms** |
+| streamInvoke → adb-socket-connected | **1245 ms** |
+
+```
+[LATENCE] Type A - Total: 2104ms | registerView: 3ms | adb-socket: 1326ms | first-packet: 2085ms | decode+render: 19ms
+[LATENCE] Détail A instance-1783438625780-376: {"stages":{"click":0,"registerViewStart":2,"browserViewReady":3,"streamInvoke":81,"dimsResolveBegin":81,"dimsResolve":286,"profilerBegin":286,"adb-socket-connected":1326,"codec-meta":2018,"h264-first-packet":2085,"firstFrame":2104},"dimsResolveDurationMs":205,"getDevicesPollOverlap":false,"getDevicesPollStartedAt":null,"dims":{"cacheHit":false,"listUnifiedMs":64,"wmSizeMs":141,"totalMs":205,"resolvedFromCache":false}}
+[LATENCE-DIMS] instance-1783438625780-376 | total: 205ms | listUnified: 64ms | wmSize: 141ms | cacheHit: no | pollOverlap@click: no
+[LATENCE-ADB] instance-1783438625780-376 | dims: 205ms | jarPush: 82ms | tunnel: 128ms | spawn: 0ms | delay350~: 0ms | connectSockets: 457ms | deviceMeta: 1ms | scrcpy.start total: —ms
+```
+
+##### Run 2 — `instance-1783438630052-322`
+
+| Mesure | Valeur |
+|--------|--------|
+| **dimsResolve total** | **180 ms** (listUnified **58 ms** + wmSize **122 ms**, cache **non**) |
+| **poll get-devices au clic** | **non** |
+| streamInvoke → profilerBegin | **180 ms** |
+| profilerBegin → adb-socket-connected | **1064 ms** |
+| streamInvoke → adb-socket-connected | **1244 ms** |
+
+```
+[LATENCE] Type A - Total: 1344ms | registerView: 2ms | adb-socket: 1320ms | first-packet: 1320ms | decode+render: 24ms
+[LATENCE] Détail A instance-1783438630052-322: {"stages":{"click":0,"registerViewStart":1,"browserViewReady":2,"streamInvoke":76,"dimsResolveBegin":76,"dimsResolve":256,"profilerBegin":256,"adb-socket-connected":1320,"codec-meta":1320,"h264-first-packet":1320,"firstFrame":1344},"dimsResolveDurationMs":180,"getDevicesPollOverlap":false,"getDevicesPollStartedAt":null,"dims":{"cacheHit":false,"listUnifiedMs":58,"wmSizeMs":122,"totalMs":180,"resolvedFromCache":false}}
+[LATENCE-DIMS] instance-1783438630052-322 | total: 180ms | listUnified: 58ms | wmSize: 122ms | cacheHit: no | pollOverlap@click: no
+[LATENCE-ADB] instance-1783438630052-322 | dims: 180ms | jarPush: 75ms | tunnel: 123ms | spawn: 0ms | delay350~: 0ms | connectSockets: 497ms | deviceMeta: 2ms | scrcpy.start total: —ms
+```
+
+##### Run 3 — `instance-1783438633473-849`
+
+| Mesure | Valeur |
+|--------|--------|
+| **dimsResolve total** | **0 ms** (cache dims **oui** — pas de listUnified ni wmSize) |
+| **poll get-devices au clic** | **non** |
+| streamInvoke → profilerBegin | **0 ms** |
+| profilerBegin → adb-socket-connected | **632 ms** |
+| streamInvoke → adb-socket-connected | **632 ms** |
+
+```
+[LATENCE] Type A - Total: 1059ms | registerView: 2ms | adb-socket: 710ms | first-packet: 1048ms | decode+render: 11ms
+[LATENCE] Détail A instance-1783438633473-849: {"stages":{"click":0,"registerViewStart":1,"browserViewReady":2,"streamInvoke":78,"dimsResolveBegin":78,"dimsResolve":78,"profilerBegin":78,"adb-socket-connected":710,"codec-meta":1027,"h264-first-packet":1048,"firstFrame":1059},"dimsResolveDurationMs":0,"getDevicesPollOverlap":false,"getDevicesPollStartedAt":null,"dims":{"cacheHit":true,"listUnifiedMs":0,"wmSizeMs":0,"totalMs":0}}
+[LATENCE-DIMS] instance-1783438633473-849 | total: 0ms | listUnified: 0ms | wmSize: 0ms | cacheHit: yes | pollOverlap@click: no
+[LATENCE-ADB] instance-1783438633473-849 | dims: 0ms | jarPush: 136ms | tunnel: 118ms | spawn: 0ms | delay350~: 359ms | connectSockets: 9ms | deviceMeta: 1ms | scrcpy.start total: —ms
+```
+
+##### Synthèse — trancher poste A vs poste B
+
+| Poste | Moyenne (3 runs) | Verdict |
+|-------|------------------|---------|
+| **A — dimsResolve** (`listUnifiedDevices` + `wm size`) | **~128 ms** (205 + 180 + 0) / 3 ; **~192 ms** si cache froid seulement | **Écart mineur** — n'explique pas les ~900 ms |
+| **B — poll `get-devices` au clic** | **0 / 3 overlap** | **Écartué sur ces runs** (pas de chevauchement au moment du clic) |
+| **profilerBegin → adb-socket-connected** (`client.start()` en contexte app) | **~912 ms** (1040 + 1064 + 632) / 3 | **Goulot principal** |
+| dont `connectSockets` (`[LATENCE-ADB]`) | **~321 ms** (457 + 497 + 9) / 3 vs **~23 ms** benchmark isolé | **×14 en app** — contention ADB / charge parallèle (audio `scrcpy.exe`, `DevicePower`, etc.) |
+| Benchmark isolé `scrcpy.start` | **~583 ms** | Référence sans préambule dims ni charge app |
+
+**Conclusion mesurée :** le poste **A** (dims) contribue **~13 %** de `streamInvoke→adb` quand le cache dims est froid (~200 ms), **0 %** quand chaud. Le poste **B** (poll 8 s au clic) est **absent** sur ces 3 runs. Le reliquat (**~700–1000 ms**) se situe dans **`client.start()` sous charge réelle**, principalement **`connectSockets`** (457–497 ms vs 9–30 ms en benchmark isolé), pas dans la résolution dims ni dans un poll chevauchant le clic.
+
+**Moyenne globale (3 runs UI) :**
+
+```
+[LATENCE] Moyenne Type A (n=3) - Total: 1502ms | registerView: 2ms | adb-socket: 1119ms | first-packet: 1484ms | decode+render: 18ms
+```
+
+#### Pistes d'optimisation (non implémentées — décision ensemble)
+
+1. Skip push si jar présent + hash/taille OK (modif `_pushServer` — zone LOCK).
+2. Réduire / supprimer les **350 ms** (zone LOCK — risque race).
+3. Pré-push jar à la détection device (couche amont, hors LOCK).
+4. Éviter `listUnifiedDevices()` complet dans `resolveDeviceDimensionsForSerial` si serial USB déjà connu (hors LOCK `scrcpy-socket.js`).
+5. Ne plus vider `deviceDimensionsCache` à chaque `get-devices` — ou pré-remplir au poll (hors LOCK).
+6. Paralléliser `registerView` + `client.start()` (gain hors ce bloc mais sur total clic→frame).
+
+---
+
 ## TÂCHE — Sidebar rétractable (2026-07-07)
 
 **Statut : implémenté & verrouillé.**

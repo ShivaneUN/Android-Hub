@@ -21,6 +21,10 @@ let activeInstanceId = null;
 async function createInstance(deviceId, deviceName, packageName = null, options = {}) {
     const id = "instance-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 
+    if (options.latencyTraceId && window.LaunchLatency?.bindSession) {
+        await window.LaunchLatency.bindSession(options.latencyTraceId, id);
+    }
+
     const label = options.tabLabel || (packageName
         ? (window.AppDisplay?.humanizePackageName?.(packageName) || packageName.split(".").pop())
         : deviceName);

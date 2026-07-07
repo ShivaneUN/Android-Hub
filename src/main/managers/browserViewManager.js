@@ -105,6 +105,7 @@ class BrowserViewManager {
             const markReady = () => {
                 if (entry.ready) return;
                 entry.ready = true;
+                global.launchLatencyTracker?.mark?.({ sessionId, stage: "browserViewReady" });
                 this._flushPendingEvents(sessionId);
                 if (this.activeSessionId === sessionId) {
                     this._focusSessionInput(sessionId);
@@ -147,6 +148,7 @@ class BrowserViewManager {
     }
 
     async registerSessionView(sessionId, type, extraQuery = {}) {
+        global.launchLatencyTracker?.mark?.({ sessionId, stage: "registerViewStart" });
         if (!this.views.has(sessionId)) {
             this.createSessionView(sessionId, type, extraQuery);
         } else {

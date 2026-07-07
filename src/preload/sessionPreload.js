@@ -36,7 +36,9 @@ contextBridge.exposeInMainWorld("videoAPI", {
     onNewInstanceAudioPacket: (callback) =>
         ipcRenderer.on("new-instance:audio-packet", (_event, data) => callback(data)),
     getInputContext: (sessionId) => ipcRenderer.invoke("session:getInputContext", sessionId),
-    activateSession: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId)
+    activateSession: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId),
+    reportLaunchLatencyFirstFrame: (sessionId, ts) =>
+        ipcRenderer.send("launch-latency:first-frame", { sessionId, ts: ts || Date.now() })
 });
 
 contextBridge.exposeInMainWorld("audioAPI", {

@@ -20,6 +20,8 @@ const { ScrcpySocketClient } = require("../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../native/scrcpy/control/adb-input-controller");
 const { NewInstanceManager } = require("./managers/new-instance-manager");
 const { registerNewInstanceIpc } = require("./ipc/new-instance-ipc");
+const { LaunchLatencyTracker } = require("./managers/launch-latency-tracker");
+const { installScrcpyStartProfiler } = require("./managers/scrcpy-start-profiler");
 const BrowserViewManager = require("./managers/browserViewManager");
 const {
     registerSessionHandlers,
@@ -148,6 +150,85 @@ let win;
 
 const appIconPath = path.join(__dirname, "..", "assets", "icons", "icon.ico");
 
+function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runAutomatedTypeAMirrorLatencyRuns(mainWindow, runCount = 3) {
+    const tracker = global.launchLatencyTracker;
+    if (!mainWindow || mainWindow.isDestroyed() || !tracker) return;
+
+    console.log(`[LATENCE-UI-RUNS] Démarrage ${runCount} mirroring Type A (chemin UI)…`);
+    await sleepMs(4000);
+
+    const device = await mainWindow.webContents.executeJavaScript(`
+        (() => {
+            const devices = (window.getCurrentDevices?.() || []).filter((d) => d.connected !== false);
+            const usb = devices.find((d) => d.usbSerial || (d.serial && !String(d.serial).includes(":")));
+            const pick = usb || devices[0];
+            if (!pick) return null;
+            return {
+                serial: pick.usbSerial || pick.serial,
+                name: pick.name || pick.serial,
+                deviceId: pick.deviceId || pick.serial
+            };
+        })()
+    `, true);
+
+    if (!device?.serial) {
+        console.error("[LATENCE-UI-RUNS] Aucun appareil connecté.");
+        return;
+    }
+
+    for (let i = 0; i < runCount; i += 1) {
+        const sampleBefore = tracker.completedSamples.A.length;
+        console.log(`[LATENCE-UI-RUNS] Run ${i + 1}/${runCount} serial=${device.serial}`);
+
+        await mainWindow.webContents.executeJavaScript(`
+            (async () => {
+                const device = ${JSON.stringify(device)};
+                const started = await window.LaunchLatency.markClick("A");
+                window.__hubModalMainActions?.setSelectedDeviceForMirror?.(
+                    device.serial,
+                    device.name,
+                    device.deviceId
+                );
+                await window.__hubModalMainActions?.launchMirrorSession?.({
+                    serial: device.serial,
+                    deviceName: device.name,
+                    latencyTraceId: started.traceId,
+                    stableDeviceId: device.deviceId
+                });
+            })()
+        `, true);
+
+        const deadline = Date.now() + 45000;
+        while (Date.now() < deadline) {
+            if (tracker.completedSamples.A.length > sampleBefore) break;
+            await sleepMs(250);
+        }
+
+        if (tracker.completedSamples.A.length <= sampleBefore) {
+            console.warn(`[LATENCE-UI-RUNS] Run ${i + 1} timeout (pas de firstFrame).`);
+        }
+
+        await mainWindow.webContents.executeJavaScript(`
+            (async () => {
+                const instances = window.getAllInstances?.() || [];
+                for (const inst of instances) {
+                    if (typeof closeInstance === "function") {
+                        await closeInstance(inst.id);
+                    }
+                }
+            })()
+        `, true).catch(() => {});
+
+        await sleepMs(2000);
+    }
+
+    console.log("[LATENCE-UI-RUNS] Terminé.");
+}
+
 function createWindow() {
     win = new BrowserWindow({
         width: 1200,
@@ -174,6 +255,15 @@ function createWindow() {
         }
     });
     win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+
+    win.webContents.once("did-finish-load", () => {
+        const runs = Number(process.env.ANDROID_HUB_UI_LATENCY_RUNS || 0);
+        if (runs > 0) {
+            void runAutomatedTypeAMirrorLatencyRuns(win, runs).finally(() => {
+                setTimeout(() => app.quit(), 1500);
+            });
+        }
+    });
 }
 
 const { getAdbPath, getScrcpyBinaryPath, getServerJarPath } = require("./paths");
@@ -231,21 +321,40 @@ function readCachedDeviceDimensions(serial) {
     return null;
 }
 
-async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null) {
+/** @type {{ inProgress: boolean, startedAt: number|null, lastEndedAt: number|null }} */
+global.getDevicesPollState = {
+    inProgress: false,
+    startedAt: null,
+    lastEndedAt: null
+};
+
+async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, timingOut = null) {
     if (!serial) return null;
+
+    const record = (fields) => {
+        if (!timingOut || !fields) return;
+        Object.assign(timingOut, fields);
+    };
 
     let adbSerial = serial;
     if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        const listT0 = Date.now();
         adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
             deviceId: stableDeviceId || null,
             serial
         }) || serial;
+        record({ listUnifiedMs: Date.now() - listT0 });
     }
 
     const cached = readCachedDeviceDimensions(adbSerial);
-    if (cached) return cached;
+    if (cached) {
+        record({ wmSizeMs: 0, resolvedFromCache: true });
+        return cached;
+    }
 
+    const wmT0 = Date.now();
     const dims = await deviceOrientationManager?.getDeviceDimensions(adbSerial);
+    record({ wmSizeMs: Date.now() - wmT0, resolvedFromCache: false });
     if (dims?.width > 0 && dims?.height > 0) {
         deviceDimensionsCache.set(adbSerial, { ...dims, at: Date.now() });
         return dims;
@@ -891,12 +1000,48 @@ function launchCompanionScrcpyWindow(serial, packageName, options = {}) {
 
 function notifyNewInstanceDisplayReady(launchId, serial, packageName, displayId, userId = null) {
     if (!win || win.isDestroyed()) return;
+    const launch = externalLaunches[launchId];
+    if (launch?.latencyTraceId && global.launchLatencyTracker) {
+        global.launchLatencyTracker.mark({
+            traceId: launch.latencyTraceId,
+            stage: "externalDisplayReady"
+        });
+    }
     win.webContents.send("new-instance:display-ready", {
         launchId,
         serial,
         packageName,
         displayId,
         userId
+    });
+}
+
+function registerLaunchLatencyHandlers() {
+    const tracker = global.launchLatencyTracker;
+    if (!tracker) return;
+
+    ipcMain.handle("launch-latency:click", async (_event, payload = {}) => {
+        const poll = global.getDevicesPollState || {};
+        tracker.beginClick({
+            ...payload,
+            getDevicesPollOverlap: Boolean(poll.inProgress),
+            getDevicesPollStartedAt: poll.inProgress ? poll.startedAt : null
+        });
+        return { success: true };
+    });
+
+    ipcMain.handle("launch-latency:bind", async (_event, { traceId, sessionId } = {}) => {
+        tracker.bindSession(traceId, sessionId);
+        return { success: true };
+    });
+
+    ipcMain.handle("launch-latency:mark", async (_event, payload = {}) => {
+        tracker.mark(payload);
+        return { success: true };
+    });
+
+    ipcMain.on("launch-latency:first-frame", (_event, { sessionId, ts } = {}) => {
+        tracker.mark({ sessionId, stage: "firstFrame", ts: ts || Date.now() });
     });
 }
 
@@ -987,6 +1132,10 @@ app.whenReady().then(() => {
     });
     registerAudioHandlers(() => win, global.globalAudioOutputManager);
 
+    global.launchLatencyTracker = new LaunchLatencyTracker(app.getPath("userData"));
+    global.scrcpyStartProfiler = installScrcpyStartProfiler(ScrcpySocketClient, global.launchLatencyTracker);
+    registerLaunchLatencyHandlers();
+
     registerNewInstanceIpc({
         ipcMain,
         manager: newInstanceManager,
@@ -1076,12 +1225,25 @@ async function listDevicesForUI() {
 }
 
     ipcMain.handle("get-devices", async () => {
-        invalidateSessionAdbSerialCache();
-        deviceDimensionsCache.clear();
-        const devices = await listDevicesForUI();
-        const connectedCount = devices.filter((d) => d.connected !== false).length;
-        console.log(`[get-devices] connected count=${connectedCount}`);
-        return devices;
+        global.getDevicesPollState = {
+            inProgress: true,
+            startedAt: Date.now(),
+            lastEndedAt: global.getDevicesPollState?.lastEndedAt ?? null
+        };
+        try {
+            invalidateSessionAdbSerialCache();
+            deviceDimensionsCache.clear();
+            const devices = await listDevicesForUI();
+            const connectedCount = devices.filter((d) => d.connected !== false).length;
+            console.log(`[get-devices] connected count=${connectedCount}`);
+            return devices;
+        } finally {
+            global.getDevicesPollState = {
+                inProgress: false,
+                startedAt: global.getDevicesPollState?.startedAt ?? null,
+                lastEndedAt: Date.now()
+            };
+        }
     });
 
     ipcMain.handle("device:list", async () => listDevicesForUI());
@@ -1503,7 +1665,7 @@ async function listDevicesForUI() {
         throw new Error(`Type d'entrée inconnu: ${type}`);
     });
 
-    ipcMain.handle("new-instance:launch", async (event, { serial, packageName, userId = null }) => {
+    ipcMain.handle("new-instance:launch", async (event, { serial, packageName, userId = null, latencyTraceId = null }) => {
         if (!serial) {
             return { success: false, error: "Appareil non sélectionné" };
         }
@@ -1512,6 +1674,10 @@ async function listDevicesForUI() {
         }
         if (!fs.existsSync(scrcpyBinaryPath)) {
             return { success: false, error: `scrcpy introuvable: ${scrcpyBinaryPath}` };
+        }
+
+        if (latencyTraceId && global.launchLatencyTracker) {
+            global.launchLatencyTracker.mark({ traceId: latencyTraceId, stage: "externalLaunchStart" });
         }
 
         const normalizedUserId = Number.isInteger(userId) ? userId : null;
@@ -1546,7 +1712,8 @@ async function listDevicesForUI() {
                 userId: normalizedUserId,
                 displayId: null,
                 baseArgs,
-                restartingForAudio: false
+                restartingForAudio: false,
+                latencyTraceId
             };
 
             let resolved = false;
@@ -1627,6 +1794,9 @@ async function listDevicesForUI() {
             });
 
             if (resolved && resultPayload) {
+                if (latencyTraceId && global.launchLatencyTracker) {
+                    global.launchLatencyTracker.mark({ traceId: latencyTraceId, stage: "externalLaunchEnd" });
+                }
                 console.log(`[NewInstance] scrcpy lancé pour ${serial} / ${packageName} / user=${normalizedUserId ?? "default"} (display=${externalLaunches[launchId].displayId})`);
                 return resultPayload;
             }
@@ -1637,6 +1807,10 @@ async function listDevicesForUI() {
                 launchPackageOnDisplay(serial, packageName, null, { userId: normalizedUserId }).catch((err) => {
                     console.error(`[NewInstance] Fallback lancement app user=${normalizedUserId}:`, err.message);
                 });
+            }
+
+            if (latencyTraceId && global.launchLatencyTracker) {
+                global.launchLatencyTracker.mark({ traceId: latencyTraceId, stage: "externalLaunchEnd" });
             }
 
             console.log(`[NewInstance] scrcpy lancé pour ${serial} / ${packageName} / user=${normalizedUserId ?? "default"} (display inconnu)`);
@@ -1650,12 +1824,32 @@ async function listDevicesForUI() {
     async function startVideoStreamLogic(serial, tabId, packageName, options = {}, runtime = {}) {
         const entry = global.browserViewManager?.getSessionEntry(tabId);
         const isTypeA = !entry || entry.type !== "B";
+        let dimsResolveMs = 0;
 
         if (isTypeA) {
+            const dimsT0 = Date.now();
+            global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "dimsResolveBegin", ts: dimsT0 });
+
             let dims = readCachedDeviceDimensions(serial);
+            const dimsTiming = {
+                cacheHit: Boolean(dims),
+                listUnifiedMs: dims ? 0 : null,
+                wmSizeMs: dims ? 0 : null,
+                totalMs: 0
+            };
+
             if (!dims) {
-                dims = await resolveDeviceDimensionsForSerial(serial);
+                dims = await resolveDeviceDimensionsForSerial(serial, null, dimsTiming);
             }
+
+            dimsTiming.totalMs = Date.now() - dimsT0;
+            dimsResolveMs = dimsTiming.totalMs;
+            global.launchLatencyTracker?.mark?.({
+                sessionId: tabId,
+                stage: "dimsResolve",
+                ts: Date.now(),
+                annotation: { dims: dimsTiming }
+            });
             const orientation = options.orientation || getOrientationFromScrcpyOptions(options);
             applyCaptureOrientationToOptions(options, orientation, dims?.width, dims?.height);
         } else {
@@ -1763,11 +1957,20 @@ async function listDevicesForUI() {
         function registerClientEvents(scrcpyClient) {
             let firstPacketSent = false;
 
+            const markStreamStage = (stage) => {
+                const ts = Date.now();
+                global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage, ts });
+                return ts;
+            };
+
             scrcpyClient.on("connected", () => {
+                global.scrcpyStartProfiler?.onAdbSocketConnected?.(tabId);
                 if (win && !win.isDestroyed()) {
+                    const ts = markStreamStage("adb-socket-connected");
                     win.webContents.send("video-stream-state", {
                         tabId,
-                        stage: "adb-socket-connected"
+                        stage: "adb-socket-connected",
+                        ts
                     });
                 }
             });
@@ -1776,9 +1979,11 @@ async function listDevicesForUI() {
                 if (win && !win.isDestroyed()) {
                     const payload = { tabId, ...meta };
                     forwardTypeAVideoEvent(tabId, "video-codec-meta", payload);
+                    const ts = markStreamStage("codec-meta");
                     win.webContents.send("video-stream-state", {
                         tabId,
-                        stage: "codec-meta"
+                        stage: "codec-meta",
+                        ts
                     });
                 }
                 inputDeviceMetaBySession[tabId] = {
@@ -1796,9 +2001,11 @@ async function listDevicesForUI() {
                     try {
                         if (!firstPacketSent) {
                             firstPacketSent = true;
+                            const ts = markStreamStage("h264-first-packet");
                             win.webContents.send("video-stream-state", {
                                 tabId,
-                                stage: "h264-first-packet"
+                                stage: "h264-first-packet",
+                                ts
                             });
                         }
                         const packetPayload = {
@@ -1871,6 +2078,8 @@ async function listDevicesForUI() {
             }
 
             try {
+                global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "profilerBegin", ts: Date.now() });
+                global.scrcpyStartProfiler?.begin?.(tabId, client, { dimsResolveMs });
                 await client.start(serverJarPath, primaryOptions);
             } catch (err) {
                 const canRetryWithNewDisplay = Number.isInteger(options.displayId);
@@ -1951,6 +2160,7 @@ async function listDevicesForUI() {
     }
 
     ipcMain.handle("start-video-stream", async (event, { serial, tabId, packageName, options = {} }) => {
+        global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "streamInvoke" });
         let streamOptions = { ...options };
         const originalNewDisplay = options.newDisplay;
         const originalStartApp = options.startApp;

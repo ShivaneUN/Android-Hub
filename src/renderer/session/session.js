@@ -218,6 +218,13 @@ function drawVideoFrame(ctx, canvasEl, frame, sessionIdParam) {
 function createVideoFramePresenter(ctx, canvasEl, sessionIdParam) {
     let pendingFrame = null;
     let rafId = null;
+    let firstFrameReported = false;
+
+    function reportFirstFrameIfNeeded() {
+        if (firstFrameReported || !sessionIdParam) return;
+        firstFrameReported = true;
+        window.videoAPI?.reportLaunchLatencyFirstFrame?.(sessionIdParam, Date.now());
+    }
 
     function cancel() {
         if (rafId !== null) {
@@ -243,6 +250,7 @@ function createVideoFramePresenter(ctx, canvasEl, sessionIdParam) {
             pendingFrame = null;
             if (!frameToDraw) return;
             drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
+            reportFirstFrameIfNeeded();
         });
     }
 

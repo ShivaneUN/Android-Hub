@@ -774,12 +774,29 @@ async function launchTypeBSession({
 
     setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName)}`);
 
-    const scrcpyLaunch = await window.electronAPI.launchNewInstance(serial, packageName, normalizedUserId);
+    let latencyTraceId = null;
+    if (window.LaunchLatency?.markClick) {
+        const started = await window.LaunchLatency.markClick("B");
+        latencyTraceId = started.traceId;
+    }
+
+    const scrcpyLaunch = await window.electronAPI.launchNewInstance(
+        serial,
+        packageName,
+        normalizedUserId,
+        latencyTraceId
+    );
     if (!scrcpyLaunch?.success) {
         throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
     }
 
+    if (latencyTraceId && window.LaunchLatency?.mark) {
+        await window.LaunchLatency.mark(latencyTraceId, "waitDisplayStart");
+    }
     const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
+    if (latencyTraceId && window.LaunchLatency?.mark) {
+        await window.LaunchLatency.mark(latencyTraceId, "waitDisplayEnd");
+    }
     if (!Number.isInteger(presetDisplayId)) {
         throw new Error(t("newSession.virtualDisplayMissing"));
     }
@@ -811,6 +828,11 @@ async function launchTypeBSession({
 
     const session = created.session;
     const sessionId = session.sessionId;
+
+    if (latencyTraceId && window.LaunchLatency?.bindSession) {
+        await window.LaunchLatency.bindSession(latencyTraceId, sessionId);
+    }
+
     const stage = document.getElementById("video-stage");
 
     const canvas = document.createElement("canvas");
@@ -1005,6 +1027,16 @@ async function launchMirrorSession(options = {}) {
             throw new Error(t("newSession.instanceManagerUnavailable"));
         }
 
+        let latencyTraceId = options.latencyTraceId || null;
+        if (!latencyTraceId && window.__pendingMirrorLatencyTraceId) {
+            latencyTraceId = window.__pendingMirrorLatencyTraceId;
+            window.__pendingMirrorLatencyTraceId = null;
+        }
+        if (!latencyTraceId && window.LaunchLatency?.markClick) {
+            const started = await window.LaunchLatency.markClick("A");
+            latencyTraceId = started.traceId;
+        }
+
         const scrcpyOpts = typeof StreamParams !== "undefined"
             ? StreamParams.toScrcpyOptions(StreamParams.DEFAULT_STREAM_PARAMS, "A")
             : {};
@@ -1012,6 +1044,7 @@ async function launchMirrorSession(options = {}) {
         await createInstance(serial, deviceName, null, {
             tabLabel: mirrorLabel,
             stableDeviceId: options.stableDeviceId || selectedDevice?.deviceId || null,
+            latencyTraceId,
             ...scrcpyOpts
         });
 

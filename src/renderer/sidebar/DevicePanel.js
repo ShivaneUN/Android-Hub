@@ -184,8 +184,14 @@ function renderDevicePanel(devices) {
         card.addEventListener("dblclick", () => {
             const actions = window.__hubModalMainActions;
             if (!actions?.setSelectedDeviceForMirror || !actions?.onMirrorButtonClick) return;
-            actions.setSelectedDeviceForMirror(serial, deviceName, device.deviceId);
-            actions.onMirrorButtonClick();
+            void (async () => {
+                if (window.LaunchLatency?.markClick) {
+                    const started = await window.LaunchLatency.markClick("A");
+                    window.__pendingMirrorLatencyTraceId = started.traceId;
+                }
+                actions.setSelectedDeviceForMirror(serial, deviceName, device.deviceId);
+                actions.onMirrorButtonClick();
+            })();
         });
     });
 }

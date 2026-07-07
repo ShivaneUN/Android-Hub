@@ -31,6 +31,7 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
 
     ipcMain.handle("new-instance:start", async (_event, { sessionId }) => {
         try {
+            global.launchLatencyTracker?.mark?.({ sessionId, stage: "hubSocketStart" });
             const pending = manager.getNewInstanceSession(sessionId);
             let launchDims = null;
             if (pending?.streamOptions) {

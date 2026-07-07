@@ -45,7 +45,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // --- Nouvelle session ---
     getApps: (serial) => ipcRenderer.invoke("get-apps", serial),
     getAppsWithDetails: (serial) => ipcRenderer.invoke("device:apps", serial),
-    launchNewInstance: (serial, packageName, userId = null) => ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId }),
+    launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null) =>
+        ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId, latencyTraceId }),
 
     // --- Nouvelle instance Type B (IPC dedie) ---
     newInstanceCreate: (payload) => ipcRenderer.invoke("new-instance:create", payload),
@@ -171,6 +172,12 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
     setManual: (payload) => ipcRenderer.invoke("device-colors:setManual", payload),
     setAuto: (payload) => ipcRenderer.invoke("device-colors:setAuto", payload),
     onUpdated: (callback) => ipcRenderer.on("device-colors:updated", () => callback())
+});
+
+contextBridge.exposeInMainWorld("launchLatencyAPI", {
+    click: (payload) => ipcRenderer.invoke("launch-latency:click", payload),
+    bind: (payload) => ipcRenderer.invoke("launch-latency:bind", payload),
+    mark: (payload) => ipcRenderer.invoke("launch-latency:mark", payload)
 });
 
 contextBridge.exposeInMainWorld("uiPreferencesAPI", {
