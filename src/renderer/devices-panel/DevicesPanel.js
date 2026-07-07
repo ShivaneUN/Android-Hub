@@ -12,6 +12,7 @@
     let cleanupModalBound = false;
     let autoCleanPrefsBound = false;
     let cleanupPreviewCache = null;
+    let discoverInFlight = false;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -52,6 +53,79 @@
     async function syncAfterPanelAction() {
         await window.refreshDevices?.();
         await renderPanel({ silent: true });
+    }
+
+    function setDiscoverStatus(message) {
+        const status = document.getElementById("devices-discover-status");
+        if (status) status.textContent = message || "";
+    }
+
+    async function onDiscoverDevices() {
+        if (discoverInFlight) return;
+
+        const btn = document.getElementById("devices-discover-btn");
+        if (!window.wifiAPI?.discoverDevices) {
+            window.showHubToast?.(t("devicesPanel.discoverFailed"), "error");
+            return;
+        }
+
+        discoverInFlight = true;
+        const previousLabel = btn?.textContent || t("devicesPanel.discoverDevices");
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = t("devicesPanel.discoverSearching");
+        }
+        setDiscoverStatus(t("devicesPanel.discoverSearching"));
+
+        try {
+            const result = await window.wifiAPI.discoverDevices();
+            if (!result?.success) {
+                throw new Error(result?.error || t("devicesPanel.discoverFailed"));
+            }
+
+            await window.refreshDevices?.();
+            await renderPanel({ silent: true });
+
+            const connected = Number(result.connectedCount) || 0;
+            const newCount = Number(result.newCount) || 0;
+
+            if (newCount > 0) {
+                const names = (result.newDevices || [])
+                    .map((device) => device.name || device.deviceId)
+                    .filter(Boolean)
+                    .join(", ");
+                const message = names
+                    ? t("devicesPanel.discoverFoundNewNamed", { count: newCount, names })
+                    : t("devicesPanel.discoverFoundNew", { count: newCount });
+                setDiscoverStatus(message);
+                window.showHubToast?.(message, "success", 4500);
+            } else if (connected > 0) {
+                const message = t("devicesPanel.discoverNoNew", { connected });
+                setDiscoverStatus(message);
+                window.showHubToast?.(message, "info", 3500);
+            } else {
+                const message = t("devicesPanel.discoverNone");
+                setDiscoverStatus(message);
+                window.showHubToast?.(message, "info", 4000);
+            }
+        } catch (err) {
+            const message = err.message || t("devicesPanel.discoverFailed");
+            setDiscoverStatus(message);
+            window.showHubToast?.(message, "error", 4500);
+        } finally {
+            discoverInFlight = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = previousLabel;
+            }
+        }
+    }
+
+    function bindDiscoverSection() {
+        const btn = document.getElementById("devices-discover-btn");
+        if (!btn || btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", () => void onDiscoverDevices());
     }
 
     function bindRowActions(container) {
@@ -509,6 +583,7 @@
         }
 
         await renderPanel();
+        bindDiscoverSection();
         startDevicesPanelLiveRefresh();
     }
 
@@ -521,6 +596,7 @@
     window.openDevicesPanel = openDevicesPanel;
     window.stopDevicesPanelLiveRefresh = stopDevicesPanelLiveRefresh;
     window.refreshDevicesPanel = (options) => renderPanel(options || { silent: true });
+    window.bindDiscoverSection = bindDiscoverSection;
 
     globalThis.HubI18n?.onChange?.(() => {
         globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-settings") || document);

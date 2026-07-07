@@ -77,6 +77,11 @@
     </nav>
     <div class="hub-panel-body settings-panel-body">
       <div id="settings-pane-devices" class="settings-tab-pane active" data-settings-pane="devices">
+        <div class="devices-discover-row">
+          <button type="button" class="devices-panel-btn devices-panel-discover-btn" id="devices-discover-btn" data-i18n="devicesPanel.discoverDevices">Recherche de nouveau appareil</button>
+          <span class="devices-discover-status" id="devices-discover-status" aria-live="polite"></span>
+        </div>
+        <div class="settings-divider"></div>
         <div class="settings-section-label" data-i18n="devicesPanel.usb">USB</div>
         <div class="devices-panel-list" id="devices-panel-usb-list">
           <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
@@ -183,6 +188,7 @@
 <script src="../../shared/stream-params.js"></script>
 <script src="../toast.js"></script>
 <script src="../devices.js"></script>
+<script src="../launch-latency.js"></script>
 <script src="../devices-panel/DevicesPanel.js"></script>
 <script src="../apps/AppList.js"></script>
 <script src="../new-instance/new-instance-pipeline.js"></script>

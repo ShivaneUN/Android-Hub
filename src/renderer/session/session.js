@@ -1300,9 +1300,6 @@ async function bootstrapSessionView() {
         if (typeof attachCanvasWheelZoom === "function") {
             attachCanvasWheelZoom(canvas, sessionId);
         }
-        if (window.videoAPI?.activateSession) {
-            await window.videoAPI.activateSession(sessionId);
-        }
         if (canvas) canvas.focus();
         if (!window.__sessionInputReady) {
             window.__sessionInputReady = true;

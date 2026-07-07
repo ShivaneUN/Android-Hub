@@ -10,19 +10,19 @@
         const traceId = createTraceId();
         const clickTs = Date.now();
         if (window.launchLatencyAPI?.click) {
-            await window.launchLatencyAPI.click({ traceId, type, clickTs });
+            void window.launchLatencyAPI.click({ traceId, type, clickTs });
         }
         return { traceId, clickTs };
     }
 
-    async function bindSession(traceId, sessionId) {
+    function bindSession(traceId, sessionId) {
         if (!traceId || !sessionId || !window.launchLatencyAPI?.bind) return;
-        await window.launchLatencyAPI.bind({ traceId, sessionId });
+        void window.launchLatencyAPI.bind({ traceId, sessionId });
     }
 
-    async function mark(traceId, stage, ts = Date.now()) {
+    function mark(traceId, stage, ts = Date.now()) {
         if (!traceId || !stage || !window.launchLatencyAPI?.mark) return;
-        await window.launchLatencyAPI.mark({ traceId, stage, ts });
+        void window.launchLatencyAPI.mark({ traceId, stage, ts });
     }
 
     window.LaunchLatency = {

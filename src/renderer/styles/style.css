@@ -2090,6 +2090,36 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   border-color: rgba(229, 72, 77, 0.35);
 }
 
+.devices-discover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.devices-panel-discover-btn {
+  color: var(--text-primary);
+  border-color: rgba(90, 160, 255, 0.35);
+  background: rgba(90, 160, 255, 0.08);
+}
+
+.devices-panel-discover-btn:hover:not(:disabled) {
+  background: rgba(90, 160, 255, 0.14);
+  border-color: rgba(90, 160, 255, 0.5);
+}
+
+.devices-panel-discover-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.devices-discover-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 120px;
+}
+
 .devices-maintenance-row {
   display: flex;
   align-items: center;

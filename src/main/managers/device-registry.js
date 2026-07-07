@@ -322,6 +322,51 @@ class DeviceRegistry {
     }
 
     /**
+     * Scan ADB : importe les WiFi manuels, retourne les appareils nouvellement détectés.
+     */
+    async discoverNewDevices(history = {}) {
+        const knownIds = new Set();
+
+        for (const [key, entry] of Object.entries(history || {})) {
+            if (key) knownIds.add(key);
+            if (entry?.deviceId) knownIds.add(entry.deviceId);
+        }
+
+        for (const config of this.wifiDevicesManager.list()) {
+            if (config?.deviceId) knownIds.add(config.deviceId);
+        }
+
+        let raw = await this.getRawAdbDevices();
+        const wifiImported = await this.importDiscoveredWifiDevices(raw);
+        raw = await this.getRawAdbDevices();
+        const unified = await this.listUnifiedDevices();
+        const connectedOnline = unified.filter(
+            (device) => device?.connected !== false && device?.status === "green"
+        );
+
+        const newDevices = [];
+        for (const device of connectedOnline) {
+            const deviceId = device?.deviceId;
+            if (!deviceId || knownIds.has(deviceId)) continue;
+            newDevices.push({
+                deviceId,
+                name: device.name || deviceId,
+                serial: device.serial,
+                transport: device.transport,
+                transportLabel: device.transportLabel
+            });
+            knownIds.add(deviceId);
+        }
+
+        return {
+            connectedCount: connectedOnline.length,
+            wifiImported,
+            newCount: newDevices.length,
+            newDevices
+        };
+    }
+
+    /**
      * Résout le serial USB ADB actuellement online pour un deviceId logique.
      * Re-scan adb devices — ne fait pas confiance au cache renderer / usbSerialHint seul.
      */

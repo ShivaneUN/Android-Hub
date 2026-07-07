@@ -33,7 +33,8 @@ function registerWifiHandlers(deps) {
         getMainWindow,
         loadHistory,
         removeDeviceFromHistory,
-        refreshDeviceList
+        refreshDeviceList,
+        syncDevicesForUi
     } = deps;
 
     ipcMain.handle("wifi:list-config", async () => {
@@ -55,6 +56,26 @@ function registerWifiHandlers(deps) {
         });
 
         return { success: true, wifi: usbHistory, usb: [] };
+    });
+
+    ipcMain.handle("devices:discover", async () => {
+        const registry = getDeviceRegistry();
+        if (!registry?.discoverNewDevices) {
+            return { success: false, error: "Recherche d'appareils indisponible" };
+        }
+
+        try {
+            const history = loadHistory?.() || {};
+            const discovery = await registry.discoverNewDevices(history);
+            if (typeof syncDevicesForUi === "function") {
+                await syncDevicesForUi();
+            }
+            await refreshDeviceList?.();
+            return { success: true, ...discovery };
+        } catch (err) {
+            console.error("[devices:discover]", err.message);
+            return { success: false, error: err.message || "Recherche impossible" };
+        }
     });
 
     ipcMain.handle("wifi:panel-data", async () => {

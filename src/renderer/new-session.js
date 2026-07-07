@@ -606,14 +606,25 @@ async function loadAppsForSelectedDevice() {
     }
 }
 
-async function fetchConnectedDevices() {
-    if (typeof window.refreshDevices === "function") {
+async function fetchConnectedDevices({ force = false } = {}) {
+    if (force && typeof window.refreshDevicesForce === "function") {
+        await window.refreshDevicesForce();
+    } else if (typeof window.refreshDevicesIfStale === "function") {
+        await window.refreshDevicesIfStale();
+    } else if (typeof window.refreshDevices === "function") {
         await window.refreshDevices();
     }
 
-    const source = typeof window.getConnectedDevices === "function"
+    let source = typeof window.getConnectedDevices === "function"
         ? window.getConnectedDevices()
         : (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : []);
+
+    if (!source.length && !force && typeof window.refreshDevicesForce === "function") {
+        await window.refreshDevicesForce();
+        source = typeof window.getConnectedDevices === "function"
+            ? window.getConnectedDevices()
+            : (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : []);
+    }
 
     if (source.length > 0) {
         return source.filter((d) => d?.connected !== false);
@@ -645,7 +656,7 @@ async function selectDevice(serial, name, deviceId) {
 }
 
 async function loadConnectedDevices() {
-    const devices = await fetchConnectedDevices();
+    const devices = await fetchConnectedDevices({ force: true });
     connectedDevicesCache = devices;
 
     renderDeviceList(devices);
@@ -653,10 +664,6 @@ async function loadConnectedDevices() {
 
     if (!selectedDevice) {
         resetLauncherApps();
-    }
-
-    if (devices.length === 1 && !selectedDevice) {
-        await selectDevice(devices[0].serial, devices[0].name, devices[0].deviceId);
     }
 }
 
@@ -749,6 +756,13 @@ async function closeNewInstanceSession(sessionId) {
     if (typeof renderSidebar === "function") renderSidebar();
 }
 
+function buildTypeBTabLabel(deviceName, appLabel) {
+    const device = String(deviceName || "").trim();
+    const app = String(appLabel || "").trim();
+    if (device && app) return `${device} — ${app}`;
+    return app || device || t("newSession.launchInstance");
+}
+
 async function launchTypeBSession({
     serial,
     deviceName,
@@ -760,7 +774,15 @@ async function launchTypeBSession({
 }) {
     if (isHubModalChildWindow()) {
         dismissHubModalPanel();
-        return invokeMainAction("launchTypeBSession", [{ serial, deviceName, packageName, appLabel, userId, iconPath }]);
+        return invokeMainAction("launchTypeBSession", [{
+            serial,
+            deviceName,
+            packageName,
+            appLabel,
+            userId,
+            iconPath,
+            stableDeviceId: stableDeviceId || selectedDevice?.deviceId || null
+        }]);
     }
 
     dismissHubModalPanel();
@@ -770,9 +792,11 @@ async function launchTypeBSession({
     }
 
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
-    const tabLabel = appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName;
+    const tabLabel = buildTypeBTabLabel(deviceName, appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName);
 
     setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName)}`);
+
+    const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
 
     let latencyTraceId = null;
     if (window.LaunchLatency?.markClick) {
@@ -784,7 +808,8 @@ async function launchTypeBSession({
         serial,
         packageName,
         normalizedUserId,
-        latencyTraceId
+        latencyTraceId,
+        resolvedStableId
     );
     if (!scrcpyLaunch?.success) {
         throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
@@ -806,8 +831,6 @@ async function launchTypeBSession({
         turnScreenOff: true,
         audio: true
     };
-
-    const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
 
     const payload = {
         serial,
@@ -1002,7 +1025,11 @@ async function launchMirrorSession(options = {}) {
         }
         dismissHubModalPanel();
         try {
-            await invokeMainAction("launchMirrorSession", [{ serial, deviceName }]);
+            await invokeMainAction("launchMirrorSession", [{
+                serial,
+                deviceName,
+                stableDeviceId: options.stableDeviceId || selectedDevice?.deviceId || serial
+            }]);
         } catch (err) {
             setStatus(`Erreur mirroring: ${err.message}`, true);
         }
@@ -1077,7 +1104,9 @@ async function openNewSessionPanel(options = {}) {
 window.openNewSessionPanel = openNewSessionPanel;
 
 window.refreshNewSessionPanel = async function refreshNewSessionPanel() {
-    if (typeof window.refreshDevices === "function") {
+    if (typeof window.refreshDevicesForce === "function") {
+        await window.refreshDevicesForce();
+    } else if (typeof window.refreshDevices === "function") {
         await window.refreshDevices();
     }
     await loadConnectedDevices();

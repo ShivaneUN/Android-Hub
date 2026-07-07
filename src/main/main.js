@@ -330,6 +330,48 @@ global.getDevicesPollState = {
     lastEndedAt: null
 };
 
+function isLikelyUsbTransportSerial(serial) {
+    if (!serial) return false;
+    const id = String(serial).trim();
+    if (!id) return false;
+    if (global.wifiAdbService?.isWifiSerial?.(id)) return false;
+    return true;
+}
+
+async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut = null) {
+    if (!serial) return serial;
+
+    const recordListUnified = (ms) => {
+        if (timingOut && typeof ms === "number") {
+            timingOut.listUnifiedMs = ms;
+        }
+    };
+
+    if (stableDeviceId && global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        const listT0 = Date.now();
+        const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+            deviceId: stableDeviceId,
+            serial
+        });
+        recordListUnified(Date.now() - listT0);
+        return resolved || serial;
+    }
+
+    if (isLikelyUsbTransportSerial(serial)) {
+        recordListUnified(0);
+        return serial;
+    }
+
+    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        const listT0 = Date.now();
+        const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({ serial });
+        recordListUnified(Date.now() - listT0);
+        return resolved || serial;
+    }
+
+    return serial;
+}
+
 async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, timingOut = null) {
     if (!serial) return null;
 
@@ -338,17 +380,9 @@ async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, t
         Object.assign(timingOut, fields);
     };
 
-    let adbSerial = serial;
-    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
-        const listT0 = Date.now();
-        adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
-            deviceId: stableDeviceId || null,
-            serial
-        }) || serial;
-        record({ listUnifiedMs: Date.now() - listT0 });
-    }
+    const adbSerial = await resolveAdbSerialForDims(serial, stableDeviceId, timingOut);
 
-    const cached = readCachedDeviceDimensions(adbSerial);
+    const cached = readCachedDeviceDimensions(adbSerial) || readCachedDeviceDimensions(serial);
     if (cached) {
         record({ wmSizeMs: 0, resolvedFromCache: true });
         return cached;
@@ -359,10 +393,15 @@ async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, t
     record({ wmSizeMs: Date.now() - wmT0, resolvedFromCache: false });
     if (dims?.width > 0 && dims?.height > 0) {
         deviceDimensionsCache.set(adbSerial, { ...dims, at: Date.now() });
+        deviceDimensionsCache.set(serial, { ...dims, at: Date.now() });
         return dims;
     }
     return null;
 }
+
+global.readCachedDeviceDimensions = readCachedDeviceDimensions;
+global.resolveDeviceDimensionsForSerial = resolveDeviceDimensionsForSerial;
+global.resolveAdbSerialForDims = resolveAdbSerialForDims;
 
 async function resolveDeviceDimensionsForEntry(entry) {
     if (!entry?.deviceId) return null;
@@ -1233,8 +1272,6 @@ async function listDevicesForUI() {
             lastEndedAt: global.getDevicesPollState?.lastEndedAt ?? null
         };
         try {
-            invalidateSessionAdbSerialCache();
-            deviceDimensionsCache.clear();
             const devices = await listDevicesForUI();
             const connectedCount = devices.filter((d) => d.connected !== false).length;
             console.log(`[get-devices] connected count=${connectedCount}`);
@@ -1667,7 +1704,13 @@ async function listDevicesForUI() {
         throw new Error(`Type d'entrée inconnu: ${type}`);
     });
 
-    ipcMain.handle("new-instance:launch", async (event, { serial, packageName, userId = null, latencyTraceId = null }) => {
+    ipcMain.handle("new-instance:launch", async (event, {
+        serial,
+        packageName,
+        userId = null,
+        latencyTraceId = null,
+        stableDeviceId = null
+    }) => {
         if (!serial) {
             return { success: false, error: "Appareil non sélectionné" };
         }
@@ -1683,10 +1726,10 @@ async function listDevicesForUI() {
         }
 
         const normalizedUserId = Number.isInteger(userId) ? userId : null;
-        let launchDims = await resolveDeviceDimensionsForSerial(serial);
+        let launchDims = await resolveDeviceDimensionsForSerial(serial, stableDeviceId || null);
         if (!launchDims) {
             await new Promise((resolve) => setTimeout(resolve, 400));
-            launchDims = await resolveDeviceDimensionsForSerial(serial);
+            launchDims = await resolveDeviceDimensionsForSerial(serial, stableDeviceId || null);
         }
         const launchOrient = {};
         applyTypeBLaunchOrientation(launchOrient, launchDims?.width, launchDims?.height);
@@ -1841,7 +1884,11 @@ async function listDevicesForUI() {
             };
 
             if (!dims) {
-                dims = await resolveDeviceDimensionsForSerial(serial, null, dimsTiming);
+                dims = await resolveDeviceDimensionsForSerial(
+                    serial,
+                    entry?.stableDeviceId || null,
+                    dimsTiming
+                );
             }
 
             dimsTiming.totalMs = Date.now() - dimsT0;
@@ -1857,7 +1904,7 @@ async function listDevicesForUI() {
         } else {
             let dims = readCachedDeviceDimensions(serial);
             if (!dims) {
-                dims = await resolveDeviceDimensionsForSerial(serial);
+                dims = await resolveDeviceDimensionsForSerial(serial, entry?.stableDeviceId || null);
             }
             applyTypeBLaunchOrientation(options, dims?.width, dims?.height);
         }
@@ -2451,7 +2498,8 @@ async function listDevicesForUI() {
         removeDeviceFromHistory,
         refreshDeviceList: async () => {
             requestRendererDeviceRefresh();
-        }
+        },
+        syncDevicesForUi: listDevicesForUI
     });
 
     app.on("activate", () => {

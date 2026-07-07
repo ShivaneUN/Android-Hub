@@ -1,13 +1,26 @@
 function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
-    async function resolveLaunchDims(serial, stableDeviceId, retries = 4) {
-        if (!serial || !global.deviceOrientationManager) return null;
-        let adbSerial = serial;
-        if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
-            adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
-                deviceId: stableDeviceId || null,
-                serial
-            }) || serial;
+    async function resolveLaunchDims(serial, stableDeviceId, retries = 2) {
+        if (!serial) return null;
+
+        const cached = global.readCachedDeviceDimensions?.(serial);
+        if (cached?.width > 0 && cached?.height > 0) {
+            return cached;
         }
+
+        if (typeof global.resolveDeviceDimensionsForSerial === "function") {
+            const dims = await global.resolveDeviceDimensionsForSerial(serial, stableDeviceId || null);
+            if (dims?.width > 0 && dims?.height > 0) {
+                return dims;
+            }
+        }
+
+        if (!global.deviceOrientationManager) return null;
+
+        let adbSerial = serial;
+        if (typeof global.resolveAdbSerialForDims === "function") {
+            adbSerial = await global.resolveAdbSerialForDims(serial, stableDeviceId || null);
+        }
+
         for (let attempt = 0; attempt < retries; attempt += 1) {
             const dims = await global.deviceOrientationManager.getDeviceDimensions(adbSerial);
             if (dims?.width > 0 && dims?.height > 0) {

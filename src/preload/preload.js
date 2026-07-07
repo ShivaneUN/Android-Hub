@@ -45,8 +45,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // --- Nouvelle session ---
     getApps: (serial) => ipcRenderer.invoke("get-apps", serial),
     getAppsWithDetails: (serial) => ipcRenderer.invoke("device:apps", serial),
-    launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null) =>
-        ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId, latencyTraceId }),
+    launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null, stableDeviceId = null) =>
+        ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId, latencyTraceId, stableDeviceId }),
 
     // --- Nouvelle instance Type B (IPC dedie) ---
     newInstanceCreate: (payload) => ipcRenderer.invoke("new-instance:create", payload),
@@ -158,7 +158,8 @@ contextBridge.exposeInMainWorld("wifiAPI", {
     remove: (payload) => ipcRenderer.invoke("wifi:remove", payload),
     removeFromPanel: (payload) => ipcRenderer.invoke("devices:panel-remove", payload),
     reconnect: (payload) => ipcRenderer.invoke("wifi:reconnect", payload),
-    resolveSerial: (payload) => ipcRenderer.invoke("device:resolve-serial", payload)
+    resolveSerial: (payload) => ipcRenderer.invoke("device:resolve-serial", payload),
+    discoverDevices: () => ipcRenderer.invoke("devices:discover")
 });
 
 contextBridge.exposeInMainWorld("launchHistoryAPI", {
