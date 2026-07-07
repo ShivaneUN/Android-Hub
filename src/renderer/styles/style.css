@@ -12,6 +12,8 @@
   --btn-disabled-bg: #1a1f29;
   --btn-disabled-text: #6b7280;
   --sidebar-width: 208px;
+  --sidebar-expanded-width: 208px;
+  --sidebar-collapse-btn-width: 20px;
   --chrome-top-height: 80px;
   --side-panel-left: var(--sidebar-width);
   --side-panel-width: 330px;
@@ -279,11 +281,46 @@ html, body {
   overflow: hidden;
 }
 
-.sidebar {
+.sidebar-shell {
   position: relative;
   z-index: 70;
-  width: 208px;
   flex-shrink: 0;
+  width: var(--sidebar-expanded-width);
+  transition: width 0.2s ease;
+  display: flex;
+  align-items: stretch;
+}
+
+.sidebar-shell.is-collapsed {
+  width: var(--sidebar-collapse-btn-width);
+}
+
+html.sidebar-initial-collapsed .sidebar-shell {
+  width: var(--sidebar-collapse-btn-width);
+}
+
+html.sidebar-initial-collapsed .sidebar-shell .sidebar {
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
+  border-right-color: transparent;
+}
+
+html.sidebar-initial-collapsed .sidebar-collapse-icon-open {
+  display: none;
+}
+
+html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
+  display: block;
+}
+
+.sidebar {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -291,6 +328,71 @@ html, body {
   align-items: stretch;
   padding: 12px 8px 16px;
   overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.2s ease, padding 0.2s ease;
+}
+
+.sidebar-shell.is-collapsed .sidebar {
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
+  border-right-color: transparent;
+}
+
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 2;
+  transform: translate(50%, -50%);
+  width: var(--sidebar-collapse-btn-width);
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.sidebar-shell.is-collapsed .sidebar-collapse-btn {
+  right: auto;
+  left: 0;
+  transform: translate(0, -50%);
+  border-radius: 0 6px 6px 0;
+}
+
+.sidebar-collapse-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-sidebar-hover, #2a2d34);
+}
+
+.sidebar-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent, #3dd68c);
+  outline-offset: 1px;
+}
+
+.sidebar-collapse-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.sidebar-collapse-icon-closed {
+  display: none;
+}
+
+.sidebar-shell.is-collapsed .sidebar-collapse-icon-open {
+  display: none;
+}
+
+.sidebar-shell.is-collapsed .sidebar-collapse-icon-closed {
+  display: block;
 }
 
 .content {

@@ -3,7 +3,8 @@ const path = require("path");
 const { createLocaleApi, SUPPORTED_LOCALES } = require("../../shared/locale");
 
 const DEFAULT_PREFERENCES = {
-    locale: "fr"
+    locale: "fr",
+    sidebarOpen: true
 };
 
 class UiPreferencesManager {
@@ -20,7 +21,8 @@ class UiPreferencesManager {
             }
             const parsed = JSON.parse(fs.readFileSync(this.preferencesPath, "utf-8"));
             const locale = SUPPORTED_LOCALES.includes(parsed?.locale) ? parsed.locale : "fr";
-            return { locale };
+            const sidebarOpen = parsed?.sidebarOpen !== false;
+            return { locale, sidebarOpen };
         } catch {
             return structuredClone(DEFAULT_PREFERENCES);
         }
@@ -49,6 +51,23 @@ class UiPreferencesManager {
             locale: this.getLocale(),
             bundles: this.localeApi.loadBundles()
         };
+    }
+
+    getPreferences() {
+        return {
+            locale: this.getLocale(),
+            sidebarOpen: this.getSidebarOpen()
+        };
+    }
+
+    getSidebarOpen() {
+        return this.preferences.sidebarOpen !== false;
+    }
+
+    setSidebarOpen(open) {
+        this.preferences.sidebarOpen = Boolean(open);
+        this.savePreferences();
+        return { success: true, sidebarOpen: this.preferences.sidebarOpen };
     }
 
     t(key, vars = {}) {

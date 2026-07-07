@@ -1,6 +1,39 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-06
+Dernière mise à jour : 2026-07-07
+
+---
+
+## TÂCHE — Sidebar rétractable (2026-07-07)
+
+**Statut : implémenté & verrouillé.**
+
+### Comportement
+
+- Toute la sidebar (`#sidebar` + contenu actuel) se replie en un seul bloc via `#sidebar-shell`.
+- État `sidebarOpen` (défaut `true`), persisté dans `ui-preferences.json` (`sidebarOpen`) + miroir `localStorage` (`androidHub.sidebarOpen`) pour éviter le flash au chargement.
+- Bouton flèche `#sidebar-collapse-btn` toujours visible sur le bord (chevron gauche/droite).
+- Raccourci **Ctrl+B** / **Cmd+B** — toggle ; `preventDefault()` ; ignoré dans les champs texte ; pas de conflit avec Ctrl+Tab.
+- Animation CSS `width 0.2s ease` sur `.sidebar-shell`.
+- Layout vidéo : `sidebar-panel-layout.js` mesure `#sidebar-shell` → `--sidebar-width` → `reportContentBounds()` → `sessionAPI.setContentBounds` (BrowserView canvas, zones LOCK intactes).
+
+### Fichiers
+
+| Fichier | Rôle |
+|---------|------|
+| `sidebar/SidebarCollapse.js` | Toggle, persistance, raccourci, API `window.toggleSidebar` |
+| `index.html` | Wrapper `#sidebar-shell`, script anti-flash, chargement |
+| `styles/style.css` | Shell, bouton, transitions |
+| `sidebar-panel-layout.js` | Mesure shell + ResizeObserver |
+| `ui-preferences-manager.js` | `sidebarOpen` dans `ui-preferences.json` |
+| `uiPreferencesHandlers.js` + `preload.js` | IPC `ui:get-preferences` / `ui:set-sidebar-open` |
+| `locale-data-*.js` + JSON | `sidebar.collapse` / `sidebar.expand`, aide Ctrl+B |
+
+### Règle LOCK
+
+> Ne pas modifier la logique interne des panneaux sidebar (devices, toggles, etc.) pour le repli — uniquement le wrapper shell / layout / persistance UI. Toute évolution layout doit passer par `SidebarCollapse.js` + `sidebar-panel-layout.js` + `reportContentBounds`.
+
+**Zones LOCK :** aucune (`scrcpy-socket.js`, `new-instance-manager.js`, input, audio, orientation).
 
 ---
 

@@ -12,6 +12,8 @@ module.exports = {
         language: "Langue",
         languageFr: "Français",
         languageEn: "English",
+        collapse: "Réduire la barre latérale",
+        expand: "Afficher la barre latérale",
         tabs: {
             close: "Fermer l'onglet",
             mirroring: "Mirroring",
@@ -318,7 +320,8 @@ module.exports = {
                     title: "Navigation",
                     items: [
                         { keys: ["Ctrl", "Tab"], desc: "Passer à l'onglet session suivant." },
-                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Revenir à l'onglet session précédent." }
+                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Revenir à l'onglet session précédent." },
+                        { keys: ["Ctrl", "B"], desc: "Afficher ou masquer la barre latérale." }
                     ]
                 },
                 {

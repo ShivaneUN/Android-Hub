@@ -52,6 +52,22 @@ function registerUiPreferencesHandlers(deps) {
         }
         return result;
     });
+
+    ipcMain.handle("ui:get-preferences", async () => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager) {
+            return { locale: "fr", sidebarOpen: true };
+        }
+        return manager.getPreferences();
+    });
+
+    ipcMain.handle("ui:set-sidebar-open", async (_event, payload = {}) => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager) {
+            return { success: false, error: "manager-unavailable" };
+        }
+        return manager.setSidebarOpen(payload?.sidebarOpen);
+    });
 }
 
 module.exports = { registerUiPreferencesHandlers };

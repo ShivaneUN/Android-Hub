@@ -12,6 +12,8 @@
     "language": "Language",
     "languageFr": "Français",
     "languageEn": "English",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
     "tabs": {
       "close": "Close tab",
       "mirroring": "Mirroring",
@@ -331,6 +333,13 @@
                 "Tab"
               ],
               "desc": "Switch to the previous session tab."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "B"
+              ],
+              "desc": "Show or hide the sidebar."
             }
           ]
         },

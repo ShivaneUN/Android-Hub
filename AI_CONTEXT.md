@@ -2,7 +2,7 @@
 
 > **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Dernière mise à jour : 2026-07-06
+Dernière mise à jour : 2026-07-07
 
 ---
 
@@ -64,6 +64,33 @@ Dernière mise à jour : 2026-07-06
 
 Référence détaillée : `PROGRESS_CHECK.md` § Fix collisions scope global i18n / modales.
 
+### Sidebar rétractable — LOCK (validé 2026-07-07)
+
+> La sidebar entière se replie via `#sidebar-shell` sans toucher au contenu interne (devices, toggles, navigation). État `sidebarOpen` persisté (`ui-preferences.json`).
+
+**Fichiers concernés (ne pas modifier sans accord) :**
+
+| Fichier | Rôle |
+|---------|------|
+| `src/renderer/sidebar/SidebarCollapse.js` | Toggle, Ctrl+B, persistance, `window.toggleSidebar` |
+| `src/renderer/index.html` | Wrapper `#sidebar-shell`, bouton flèche |
+| `src/renderer/styles/style.css` | `.sidebar-shell`, `.sidebar-collapse-btn`, transitions |
+| `src/renderer/sidebar-panel-layout.js` | Mesure `#sidebar-shell` → `--sidebar-width` |
+
+**Comportements validés :**
+
+- Repli / dépli en un bloc ; bouton flèche toujours visible.
+- Ctrl+B / Cmd+B ; pas de conflit Ctrl+Tab.
+- Redimensionnement flux vidéo via `reportContentBounds()` (BrowserView), sans modifier `session.js` / zones LOCK.
+
+**Règles pour toute évolution future :**
+
+1. Ne pas déplacer la logique métier des panneaux sidebar dans le mécanisme de repli.
+2. Tout changement de layout sidebar → mettre à jour `sidebar-panel-layout.js` + `reportContentBounds`.
+3. Persistance UI via `ui-preferences.json` (`sidebarOpen`), pas de stockage parallèle.
+
+Référence : `PROGRESS_CHECK.md` § Sidebar rétractable.
+
 ### Input Type A — LOCK (historique `c23e7cb`, étendu 2026-07-05)
 
 - Fallback ADB quand le socket contrôle scrcpy est absent.
@@ -124,4 +151,5 @@ Référence détaillée : `PROGRESS_CHECK.md` § Fix collisions scope global i18
 2. Si oui → **STOP** et demander accord explicite.
 3. Pour l'**input** : toute évolution passe par une couche **amont** ; jamais de patch direct dans les fichiers listés § Input LOCK DÉFINITIF.
 4. Pour le **renderer** : pas de `const t` / `const api` au scope global dans les `<script>` — voir § Renderer scripts globaux & i18n.
-5. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
+5. Pour la **sidebar rétractable** : wrapper shell uniquement — voir § Sidebar rétractable LOCK.
+6. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.

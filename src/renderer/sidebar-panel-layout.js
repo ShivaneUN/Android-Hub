@@ -25,12 +25,14 @@ function measureChromeTop() {
 }
 
 function measureSidebarRect() {
+    const shell = document.getElementById("sidebar-shell");
     const sidebar = document.getElementById("sidebar");
-    if (!sidebar) {
+    const el = shell || sidebar;
+    if (!el) {
         return { left: 0, right: 208, width: 208 };
     }
 
-    const rect = sidebar.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     return {
         left: Math.round(rect.left),
         right: Math.round(rect.right),
@@ -143,7 +145,7 @@ function initSidebarPanelLayout() {
         if (typeof reportContentBounds === "function") reportContentBounds();
     });
 
-    const sidebar = document.getElementById("sidebar");
+    const sidebar = document.getElementById("sidebar-shell") || document.getElementById("sidebar");
     if (sidebar && typeof ResizeObserver !== "undefined") {
         const sidebarObserver = new ResizeObserver(() => {
             layoutSidebarPanels();

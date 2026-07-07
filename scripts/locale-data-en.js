@@ -12,6 +12,8 @@ module.exports = {
         language: "Language",
         languageFr: "Français",
         languageEn: "English",
+        collapse: "Collapse sidebar",
+        expand: "Expand sidebar",
         tabs: {
             close: "Close tab",
             mirroring: "Mirroring",
@@ -321,7 +323,8 @@ module.exports = {
                     title: "Navigation",
                     items: [
                         { keys: ["Ctrl", "Tab"], desc: "Switch to the next session tab." },
-                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous session tab." }
+                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous session tab." },
+                        { keys: ["Ctrl", "B"], desc: "Show or hide the sidebar." }
                     ]
                 },
                 {

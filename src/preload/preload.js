@@ -177,6 +177,8 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     getLocaleData: () => ipcRenderer.invoke("ui:get-locale-data"),
     getLocale: () => ipcRenderer.invoke("ui:get-locale"),
     setLocale: (locale) => ipcRenderer.invoke("ui:set-locale", { locale }),
+    getPreferences: () => ipcRenderer.invoke("ui:get-preferences"),
+    setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
     onLocaleChanged: (callback) =>
         ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data))
 });
