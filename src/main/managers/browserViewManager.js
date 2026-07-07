@@ -11,6 +11,8 @@ class BrowserViewManager {
         this.views = new Map();
         this.activeSessionId = null;
         this.contentBounds = null;
+        this.layoutMode = "single";
+        this.multiSessionBounds = new Map();
         this.viewSuppressed = false;
         this.navSidebarWidth = 208;
         this.titlebarHeight = 40;
@@ -23,25 +25,81 @@ class BrowserViewManager {
         this.mainWindow.on("unmaximize", onWindowMetricsChange);
     }
 
+    _boundsEqual(a, b) {
+        if (!a || !b) return false;
+        return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+    }
+
+    _multiBoundsMapsEqual(left, right) {
+        if (left.size !== right.size) return false;
+        for (const [sessionId, bounds] of right) {
+            if (!this._boundsEqual(left.get(sessionId), bounds)) return false;
+        }
+        return true;
+    }
+
     setContentBounds(bounds) {
         if (!bounds || typeof bounds !== "object") return;
         const { x, y, width, height } = bounds;
         if (![x, y, width, height].every((v) => Number.isFinite(v))) return;
-        this.contentBounds = {
+
+        const normalized = {
             x: Math.max(0, Math.round(x)),
             y: Math.max(0, Math.round(y)),
             width: Math.max(0, Math.round(width)),
             height: Math.max(0, Math.round(height))
         };
-        console.log(
-            "[BrowserViewManager] setContentBounds",
-            this.contentBounds,
-            "active:",
-            this.activeSessionId,
-            "suppressed:",
-            this.viewSuppressed
-        );
+
+        if (
+            this.layoutMode === "single"
+            && this.multiSessionBounds.size === 0
+            && this.contentBounds
+            && this._boundsEqual(this.contentBounds, normalized)
+        ) {
+            return;
+        }
+
+        this.layoutMode = "single";
+        this.multiSessionBounds.clear();
+        this.contentBounds = normalized;
         this._updateActiveBounds();
+    }
+
+    setLayoutMode(mode) {
+        const next = mode === "multi" ? "multi" : "single";
+        if (next === this.layoutMode) return;
+        this.layoutMode = next;
+        if (next === "single") {
+            this.multiSessionBounds.clear();
+            this._updateActiveBounds();
+        } else {
+            this._applyMultiLayoutBounds();
+        }
+    }
+
+    setMultiSessionBounds(boundsMap = {}) {
+        const nextMap = new Map();
+
+        for (const [sessionId, bounds] of Object.entries(boundsMap)) {
+            if (!bounds || typeof bounds !== "object") continue;
+            const { x, y, width, height } = bounds;
+            if (![x, y, width, height].every((v) => Number.isFinite(v))) continue;
+            if (width <= 0 || height <= 0) continue;
+            nextMap.set(sessionId, {
+                x: Math.max(0, Math.round(x)),
+                y: Math.max(0, Math.round(y)),
+                width: Math.max(0, Math.round(width)),
+                height: Math.max(0, Math.round(height))
+            });
+        }
+
+        if (this.layoutMode === "multi" && this._multiBoundsMapsEqual(this.multiSessionBounds, nextMap)) {
+            return;
+        }
+
+        this.layoutMode = "multi";
+        this.multiSessionBounds = nextMap;
+        this._applyMultiLayoutBounds();
     }
 
     suppressActiveView() {
@@ -258,9 +316,13 @@ class BrowserViewManager {
 
         await this._ensureSessionInputReady(sessionId);
 
-        this.views.forEach(({ view }, id) => {
-            if (id !== sessionId) view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-        });
+        const multiLayout = this.layoutMode === "multi" && this.multiSessionBounds.size > 0;
+
+        if (!multiLayout) {
+            this.views.forEach(({ view }, id) => {
+                if (id !== sessionId) view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            });
+        }
 
         this.activeSessionId = sessionId;
 
@@ -274,6 +336,8 @@ class BrowserViewManager {
                     sessionView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
                 }
             });
+        } else if (multiLayout) {
+            this._applyMultiLayoutBounds();
         } else {
             this._updateActiveBounds();
         }
@@ -452,7 +516,54 @@ class BrowserViewManager {
         };
     }
 
+    _applyMultiLayoutBounds() {
+        if (this.viewSuppressed) {
+            this.views.forEach(({ view }) => {
+                if (!view.webContents.isDestroyed()) {
+                    view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+                }
+            });
+            return;
+        }
+
+        const [winWidth, winHeight] = this.mainWindow.getContentSize();
+
+        this.views.forEach(({ view }, sessionId) => {
+            if (view.webContents.isDestroyed()) return;
+
+            const raw = this.multiSessionBounds.get(sessionId);
+            if (!raw) {
+                view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+                return;
+            }
+
+            const bx = Math.max(0, Math.round(raw.x));
+            const by = Math.max(0, Math.round(raw.y));
+            const bw = Math.max(0, Math.round(raw.width));
+            const bh = Math.max(0, Math.round(raw.height));
+
+            view.setBounds({
+                x: bx,
+                y: by,
+                width: Math.min(bw, Math.max(0, winWidth - bx)),
+                height: Math.min(bh, Math.max(0, winHeight - by))
+            });
+        });
+
+        if (this.activeSessionId) {
+            const activeEntry = this.views.get(this.activeSessionId);
+            if (activeEntry?.view && !activeEntry.view.webContents.isDestroyed()) {
+                this.mainWindow.setTopBrowserView(activeEntry.view);
+            }
+        }
+    }
+
     _updateActiveBounds() {
+        if (this.layoutMode === "multi" && this.multiSessionBounds.size > 0) {
+            this._applyMultiLayoutBounds();
+            return;
+        }
+
         if (!this.activeSessionId) return;
         const entry = this.views.get(this.activeSessionId);
         if (!entry) return;

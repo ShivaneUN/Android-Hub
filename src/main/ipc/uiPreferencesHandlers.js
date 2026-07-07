@@ -56,7 +56,7 @@ function registerUiPreferencesHandlers(deps) {
     ipcMain.handle("ui:get-preferences", async () => {
         const manager = getUiPreferencesManager?.();
         if (!manager) {
-            return { locale: "fr", sidebarOpen: true };
+            return { locale: "fr", sidebarOpen: true, streamDeckMode: false };
         }
         return manager.getPreferences();
     });
@@ -67,6 +67,14 @@ function registerUiPreferencesHandlers(deps) {
             return { success: false, error: "manager-unavailable" };
         }
         return manager.setSidebarOpen(payload?.sidebarOpen);
+    });
+
+    ipcMain.handle("ui:set-display-preferences", async (_event, payload = {}) => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager) {
+            return { success: false, error: "manager-unavailable" };
+        }
+        return manager.setDisplayPreferences(payload);
     });
 }
 

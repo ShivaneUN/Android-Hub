@@ -91,6 +91,51 @@ Référence détaillée : `PROGRESS_CHECK.md` § Fix collisions scope global i18
 
 Référence : `PROGRESS_CHECK.md` § Sidebar rétractable.
 
+### Mode Stream Deck — LOCK (validé 2026-07-07)
+
+> Affichage multi-sessions en grille, focus ou duo. **Désactivé par défaut** au démarrage (`streamDeckMode: false`). Changement de layout = **bounds BrowserView uniquement** — pas de recréation de session scrcpy. Popup Duo = **fenêtre overlay enfant** (au-dessus des flux vidéo, inatteignable en z-index DOM seul).
+
+**Fichiers concernés (ne pas modifier sans accord) :**
+
+| Fichier | Rôle |
+|---------|------|
+| `src/renderer/stream-deck/DisplayLayoutState.js` | État layout, duo slots, persistance, `streamDeckMode` défaut `false` |
+| `src/renderer/stream-deck/StreamDeckBar.js` | Boutons Grille/Focus/Duo dans la barre d'onglets |
+| `src/renderer/stream-deck/StreamDeckZone.js` | Tuiles, sync bounds multi, activation session |
+| `src/renderer/stream-deck/StreamDeckDuoCollapse.js` | Ouverture/fermeture popup Duo (overlay) |
+| `src/renderer/stream-deck/stream-deck.css` | Styles zone Stream Deck + barre onglets |
+| `src/renderer/stream-deck/duo-popup-overlay.*` | UI popup Duo (fenêtre overlay) |
+| `src/renderer/sidebar/StreamDeckToggle.js` | Toggle sidebar Mode Stream Deck |
+| `src/main/managers/stream-deck-duo-popup-manager.js` | Fenêtre overlay Duo (parent = fenêtre principale) |
+| `src/main/ipc/streamDeckDuoPopupHandlers.js` | IPC `duo-popup:*` |
+| `src/preload/duoPopupPreload.js` | Bridge overlay popup |
+| `src/main/managers/browserViewManager.js` | Bounds single/multi, skip bounds identiques, `suppressView` / `restoreView` |
+| `src/main/managers/ui-preferences-manager.js` | Persistance `displayLayout`, `duoDeviceIds`, `streamDeckMode` |
+| `src/renderer/layout-metrics.js` | Debounce `reportContentBounds`, délégation Stream Deck |
+| `src/renderer/index.html` | Rail layout onglets, shell `#stream-deck-shell` |
+
+**Comportements validés :**
+
+- Toggle sidebar → mode multi ; layouts Grille / Focus / Duo dans la barre d'onglets (à droite).
+- **Duo** : popup sous les boutons layout, **au-dessus du flux vidéo** ; re-clic Duo ou clic extérieur pour fermer.
+- `Ctrl+Shift+L` : cycle layouts si Stream Deck actif.
+- 3+ sessions : duo auto-remplit les slots ; pas de casse du mode multi.
+- Perf : pas de spam `setContentBounds` (debounce + cache bounds).
+
+**Hors périmètre LOCK (ne jamais toucher pour le Stream Deck) :**
+
+- `src/native/scrcpy/scrcpy-socket.js`
+- `src/main/managers/new-instance-manager.js` — `createNewInstanceSession()`, input Type B
+- `src/renderer/session/session.js` — pipeline input
+
+**Règles pour toute évolution future :**
+
+1. Nouveau layout = bounds + renderer uniquement ; pas de reconnexion scrcpy.
+2. UI au-dessus de la vidéo = fenêtre overlay enfant ou API existante (`suppressView`), pas de z-index DOM seul.
+3. Greffer toggles/layout en amont de `session.js` / input / scrcpy-socket.
+
+Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale-data-*.js`).
+
 ### Input Type A — LOCK (historique `c23e7cb`, étendu 2026-07-05)
 
 - Fallback ADB quand le socket contrôle scrcpy est absent.
@@ -147,9 +192,10 @@ Référence : `PROGRESS_CHECK.md` § Sidebar rétractable.
 
 ## Avant toute modification
 
-1. Vérifier si la zone touchée est **LOCK** (audio, **input**, **noms**, `scrcpy-socket.js`, `new-instance-manager.js`, etc.).
+1. Vérifier si la zone touchée est **LOCK** (audio, **input**, **noms**, **Stream Deck**, `scrcpy-socket.js`, `new-instance-manager.js`, etc.).
 2. Si oui → **STOP** et demander accord explicite.
 3. Pour l'**input** : toute évolution passe par une couche **amont** ; jamais de patch direct dans les fichiers listés § Input LOCK DÉFINITIF.
 4. Pour le **renderer** : pas de `const t` / `const api` au scope global dans les `<script>` — voir § Renderer scripts globaux & i18n.
 5. Pour la **sidebar rétractable** : wrapper shell uniquement — voir § Sidebar rétractable LOCK.
-6. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
+6. Pour le **mode Stream Deck** : bounds + overlay uniquement — voir § Mode Stream Deck LOCK ; ne pas toucher scrcpy-socket / new-instance-manager / session.js input.
+7. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.

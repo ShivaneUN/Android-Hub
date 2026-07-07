@@ -31,6 +31,27 @@
       "deviceFallback": "Appareil"
     }
   },
+  "streamDeck": {
+    "toggle": "Mode Stream Deck",
+    "toggleTitle": "Activer l'affichage multi-appareils Stream Deck",
+    "barTitle": "Android Hub — Affichage",
+    "empty": "Aucune session active",
+    "layout": {
+      "grid": "Grille",
+      "focus": "Focus",
+      "duo": "Duo"
+    },
+    "duo": {
+      "pick": "Choisir…",
+      "slot1": "Appareil 1",
+      "slot2": "Appareil 2",
+      "disconnected": "Déconnecté",
+      "emptySlot": "Slot vide",
+      "panelTitle": "Sélection Duo",
+      "collapse": "Réduire le panneau Duo",
+      "expand": "Afficher le panneau Duo"
+    }
+  },
   "titlebar": {
     "appTitle": "Android Hub",
     "minimize": "Réduire",
@@ -314,7 +335,7 @@
       "close": "Fermer"
     },
     "shortcuts": {
-      "intro": "Raccourcis clavier et actions disponibles dans Android Hub. Les raccourcis de navigation ne s'appliquent pas lorsque vous tapez dans un champ texte. Clic droit sur un appareil dans « Appareils connectés » ou sur un onglet de session pour ouvrir un menu contextuel (renommer, couleur, fermer…).",
+      "intro": "Raccourcis clavier et actions disponibles dans Android Hub. Les raccourcis de navigation ne s'appliquent pas lorsque vous tapez dans un champ texte. Clic droit sur un appareil dans « Appareils connectés » ou sur un onglet de session pour ouvrir un menu contextuel (renommer, couleur, fermer…). Le mode Stream Deck permet d'afficher plusieurs sessions en grille, focus ou duo.",
       "groups": [
         {
           "title": "Navigation",
@@ -340,6 +361,90 @@
                 "B"
               ],
               "desc": "Afficher ou masquer la barre latérale."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "Shift",
+                "L"
+              ],
+              "desc": "Changer le mode d'affichage Stream Deck (grille, focus, duo). Actif uniquement quand le mode Stream Deck est activé."
+            }
+          ]
+        },
+        {
+          "title": "Mode Stream Deck",
+          "items": [
+            {
+              "keys": [
+                "Mode Stream Deck"
+              ],
+              "desc": "Activer ou désactiver l'affichage multi-appareils depuis la barre latérale (désactivé par défaut au démarrage)."
+            },
+            {
+              "keys": [
+                "Grille"
+              ],
+              "desc": "Afficher toutes les sessions actives en grille — chaque tuile montre le flux d'un appareil ou d'une instance."
+            },
+            {
+              "keys": [
+                "Focus"
+              ],
+              "desc": "Grande vue sur un appareil principal et bande latérale des autres sessions. Cliquez une mini-tuile pour changer le focus."
+            },
+            {
+              "keys": [
+                "Duo"
+              ],
+              "desc": "Afficher deux appareils côte à côte. Active le mode duo et ouvre le menu de sélection sous les boutons de layout."
+            },
+            {
+              "keys": [
+                "Clic Duo"
+              ],
+              "desc": "Rouvrir ou fermer le menu de sélection Duo lorsque le mode duo est déjà actif."
+            },
+            {
+              "keys": [
+                "Clic extérieur"
+              ],
+              "desc": "Fermer le menu de sélection Duo."
+            },
+            {
+              "keys": [
+                "Clic tuile"
+              ],
+              "desc": "Activer la session pour le contrôle souris/clavier (bordure verte sur la tuile active)."
+            }
+          ]
+        },
+        {
+          "title": "Barre latérale — Contrôles globaux",
+          "items": [
+            {
+              "keys": [
+                "Écran"
+              ],
+              "desc": "Éteindre ou rallumer l'écran de l'appareil de la session mirroring active."
+            },
+            {
+              "keys": [
+                "Portrait"
+              ],
+              "desc": "Basculer l'affichage vidéo en mode portrait pour la session active."
+            },
+            {
+              "keys": [
+                "Audio"
+              ],
+              "desc": "Couper ou réactiver l'audio de toutes les sessions en une fois."
+            },
+            {
+              "keys": [
+                "Langue"
+              ],
+              "desc": "Basculer l'interface entre français et anglais."
             }
           ]
         },
@@ -396,6 +501,12 @@
                 "Double-clic"
               ],
               "desc": "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)."
+            },
+            {
+              "keys": [
+                "Toggle WiFi"
+              ],
+              "desc": "Configurer ou activer la connexion ADB WiFi pour l'appareil (voir l'onglet Connexion WiFi de l'aide)."
             }
           ]
         },
@@ -544,7 +655,9 @@
         "« Autoriser le débogage USB » ne s'affiche pas : déverrouillez l'écran, rebranchez le câble.",
         "Appareil déconnecté aléatoirement : branchez directement sur le PC, évitez les hubs USB.",
         "Mirroring ne démarre pas : fermez les autres outils ADB (Android Studio, scrcpy en CLI).",
-        "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser."
+        "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
+        "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
+        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
       ]
     }
   }

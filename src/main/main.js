@@ -44,6 +44,8 @@ const { registerNamesHandlers } = require("./ipc/namesHandlers");
 const { RenameDialogManager } = require("./managers/rename-dialog-manager");
 const { HubModalOverlayManager } = require("./managers/hub-modal-overlay-manager");
 const { registerHubModalHandlers } = require("./ipc/hubModalHandlers");
+const { StreamDeckDuoPopupManager } = require("./managers/stream-deck-duo-popup-manager");
+const { registerStreamDeckDuoPopupHandlers } = require("./ipc/streamDeckDuoPopupHandlers");
 const { registerContextMenuHandlers } = require("./ipc/contextMenuHandlers");
 const { LaunchHistoryManager } = require("./managers/launch-history-manager");
 const { registerLaunchHistoryHandlers } = require("./ipc/launchHistoryHandlers");
@@ -2334,10 +2336,15 @@ async function listDevicesForUI() {
     global.browserViewManager = new BrowserViewManager(win);
     global.videoPreviewTooltipManager = new VideoPreviewTooltipManager(win);
     global.renameDialogManager = new RenameDialogManager(win);
+    global.streamDeckDuoPopupManager = new StreamDeckDuoPopupManager(win);
     global.hubModalOverlayManager = new HubModalOverlayManager(win);
     global.sessionStreamRegistry = new SessionStreamRegistry();
 
     registerHubModalHandlers(() => global.hubModalOverlayManager);
+    registerStreamDeckDuoPopupHandlers({
+        getMainWindow: () => win,
+        getStreamDeckDuoPopupManager: () => global.streamDeckDuoPopupManager
+    });
 
     global.streamParamsManager = new StreamParamsManager({
         getBrowserViewManager: () => global.browserViewManager,

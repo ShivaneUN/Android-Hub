@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld("sessionAPI", {
             streamParams: options.streamParams
         }),
     setContentBounds: (bounds) => ipcRenderer.invoke("session:setContentBounds", bounds),
+    setLayoutMode: (mode) => ipcRenderer.invoke("session:setLayoutMode", { mode }),
+    setLayoutBounds: (boundsMap) => ipcRenderer.invoke("session:setLayoutBounds", { boundsMap }),
     suppressView: () => ipcRenderer.invoke("session:suppressView"),
     restoreView: () => ipcRenderer.invoke("session:restoreView"),
     getActiveTypeA: () => ipcRenderer.invoke("session:getActiveTypeA"),
@@ -186,6 +188,7 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     setLocale: (locale) => ipcRenderer.invoke("ui:set-locale", { locale }),
     getPreferences: () => ipcRenderer.invoke("ui:get-preferences"),
     setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
+    setDisplayPreferences: (payload) => ipcRenderer.invoke("ui:set-display-preferences", payload),
     onLocaleChanged: (callback) =>
         ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data))
 });
@@ -195,6 +198,15 @@ contextBridge.exposeInMainWorld("maintenanceAPI", {
     runCleanup: (payload = {}) => ipcRenderer.invoke("maintenance:cleanup-run", payload),
     getPreferences: () => ipcRenderer.invoke("maintenance:get-preferences"),
     setPreferences: (payload = {}) => ipcRenderer.invoke("maintenance:set-preferences", payload)
+});
+
+contextBridge.exposeInMainWorld("duoPopupAPI", {
+    open: (payload) => ipcRenderer.invoke("duo-popup:open", payload),
+    update: (payload) => ipcRenderer.invoke("duo-popup:update", payload),
+    hide: () => ipcRenderer.invoke("duo-popup:hide"),
+    onSlotsChanged: (callback) =>
+        ipcRenderer.on("duo-popup:slots-changed", (_event, data) => callback(data)),
+    onClosed: (callback) => ipcRenderer.on("duo-popup:closed", () => callback())
 });
 
 contextBridge.exposeInMainWorld("hubModalAPI", {

@@ -1,0 +1,56 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #12141b;
+  font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+}
+
+.stream-deck-duo-popup-inner {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+.stream-deck-duo-popup-title {
+  font-size: 9px;
+  color: #5c6272;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stream-deck-duo-popup-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stream-deck-duo-label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  font-size: 9px;
+  color: #5c6272;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stream-deck-duo-select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #1e212b;
+  background: #0a0e14;
+  color: #e8e9ee;
+  font-size: 11px;
+  box-sizing: border-box;
+  height: 28px;
+}

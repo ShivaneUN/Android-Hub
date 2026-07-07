@@ -1,6 +1,6 @@
 {
   "name": "android-hub",
-  "version": "1.30.25",
+  "version": "1.30.26",
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",

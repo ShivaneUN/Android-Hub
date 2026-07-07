@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="rename/rename.css">
 <link rel="stylesheet" href="styles/hub-panel.css">
 <link rel="stylesheet" href="help/help-panel.css">
+<link rel="stylesheet" href="stream-deck/stream-deck.css">
 </head>
 <body>
 
@@ -55,7 +56,13 @@
     </div>
   </div>
 
-  <div class="tabs-bar" id="tabs-bar"></div>
+  <div class="tabs-bar" id="tabs-bar">
+    <div class="tabs-bar-track" id="tabs-bar-track"></div>
+    <div class="stream-deck-tabs-rail hidden" id="stream-deck-tabs-rail" aria-hidden="true">
+      <div class="stream-deck-tabs-separator" aria-hidden="true"></div>
+      <div class="stream-deck-tabs-layout" id="stream-deck-bar"></div>
+    </div>
+  </div>
 
   <div class="main-layout">
 
@@ -103,6 +110,13 @@
         <div class="label" data-i18n="sidebar.audio">Audio</div>
       </div>
 
+      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </div>
+        <div class="label" data-i18n="streamDeck.toggle">Mode Stream Deck</div>
+      </div>
+
       <div class="sidebar-item" id="nav-aide" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
         <div class="icon">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.8 1c0 1.5-1.5 2-2.5 2.5V14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none"/></svg>
@@ -125,6 +139,7 @@
     </button>
     </div>
 
+    <div class="workspace-main" id="workspace-main">
     <div class="content">
 
       <div class="page" id="page-new">
@@ -137,6 +152,12 @@
       </div>
 
       <div class="video-stage" id="video-stage"></div>
+
+      <div class="stream-deck-shell hidden" id="stream-deck-shell">
+        <div class="stream-deck-zone stream-deck-zone--grid" id="stream-deck-zone"></div>
+      </div>
+
+    </div>
 
     </div>
 
@@ -152,6 +173,10 @@
 <script src="launch-latency.js"></script>
 <script src="sidebar-panel-layout.js"></script>
 <script src="layout-metrics.js"></script>
+<script src="stream-deck/DisplayLayoutState.js"></script>
+<script src="stream-deck/StreamDeckBar.js"></script>
+<script src="stream-deck/StreamDeckDuoCollapse.js"></script>
+<script src="stream-deck/StreamDeckZone.js"></script>
 <script src="sidebar/SidebarCollapse.js"></script>
 <script>
   if (globalThis.AppName) globalThis.AppName.setWindowTitle();
@@ -213,6 +238,7 @@
 <script src="sidebar/ScreenToggle.js"></script>
 <script src="sidebar/OrientationToggle.js"></script>
 <script src="sidebar/GlobalAudioToggle.js"></script>
+<script src="sidebar/StreamDeckToggle.js"></script>
 <script src="sidebar/LanguageToggle.js"></script>
 <script src="instance-manager.js"></script>
 <script src="video-player.js"></script>

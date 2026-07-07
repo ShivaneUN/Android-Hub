@@ -2,8 +2,12 @@ const MIN_VIDEO_BOUNDS = 64;
 /** Ratio largeur/hauteur en mode portrait (tablette 16:10 → 10:16). */
 const PORTRAIT_WIDTH_RATIO = 10 / 16;
 
+const BOUNDS_SYNC_DEBOUNCE_MS = 48;
+
 let boundsSyncQueue = Promise.resolve();
 let portraitLayoutActive = false;
+let boundsSyncTimer = null;
+let lastSingleBoundsKey = "";
 
 function measureContentBounds() {
     const content = document.querySelector(".content");
@@ -55,6 +59,25 @@ function resolveSessionLayoutBounds() {
     return portraitLayoutActive ? measurePortraitContentBounds() : measureContentBounds();
 }
 
+function serializeBounds(bounds) {
+    if (!bounds) return "";
+    return `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`;
+}
+
+function serializeBoundsMap(boundsMap = {}) {
+    return Object.keys(boundsMap)
+        .sort()
+        .map((id) => {
+            const b = boundsMap[id];
+            return `${id}:${serializeBounds(b)}`;
+        })
+        .join("|");
+}
+
+function boundsMapsEqual(a = {}, b = {}) {
+    return serializeBoundsMap(a) === serializeBoundsMap(b);
+}
+
 async function syncVideoWithSidebarModals() {
     if (!window.sessionAPI?.setContentBounds) return;
 
@@ -65,14 +88,48 @@ async function syncVideoWithSidebarModals() {
     const bounds = resolveSessionLayoutBounds();
     if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
 
+    const boundsKey = serializeBounds(bounds);
+    if (boundsKey === lastSingleBoundsKey) return;
+    lastSingleBoundsKey = boundsKey;
+
+    if (window.sessionAPI.setLayoutMode) {
+        await window.sessionAPI.setLayoutMode("single");
+    }
+
     await window.sessionAPI.setContentBounds(bounds);
 }
 
-function reportContentBounds() {
+async function syncVideoWithSidebarModalsOrStreamDeck() {
+    if (window.getStreamDeckMode?.() === true && typeof window.syncStreamDeckLayout === "function") {
+        await window.syncStreamDeckLayout();
+        return;
+    }
+
+    await syncVideoWithSidebarModals();
+}
+
+function flushContentBoundsSync() {
     boundsSyncQueue = boundsSyncQueue
-        .then(() => syncVideoWithSidebarModals())
+        .then(() => syncVideoWithSidebarModalsOrStreamDeck())
         .catch((err) => console.error("[VideoLayout] sync error:", err));
     return boundsSyncQueue;
+}
+
+function reportContentBounds() {
+    if (boundsSyncTimer) {
+        clearTimeout(boundsSyncTimer);
+    }
+
+    boundsSyncTimer = setTimeout(() => {
+        boundsSyncTimer = null;
+        flushContentBoundsSync();
+    }, BOUNDS_SYNC_DEBOUNCE_MS);
+
+    return boundsSyncQueue;
+}
+
+function invalidateSingleBoundsCache() {
+    lastSingleBoundsKey = "";
 }
 
 async function applySessionPortraitLayout(portraitOn) {
@@ -81,6 +138,7 @@ async function applySessionPortraitLayout(portraitOn) {
     if (content) {
         content.classList.toggle("content--portrait-view", portraitLayoutActive);
     }
+    invalidateSingleBoundsCache();
     await reportContentBounds();
 }
 
@@ -95,11 +153,6 @@ function initLayoutMetrics() {
     const content = document.querySelector(".content");
     if (content && typeof ResizeObserver !== "undefined") {
         new ResizeObserver(() => reportContentBounds()).observe(content);
-    }
-
-    const mainLayout = document.querySelector(".main-layout");
-    if (mainLayout && typeof ResizeObserver !== "undefined") {
-        new ResizeObserver(() => reportContentBounds()).observe(mainLayout);
     }
 
     if (window.sessionAPI?.onOrientationChanged) {
@@ -118,5 +171,9 @@ if (document.readyState === "loading") {
 
 window.reportContentBounds = reportContentBounds;
 window.syncVideoWithSidebarModals = syncVideoWithSidebarModals;
+window.syncVideoLayout = syncVideoWithSidebarModalsOrStreamDeck;
 window.restoreSessionView = restoreSessionView;
 window.applySessionPortraitLayout = applySessionPortraitLayout;
+window.invalidateVideoLayoutBoundsCache = invalidateSingleBoundsCache;
+window.boundsMapsEqual = boundsMapsEqual;
+window.serializeBoundsMap = serializeBoundsMap;

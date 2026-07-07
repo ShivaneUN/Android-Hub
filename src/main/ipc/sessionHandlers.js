@@ -260,6 +260,16 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return true;
     });
 
+    ipcMain.handle("session:setLayoutMode", (_event, { mode } = {}) => {
+        global.browserViewManager.setLayoutMode(mode);
+        return true;
+    });
+
+    ipcMain.handle("session:setLayoutBounds", (_event, { boundsMap } = {}) => {
+        global.browserViewManager.setMultiSessionBounds(boundsMap || {});
+        return true;
+    });
+
     ipcMain.handle("session:suppressView", () => {
         global.browserViewManager.suppressActiveView();
         return true;

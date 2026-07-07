@@ -31,6 +31,27 @@ module.exports = {
             deviceFallback: "Device"
         }
     },
+    streamDeck: {
+        toggle: "Stream Deck mode",
+        toggleTitle: "Enable Stream Deck multi-device display",
+        barTitle: "Android Hub — Display",
+        empty: "No active session",
+        layout: {
+            grid: "Grid",
+            focus: "Focus",
+            duo: "Duo"
+        },
+        duo: {
+            pick: "Choose…",
+            slot1: "Device 1",
+            slot2: "Device 2",
+            disconnected: "Disconnected",
+            emptySlot: "Empty slot",
+            panelTitle: "Duo selection",
+            collapse: "Collapse Duo panel",
+            expand: "Expand Duo panel"
+        }
+    },
     titlebar: {
         appTitle: "Android Hub",
         minimize: "Minimize",
@@ -317,14 +338,36 @@ module.exports = {
             close: "Close"
         },
         shortcuts: {
-            intro: "Keyboard shortcuts and actions available in Android Hub. Navigation shortcuts do not apply while typing in a text field. Right-click a device in Connected devices or a session tab to open a context menu (rename, color, close…).",
+            intro: "Keyboard shortcuts and actions available in Android Hub. Navigation shortcuts do not apply while typing in a text field. Right-click a device in Connected devices or a session tab to open a context menu (rename, color, close…). Stream Deck mode lets you display multiple sessions in grid, focus, or duo layout.",
             groups: [
                 {
                     title: "Navigation",
                     items: [
                         { keys: ["Ctrl", "Tab"], desc: "Switch to the next session tab." },
                         { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous session tab." },
-                        { keys: ["Ctrl", "B"], desc: "Show or hide the sidebar." }
+                        { keys: ["Ctrl", "B"], desc: "Show or hide the sidebar." },
+                        { keys: ["Ctrl", "Shift", "L"], desc: "Cycle Stream Deck display layout (grid, focus, duo). Only active when Stream Deck mode is enabled." }
+                    ]
+                },
+                {
+                    title: "Stream Deck mode",
+                    items: [
+                        { keys: ["Stream Deck mode"], desc: "Enable or disable multi-device display from the sidebar (off by default on startup)." },
+                        { keys: ["Grid"], desc: "Show all active sessions in a grid — each tile displays one device or app instance stream." },
+                        { keys: ["Focus"], desc: "Large view of one main device and a side rail of other sessions. Click a mini tile to change focus." },
+                        { keys: ["Duo"], desc: "Show two devices side by side. Enables duo layout and opens the selection menu below the layout buttons." },
+                        { keys: ["Click Duo"], desc: "Reopen or close the Duo selection menu when duo layout is already active." },
+                        { keys: ["Outside click"], desc: "Close the Duo selection menu." },
+                        { keys: ["Click tile"], desc: "Activate the session for mouse/keyboard control (green border on the active tile)." }
+                    ]
+                },
+                {
+                    title: "Sidebar — Global controls",
+                    items: [
+                        { keys: ["Screen"], desc: "Turn the active mirroring session's device screen off or on." },
+                        { keys: ["Portrait"], desc: "Toggle portrait video layout for the active session." },
+                        { keys: ["Audio"], desc: "Mute or unmute audio for all sessions at once." },
+                        { keys: ["Language"], desc: "Switch the interface between French and English." }
                     ]
                 },
                 {
@@ -350,7 +393,8 @@ module.exports = {
                 {
                     title: "Connected devices (sidebar)",
                     items: [
-                        { keys: ["Double-click"], desc: "Start full-screen mirroring for the device (same as the Mirroring button)." }
+                        { keys: ["Double-click"], desc: "Start full-screen mirroring for the device (same as the Mirroring button)." },
+                        { keys: ["WiFi toggle"], desc: "Set up or enable ADB WiFi connection for the device (see the WiFi connection help tab)." }
                     ]
                 },
                 {
@@ -463,7 +507,9 @@ module.exports = {
                 "Allow USB debugging does not appear: unlock the screen and replug the cable.",
                 "Device disconnects randomly: plug directly into the PC and avoid USB hubs.",
                 "Mirroring does not start: close other ADB tools (Android Studio, scrcpy CLI).",
-                "Keyboard input ignored: click once on the video stream to focus it."
+                "Keyboard input ignored: click once on the video stream to focus it.",
+                "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
+                "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
             ]
         }
     }

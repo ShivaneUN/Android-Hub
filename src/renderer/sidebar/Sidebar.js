@@ -1,5 +1,5 @@
 function getSessionTabsContainer() {
-    return document.getElementById("tabs-bar");
+    return document.getElementById("tabs-bar-track") || document.getElementById("tabs-bar");
 }
 
 function isTypingTarget(element) {
