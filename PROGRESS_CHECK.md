@@ -2489,6 +2489,44 @@ Le lancement session utilise **toujours** `device.serial` (transport effectif) �
 
 **Verdict point 4 :** input **fonctionne en WiFi** si session lancée sur le bon `ip:port`. Pas d'écouteur USB-only. Échec = serial session ≠ serial ADB actuel.
 
+### 4 bis. Contrôle clavier — touche ESPACE (diagnostic uniquement)
+
+**LOCK concerné :** oui (capture keydown + mapping + envoi ADB). Ne pas modifier avant validation.
+
+#### 1) Fichiers qui gèrent le clavier
+- Capture `keydown` + table “spéciales” (Enter/Escape/Tab/Arrows/…) : `src/renderer/session/session.js` (initTypeAInputHandlers + initTypeBInputHandlers)
+- Passage au main : `src/preload/sessionPreload.js` (`videoAPI.sendInput`)
+- Routage key→scrcpy/ADB selon `key.length` : `src/main/main.js` (handler IPC `send-input`)
+- Conversion “string key → injection Android” : `src/native/scrcpy/control/adb-input-controller.js` (`AdbInputController.sendKey` + `KEYCODE_MAP`)
+
+#### 2) Couverture mapping (key → Android)
+Dans `session.js`, l’envoi suit cette règle (identique Type A et Type B) :
+`if (key.length === 1 || KEYCODE_MAP[key]) { ... sendInput({ type:"key", key }) }`.
+
+- Lettres `a-z` : `event.key` length==1 ⇒ chemin “texte” (`shell input text "<lettre>"`)
+- Chiffres/symboles : length==1 ⇒ “texte”
+- ESPACE : `event.key` = `" "` ⇒ length==1 ⇒ chemin **“texte”** (`shell input text " "`)
+- Enter / Backspace / Escape / Tab / Arrows / Home / Back / Menu / Delete / VolumeUp/VolumeDown / Power :
+  - `event.key` est une chaîne (ex: `"Enter"`, `"Escape"`, `"ArrowUp"`)
+  - Présente dans la table `KEYCODE_MAP` du renderer ⇒ envoi `"Enter"`, etc.
+  - Côté `adb-input-controller.js`, ces chaînes mappent vers des **keyevent** (ex: Enter→66, Escape→4, etc.)
+
+#### 3) Cause la plus probable pour ESPACE
+- `KEYCODE_MAP` du renderer ne couvre pas l’espace (pas d’entrée pour `" "`).
+- Comme `" "` a `length===1`, la touche ESPACE n’est **jamais** envoyée comme keyevent KEYCODE_SPACE=62.
+- Résultat : ESPACE est injecté via `shell input text " "` plutôt qu’un `keyevent 62`.
+- Beaucoup d’apps (jeux / UI non-text) réagissent à KEYCODE_SPACE, pas à l’injection “texte”.
+
+#### 4) Touches “pattern similaire” à surveiller
+Toute touche qui arrive en `event.key` avec `length===1` suit le même chemin “texte” :
+- espace `" "` (déjà problématique)
+- éventuellement d’autres whitespace si elles arrivent comme single-char (`\u00A0`, etc.)
+- (les lettres/chiffres/symboles sont aussi single-char, mais chez toi elles semblent OK)
+
+#### 5) Correctif proposé (en attente de validation)
+Minimal (LOCK) : dans `src/native/scrcpy/control/adb-input-controller.js`, dans `sendKey(key)` :
+- si `key === " "` (et idéalement `\u00A0`) ⇒ envoyer `shell input keyevent 62` (au lieu de `shell input text " "`).
+
 **⚠️ LOCK :** fichiers input natifs — ne pas modifier sans validation.
 
 ---

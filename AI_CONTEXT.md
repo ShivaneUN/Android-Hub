@@ -216,3 +216,9 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 5. Pour la **sidebar rétractable** : wrapper shell uniquement — voir § Sidebar rétractable LOCK.
 6. Pour le **mode Stream Deck** : bounds + overlay uniquement — voir § Mode Stream Deck LOCK ; ne pas toucher scrcpy-socket / new-instance-manager / session.js input.
 7. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
+
+---
+
+## Journal des micro-changements (validés)
+
+- 2026-07-08 — `src/native/scrcpy/control/adb-input-controller.js` — `sendKey(key)` : cas `key === " "` ⇒ `shell input ... keyevent 62` (insertion au voisinage de la ligne 234). Raison : la barre espace était injectée via le chemin `shell input ... text " "` (key.length==1) au lieu du `KEYCODE_SPACE` attendu par certaines apps.

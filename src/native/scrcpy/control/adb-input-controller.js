@@ -228,6 +228,13 @@ class AdbInputController {
     async sendKey(key) {
         const prefix = this._displayPrefix();
 
+        // Spacebar is injected by the renderer as event.key === " " (single-char),
+        // which would otherwise take the "text" path. Some apps expect KEYCODE_SPACE (62),
+        // so we force a keyevent for the physical spacebar.
+        if (key === " ") {
+            return this._runAdb(`shell input ${prefix}keyevent 62`);
+        }
+
         if (key.length === 1) {
             const escaped = key.replace(/([$`"\\])/g, "\\$1");
             return this._runAdb(`shell input ${prefix}text "${escaped}"`);
