@@ -2,7 +2,7 @@
 
 > **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Dernière mise à jour : 2026-07-07
+Dernière mise à jour : 2026-07-08
 
 ---
 
@@ -11,6 +11,7 @@ Dernière mise à jour : 2026-07-07
 ### Audio — LOCK
 
 - Capture audio, lancement Type A / Type B avec son PC, mute global OFF (silence).
+- **Défaut au démarrage (LOCK 2026-07-08) : audio global OFF** — `globalMuted: true` ; Type B `streamOptions.audio: false` ; toggle sidebar pour activer.
 - Fichiers concernés (ne pas modifier sans accord) :
   - `src/main/managers/global-audio-output-manager.js`
   - `src/main/managers/session-audio-process-manager.js`
@@ -21,8 +22,24 @@ Dernière mise à jour : 2026-07-07
 
 **Comportement attendu (déjà validé) :**
 
+- **Démarrage Hub** : audio global **OFF** (badge OFF, pas de capture jusqu'au toggle utilisateur).
 - **Audio ON (global)** : processus scrcpy dédié `--no-video` par session → son PC ; device muet côté OS.
 - **Audio OFF (global)** : arrêt des processus audio + pas de capture socket Hub.
+- **Type B nouveau lancement** : `audio: false` dans payload create (pas d'audio scrcpy externe tant que l'utilisateur n'a pas activé le son global).
+
+### Multi-appareils & polling devices — LOCK (validé 2026-07-08, `973a28a`)
+
+> Ne pas casser la liste devices, les labels d'onglets distincts, ni le routage input serial quand 2+ appareils sont connectés.
+
+| Fichier | Règle |
+|---------|-------|
+| `src/renderer/devices.js` | Fonction interne `pollDeviceList()` ; éviter collision nom global `refreshDevices` |
+| `src/renderer/new-session.js` | Label Type B = `{deviceName} — {appLabel}` ; `stableDeviceId` propagé |
+| `src/main/main.js` | Pas d'invalidation cache serial ADB sur chaque `get-devices` |
+| `src/main/ipc/sessionHandlers.js` | `stableDeviceId` dans labels et `getInputContext` |
+| `src/renderer/session/session.js` | Type B : pas d'auto-`activateSession` au chargement BrowserView |
+
+Référence : `PROGRESS_CHECK.md` § Multi-appareils & polling devices.
 
 ### Input — LOCK DÉFINITIF (validé 2026-07-05)
 

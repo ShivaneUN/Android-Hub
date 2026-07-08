@@ -1,4 +1,4 @@
-﻿/**
+/**
  * new-session.js
  *
  * UI Type B (Nouvelle instance) uniquement:
@@ -829,7 +829,7 @@ async function launchTypeBSession({
     const streamOptions = {
         stayAwake: true,
         turnScreenOff: true,
-        audio: true
+        audio: false
     };
 
     const payload = {

@@ -29,7 +29,7 @@
 
     async function refreshGlobalAudioToggle() {
         if (!window.audioAPI?.getGlobalState) {
-            setGlobalAudioToggleState(true);
+            setGlobalAudioToggleState(false);
             return;
         }
 
@@ -38,7 +38,7 @@
             setGlobalAudioToggleState(!state?.globalMuted);
         } catch (err) {
             console.error("[GlobalAudioToggle] Erreur lecture etat:", err);
-            setGlobalAudioToggleState(true);
+            setGlobalAudioToggleState(false);
         }
     }
 

@@ -1,6 +1,6 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-07
+Dernière mise à jour : 2026-07-08
 
 ---
 
@@ -788,6 +788,7 @@ Livrable détaillé : **[LOGS_STRUCTURE.md](./LOGS_STRUCTURE.md)**
 | Domaine | Statut | Commit / note |
 |---------|--------|----------------|
 | Audio capture + son PC Type A/B | ✅ LOCK | Validé utilisateur |
+| **Audio OFF par défaut au démarrage** | ✅ **LOCK** | **2026-07-08** — `globalMuted: true`, Type B `audio: false` |
 | Mute global OFF (silence) | ✅ LOCK | Validé utilisateur |
 | **Input global (Type A/B, USB/WiFi, portrait/paysage)** | ✅ **LOCK DÉFINITIF** | **2026-07-05** — voir § ci-dessous |
 | Input Type A multi-fenêtres | ✅ LOCK | `c23e7cb` (inclus dans lock définitif) |
@@ -796,6 +797,7 @@ Livrable détaillé : **[LOGS_STRUCTURE.md](./LOGS_STRUCTURE.md)**
 | `new-instance-manager.js` | ✅ LOCK | Section 13 |
 | `adb-input-controller.js` | ✅ LOCK | Input ADB / display virtuel (2026-07-05) |
 | **Noms appareils & onglets (USB/WiFi)** | ✅ **LOCK** | **2026-07-05** — `custom-names-manager.js`, `namesHandlers.js` |
+| **Multi-appareils (poll, labels, input cache)** | ✅ **LOCK** | **2026-07-08** — `973a28a` — voir § ci-dessous |
 | Toggle Audio ON/OFF (bouton) | ✅ OK | Voir section ci-dessous |
 
 **Aucune modification sur ces zones sans accord explicite.**
@@ -861,9 +863,20 @@ Référence : `AI_CONTEXT.md` § Noms appareils & onglets — LOCK.
 
 ---
 
-## Toggle Audio ON/OFF — état du bouton (2026-07-04)
+## Toggle Audio ON/OFF — état du bouton (2026-07-04, défaut OFF 2026-07-08)
 
-**Verdict : fonctionnel tel quel — aucune correction code nécessaire.**
+**Verdict : fonctionnel — défaut OFF au démarrage (LOCK 2026-07-08).**
+
+### Défaut au démarrage (LOCK)
+
+| Élément | Valeur | Fichier |
+|---------|--------|---------|
+| Mute global initial | `globalMuted: true` (OFF) | `global-audio-output-manager.js` |
+| UI sidebar | Badge OFF, icône coupée | `index.html`, `GlobalAudioToggle.js` |
+| Hub renderer fallback | `globalMuted: true` | `session-audio-hub.js` |
+| Type B création session | `audio: false` dans `streamOptions` | `new-session.js` |
+
+L'utilisateur active le son via le toggle sidebar (ON). Ne pas remettre audio ON par défaut sans accord explicite.
 
 ### Comportement vérifié (câblage)
 
@@ -3206,9 +3219,35 @@ Le panneau et la sidebar **passent** `deviceId` stable au dialogue (`DevicesPane
 
 ---
 
+## ⚠️ MULTI-APPAREILS & POLLING DEVICES — LOCK (2026-07-08)
+
+> Validé commit `973a28a`. Ne pas réintroduire les régressions corrigées (liste vide, même nom d'onglet, input perdu à 2 devices).
+
+### Fichiers concernés
+
+| Fichier | Rôle LOCK |
+|---------|-----------|
+| `src/renderer/devices.js` | `pollDeviceList()` — **ne jamais** réassigner `window.refreshDevices` à une fn qui s'appelle elle-même via le nom global `refreshDevices` |
+| `src/renderer/new-session.js` | Labels Type B : `Appareil — App` ; `stableDeviceId` au launch ; `fetchConnectedDevices({ force: true })` à l'ouverture panneau |
+| `src/main/main.js` | **Pas** de `invalidateSessionAdbSerialCache()` dans `get-devices` (poll 8 s) — invalidation uniquement à la fermeture session |
+| `src/main/ipc/sessionHandlers.js` | `stableDeviceId` dans `resolveSessionLabel` et `session:getInputContext` |
+| `src/renderer/session/session.js` | Type B : **pas** d'`activateSession` au bootstrap (évite vol de focus input) |
+
+### Comportements validés
+
+- 2 appareils USB connectés : liste sidebar + panneau Nouvelle instance OK
+- Onglets Type B distincts : `Xiaomi tab 5 — App` / `Xiaomi Tab 6 — App`
+- Input : clic onglet cible avant interaction ; cache serial stable entre polls
+
+Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
+
+---
+
 ## Historique récent
 
-- **2026-07-05** — Diagnostic + fix Renommer onglets/fenêtres USB/WiFi (clé session stable).
+- **2026-07-08** — **LOCK** — Audio OFF par défaut (`globalMuted: true`, Type B `audio: false`, UI badge OFF).
+- **2026-07-08** — **LOCK** — Multi-appareils + polling devices (`973a28a`) : `pollDeviceList`, labels Type B, cache serial poll, découverte appareils Paramètres.
+- **2026-07-07** — Fix multi-device sessions, polling, device discovery (`973a28a`).
 - **2026-07-05** — Fix critique input global + isolation orientation Type B (F1–F7). : layout sans reset 60fps, hystérésis remap, seuil coords mappées, guards pointer.
 - **2026-07-05** — Fix bouton orientation portrait WiFi (F1–F5) : serial résolu, canvas +90° fixe au toggle, délai WiFi post-rotation.
 - **2026-07-05** — **LOCK validé** — Fix orientation vidéo (flux à l'envers USB/WiFi) : `stream-params.js`, `device-orientation-manager.js`, `main.js`, `session.js`, `scrcpy-socket.js`.

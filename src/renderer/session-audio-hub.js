@@ -11,7 +11,7 @@
     /** @type {Map<string, ReturnType<typeof createSessionAudioPlayer>>} */
     const players = new Map();
     let activeSessionId = null;
-    let globalMuted = false;
+    let globalMuted = true;
 
     function resolveSessionId(data) {
         return data?.sessionId || data?.tabId || null;
@@ -77,7 +77,7 @@
             globalMuted = Boolean(state?.globalMuted);
             syncMuteState();
         } catch (_err) {
-            globalMuted = false;
+            globalMuted = true;
         }
     }
 

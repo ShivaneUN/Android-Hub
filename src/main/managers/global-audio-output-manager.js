@@ -6,7 +6,7 @@
 class GlobalAudioOutputManager {
     constructor() {
         /** @type {boolean} true = son PC coupé (OFF) */
-        this.globalMuted = false;
+        this.globalMuted = true;
         /** @type {((muted: boolean) => Promise<void>)|null} */
         this._onMuteStateChanged = null;
     }
