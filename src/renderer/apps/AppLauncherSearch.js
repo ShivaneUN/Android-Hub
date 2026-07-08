@@ -4,7 +4,8 @@
  */
 (function initAppLauncherSearch(global) {
     const t = (key, vars) => global.HubI18n?.t(key, vars) ?? key;
-    const DEFAULT_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><circle cx="12" cy="12" r="2.5"/></svg>`;
+    const DEFAULT_ICON_SVG = globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
+        || `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="#3d4f6f"/></svg>`;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -246,7 +247,10 @@
             if (iconSrc) {
                 return `<span class="new-instance-app-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`;
             }
-            return `<span class="new-instance-app-icon">${DEFAULT_ICON_SVG}</span>`;
+            if (global.HubAppIconPlaceholder?.wrapNewInstanceAppIconPlaceholder) {
+                return global.HubAppIconPlaceholder.wrapNewInstanceAppIconPlaceholder();
+            }
+            return `<span class="new-instance-app-icon is-placeholder">${DEFAULT_ICON_SVG}</span>`;
         }
 
         render(apps) {

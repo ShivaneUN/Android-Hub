@@ -71,9 +71,10 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                 const historyDeviceId = stableDeviceId || session.serial;
                 if (global.appMetadataManager) {
                     const cached = global.appMetadataManager.getCachedEntry(
-                        session.serial,
+                        historyDeviceId,
                         session.packageName,
-                        session.userId
+                        session.userId,
+                        { transportSerial: session.serial }
                     );
                     iconPath = cached?.iconPath || null;
                 }

@@ -60,6 +60,7 @@ class AdbInputController {
         this.captureRotation = 0;
         this.displayId = null;
         this._activeTouch = null;
+        this._activeTouchStart = null;
         this._activeTouchAt = 0;
     }
 
@@ -173,7 +174,11 @@ class AdbInputController {
             : this._normalizeCoordinate(normX, normY);
         const prefix = this._displayPrefix();
 
+        const LONG_PRESS_MIN_MS = 400;
+        const TAP_MOVE_TOLERANCE = 12;
+
         if (type === "down") {
+            this._activeTouchStart = { x, y };
             this._activeTouch = { x, y };
             this._activeTouchAt = Date.now();
             return;
@@ -187,18 +192,24 @@ class AdbInputController {
         }
 
         if (type === "up") {
-            const start = this._activeTouch || { x, y };
+            const start = this._activeTouchStart || this._activeTouch || { x, y };
+            const end = { x, y };
             const heldMs = this._activeTouchAt > 0 ? Date.now() - this._activeTouchAt : 0;
             this._activeTouch = null;
+            this._activeTouchStart = null;
             this._activeTouchAt = 0;
-            if (start.x === x && start.y === y) {
-                if (heldMs >= 400) {
-                    const duration = Math.min(Math.max(heldMs, 400), 3000);
-                    return this._runAdb(`shell input ${prefix}swipe ${x} ${y} ${x} ${y} ${duration}`);
+
+            const moveDistance = Math.hypot(end.x - start.x, end.y - start.y);
+            if (moveDistance <= TAP_MOVE_TOLERANCE) {
+                if (heldMs >= LONG_PRESS_MIN_MS) {
+                    const duration = Math.min(Math.max(heldMs, LONG_PRESS_MIN_MS), 3000);
+                    return this._runAdb(
+                        `shell input ${prefix}swipe ${start.x} ${start.y} ${start.x} ${start.y} ${duration}`
+                    );
                 }
-                return this._runAdb(`shell input ${prefix}tap ${x} ${y}`);
+                return this._runAdb(`shell input ${prefix}tap ${start.x} ${start.y}`);
             }
-            return this._runAdb(`shell input ${prefix}swipe ${start.x} ${start.y} ${x} ${y} 150`);
+            return this._runAdb(`shell input ${prefix}swipe ${start.x} ${start.y} ${end.x} ${end.y} 150`);
         }
 
         if (type === "tap") {

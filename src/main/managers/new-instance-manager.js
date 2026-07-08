@@ -695,7 +695,9 @@ class NewInstanceManager extends EventEmitter {
             && client.controlSocket.writable
         );
 
-        if (hasLiveControl && type === "touch") {
+        const preferAdbTouchForVirtualDisplay = hasVirtualDisplay && type === "touch";
+
+        if (hasLiveControl && type === "touch" && !preferAdbTouchForVirtualDisplay) {
             try {
                 logParts.push("path=scrcpy");
                 console.log(logParts.join(" "));

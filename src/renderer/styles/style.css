@@ -209,10 +209,9 @@ html, body {
 }
 
 .scrcpy-tab .tab-app-icon.is-placeholder svg {
-  width: 11px;
-  height: 11px;
-  stroke: var(--text-muted);
-  fill: none;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .device-color-pill {
@@ -1425,11 +1424,24 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   object-fit: cover;
 }
 
+.new-instance-app-icon.is-placeholder {
+  background: #1a1f29;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .new-instance-app-icon svg {
   width: 18px;
   height: 18px;
   stroke: #5b6373;
   fill: none;
+}
+
+.new-instance-app-icon.is-placeholder svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  stroke: none;
+  fill: initial;
 }
 
 .new-instance-app-main {
@@ -1586,8 +1598,18 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .new-instance-history-list .app-list-item-icon svg {
   width: 18px;
   height: 18px;
+}
+
+.new-instance-history-list .app-list-item-icon svg[stroke-width] {
   stroke: #5b6373;
   fill: none;
+}
+
+.new-instance-history-list .app-list-item-icon > svg:not([stroke-width]),
+.new-instance-history-list .app-list-item-icon svg.hub-app-icon-placeholder {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .new-instance-history-list .app-list-item-main {

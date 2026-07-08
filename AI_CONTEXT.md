@@ -59,7 +59,7 @@ Référence : `PROGRESS_CHECK.md` § Multi-appareils & polling devices.
 
 - **Type A paysage** — USB/WiFi : clic, drag, clic long, BACK (clic droit), clavier.
 - **Type A portrait** — remap canvas +90° (interim flux paysage), coords sur toute la surface ; flux portrait natif sans remap.
-- **Type B** — display virtuel : coords canvas directes ; hub ADB `input -d displayId` ; USB/WiFi.
+- **Type B** — display virtuel : coords canvas directes ; hub ADB `input -d displayId` ; clic long (maintien ≥400 ms, tolérance 12 px) ; USB/WiFi.
 - **Multi-fenêtres** — commit `c23e7cb` ; fallback ADB Type A ; fallback `routeInputToSession` Type B.
 
 **Règles pour toute évolution future :**
@@ -158,10 +158,12 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 - Fallback ADB quand le socket contrôle scrcpy est absent.
 - Vérification `result.success === false` côté renderer.
 
-### Input Type B — LOCK (historique `c23e7cb`, étendu 2026-07-05)
+### Input Type B — LOCK (historique `c23e7cb`, étendu 2026-07-05, clic long 2026-07-08)
 
 - Routage touch display virtuel via hub ADB + `displayId`.
-- Fallback vers `routeInputToSession` conservé (sans modifier `new-instance-manager.js`).
+- Clic long : synthèse ADB `swipe` même point (400–3000 ms) ; `_activeTouchStart` + tolérance 12 px (`adb-input-controller.js`).
+- Touch display virtuel : fallback `routeInputToSession` → ADB (pas scrcpy) si `displayId` (`new-instance-manager.js`).
+- Contrôleur ADB unifié hub ↔ session (`main.js` réutilise `session.inputController`).
 
 **Fichiers core scrcpy / Type B (LOCK — ne jamais modifier sans accord) :**
 
@@ -221,4 +223,8 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-08 — **LOCK** — Clic long Type B : `adb-input-controller.js` (`_activeTouchStart`, tolérance 12 px, seuil 400 ms), `new-instance-manager.js` (touch display virtuel → ADB, pas scrcpy), `main.js` (contrôleur ADB session unifié). Raison : long press KO (micro-mouvements + chemin scrcpy sans synthèse).
+- 2026-07-08 — `src/renderer/apps/app-list.css`, `src/renderer/styles/style.css` (historique), `src/shared/app-icon-placeholder.js` (classe `hub-app-icon-placeholder`) — `fill: none` limité aux SVG stroke ; placeholder historique visible. Raison : carré gris dans liste historique Nouvelle instance.
+- 2026-07-08 — `src/renderer/new-session.js` — Après chargement apps : prefetch métadonnées une seule fois par appareil connecté + refresh silencieux (500 ms) ; plus de prefetch à chaque recherche/filtre tant que l'appareil reste connecté.
+- 2026-07-08 — `src/main/managers/app-icon-extractor.js`, `src/main/managers/app-metadata-manager.js`, `src/main/ipc/appMetadataHandlers.js`, `src/main/ipc/new-instance-ipc.js` — Icônes apps : scan multi-APK (splits), parsing adaptive-icon XML → raster PNG/WebP (priorité legacy `ic_launcher` inchangée), lookup cache avec fallback clé transport → `stableDeviceId` (migration lazy sans ré-scan au démarrage), compteur `iconAttempts` max 3 dans `app-metadata-cache.json` avant abandon extraction. Raison : placeholders gris (Ar Core, Avod, Cast Webvideo) ; zéro latence bloquante liste/sidebar.
 - 2026-07-08 — `src/native/scrcpy/control/adb-input-controller.js` — `sendKey(key)` : cas `key === " "` ⇒ `shell input ... keyevent 62` (insertion au voisinage de la ligne 234). Raison : la barre espace était injectée via le chemin `shell input ... text " "` (key.length==1) au lieu du `KEYCODE_SPACE` attendu par certaines apps.

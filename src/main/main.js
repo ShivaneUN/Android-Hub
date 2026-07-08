@@ -1415,7 +1415,11 @@ async function listDevicesForUI() {
         y2
     }) {
         let controller = inputControllersBySession[routingId];
-        if (!controller || controller.serial !== resolvedDeviceId) {
+        const sessionController = typeBSession?.inputController;
+        if (sessionController?.serial === resolvedDeviceId) {
+            controller = sessionController;
+            inputControllersBySession[routingId] = sessionController;
+        } else if (!controller || controller.serial !== resolvedDeviceId) {
             controller = await getOrCreateSessionInputController(routingId, resolvedDeviceId);
         }
         syncInputControllerCaptureRotation(controller, routingId, typeBSession);

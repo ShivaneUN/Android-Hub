@@ -45,7 +45,7 @@ function attachAppMetadataPrefetch(deviceManager, appMetadataManager) {
 
     deviceManager.getInstalledAppsWithDetails = async (serial) => {
         const apps = await originalGetInstalledAppsWithDetails(serial);
-        return appMetadataManager.enrichApps(serial, apps);
+        return await appMetadataManager.enrichApps(serial, apps);
     };
 }
 

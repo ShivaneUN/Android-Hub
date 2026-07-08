@@ -4,6 +4,174 @@ Dernière mise à jour : 2026-07-08
 
 ---
 
+## DIAGNOSTIC — Icônes applications manquantes (2026-07-08)
+
+**Statut : Étape 1 terminée (lecture seule, aucun patch).**  
+**Symptôme :** placeholder gris (SVG) au lieu du vrai logo — ex. Ar Core, Avod Thirdparty client, Cast Webvideo ; Ankama Dofustouch OK.  
+**Zones concernées :** panneau « Nouvelle instance » + sidebar onglets/fenêtres.
+
+### 1. Source commune ou chemins séparés ?
+
+| Couche | Rôle | Fichier(s) |
+|--------|------|------------|
+| **Extraction APK** | Pull `base.apk` → `tar -xf` → recherche PNG/WebP | `src/main/managers/app-icon-extractor.js` |
+| **Orchestration + cache** | `resolveOne`, `enrichApps`, `queuePrefetch` | `src/main/managers/app-metadata-manager.js` |
+| **IPC** | `app-metadata:resolve`, `app-metadata:prefetch` ; hook liste apps | `src/main/ipc/appMetadataHandlers.js` |
+| **Preload** | `resolveAppMetadata`, `prefetchAppMetadata`, `onAppMetadataUpdated`, `getAppsWithDetails` | `src/preload/preload.js` |
+| **UI Nouvelle instance** | Affichage liste + prefetch | `src/renderer/new-session.js`, `src/renderer/apps/AppLauncherSearch.js`, `src/renderer/apps/AppList.js` |
+| **UI Sidebar onglets** | Placeholder immédiat + résolution async | `src/renderer/sidebar/Sidebar.js` |
+| **Styles placeholder** | Gris SVG | `src/renderer/styles/style.css` (`.tab-app-icon.is-placeholder`, `.new-instance-app-icon svg`) |
+
+**Verdict :** les deux affichages utilisent **la même source backend** (`AppMetadataManager` + `AppIconExtractor`) et les **mêmes champs** (`iconUrl` / `iconPath`). Pas de deuxième extracteur parallèle.
+
+**Différence :** deux composants UI indépendants (rendu HTML séparé), mais alimentés par le même pipeline IPC/cache.
+
+### 2. Cache d'icônes
+
+| Type | Emplacement | Clé | Partagé ? |
+|------|-------------|-----|-----------|
+| **Index JSON** | `{userData}/app-metadata-cache.json` | `deviceId::packageName::userId` | Oui (main process) |
+| **Fichiers PNG** | `{userData}/app-icons/{deviceId}/{package}[@uN].png` | segment deviceId + package | Oui |
+| **Renderer sidebar** | `sessionIconCache` (`Map` en mémoire) | `stableDeviceId\|\|deviceId::package::userId` | Non persistant ; hydratation via `app-metadata:updated` |
+| **TTL** | 7 jours (`CACHE_TTL_MS`) | — | Entrées avec `iconPath: null` comptées **fraîches** → pas de retry prefetch |
+
+**Incohérence de clé deviceId (secondaire, pas cause per-app) :**
+
+| Appelant | Clé `deviceId` utilisée |
+|----------|---------------------------|
+| `enrichApps` / `getAppsWithDetails` / prefetch Nouvelle instance | **Serial ADB transport** (`selectedDevice.serial`) |
+| `Sidebar.resolveSessionTabIcon` | **`stableDeviceId \|\| deviceId`** |
+| `new-instance-ipc.js` lecture cache historique | **`session.serial`** (transport) mais enregistrement avec `stableDeviceId \|\| serial` |
+
+→ Sur WiFi (`ip:port` vs `ro.serialno`), cache disque et hydratation sidebar peuvent diverger. **Ne explique pas** pourquoi Dofustouch OK et Ar Core KO sur le **même** appareil.
+
+### 3. Flux de données (sans latence bloquante sur liste / onglet)
+
+```
+getAppsWithDetails(serial)
+  → device-manager.js (packages + labels pm list uniquement, pas d'icône)
+  → enrichApps(serial) : merge cache JSON uniquement (sync, pas d'ADB extract)
+  → UI affiche placeholder si iconUrl absent
+
+prefetch (debounce 450 ms, max 16 apps, concurrency 2)
+  → queuePrefetch(serial) → resolveOne → extractIcon (async)
+  → notify app-metadata:updated → new-session.js + Sidebar.js
+
+Ouverture onglet sidebar
+  → placeholder SVG immédiat (renderTabAppIcon)
+  → resolveSessionTabIcon → app-metadata:resolve (async, non bloquant)
+```
+
+**Confirmé :** le chargement liste et l'ouverture d'onglet ne bloquent pas sur l'extraction APK (déjà async + placeholder).
+
+### 4. Cause probable des échecs (apps citées)
+
+**Extraction limitée** (`app-icon-extractor.js`) :
+
+| Ligne | Comportement | Limite |
+|-------|--------------|--------|
+| 84–96 | `pm path` → **seul `base.apk`** retenu | Ressources icône souvent dans **split APK** (`split_config.*.apk`) |
+| 41–54 | `walkFiles` : extensions **`.png` / `.webp` uniquement** | Ignore XML adaptive-icon, vector drawable |
+| 9–18 | Priorité `ic_launcher` mipmap/drawable | Ne parse pas `res/mipmap-anydpi-v26/ic_launcher.xml` |
+| 120–122 | `tar -xf` sur base.apk | Si icône uniquement en adaptive XML ou split → `findBestIconFile` → `null` |
+
+**Format réel des apps en échec (analyse statique, non vérifiée sur device — ADB indisponible dans l'environnement de diagnostic) :**
+
+| App (nom UI) | Package probable | Format attendu |
+|--------------|------------------|----------------|
+| Ar Core | `com.google.ar.core` | Adaptive icon API 26+ ; splits ressources Google Play |
+| Avod Thirdparty client | (tierce, nom pm list) | Packaging moderne, souvent adaptive + splits |
+| Cast Webvideo | (tierce) | Idem |
+| Ankama Dofustouch | `com.ankama.dofustouch` (probable) | **PNG legacy** `mipmap-*/ic_launcher.png` dans base.apk → extraction OK |
+
+**À valider en Étape 3 sur device :** `adb shell pm path <pkg>` puis inspection `tar -tf` / listing `res/mipmap*` de chaque APK retourné.
+
+### 5. Fallback en cas d'échec
+
+| Zone | Comportement |
+|------|--------------|
+| `app-icon-extractor.js:122` | `return null` silencieux si aucun candidat |
+| `app-metadata-manager.js:211–224` | Catch log warn ; `setCachedEntry` avec **`iconPath: null`** (cache négatif 7 jours) |
+| `new-session.js:145–150`, `AppLauncherSearch.js:244–249` | SVG placeholder (carré gris) si pas `iconUrl`/`iconPath` |
+| `Sidebar.js:45–49, 87–90` | Classe `is-placeholder` + SVG ; **ne met en cache renderer que si `iconUrl` truthy** |
+| `Sidebar.js:91–92` | Erreur IPC : `catch` vide (silencieux) |
+
+Pas de logo générique distinct du placeholder : l'utilisateur voit le **même SVG gris** partout.
+
+### 6. Fichiers et lignes en cause
+
+| Fichier | Lignes | Problème |
+|---------|--------|----------|
+| `app-icon-extractor.js` | 84–96, 110–122, 41–71 | base.apk seul ; PNG/WebP only ; pas adaptive/splits |
+| `app-metadata-manager.js` | 78–83, 190–224, 272–275 | Cache négatif `iconPath:null` frais 7j ; prefetch skip si cache hit |
+| `appMetadataHandlers.js` | 41–49, 4–21 | Hook enrich (OK) ; resolve utilise `deviceId` tel quel pour ADB |
+| `new-session.js` | 145–150, 220–241, 574, 1229–1238 | Rendu + prefetch serial ; écoute updates |
+| `AppLauncherSearch.js` | 244–249, 201–222 | Idem Nouvelle instance (composant recherche) |
+| `Sidebar.js` | 38–43, 45–49, 73–95, 431–442 | Clé stableDeviceId ; placeholder ; hydratation |
+| `new-instance-ipc.js` | 73–78 | Lookup cache sur `session.serial` ≠ clé sidebar stable |
+| `style.css` | ~190–211, ~1410–1428 | Style placeholder gris |
+
+**Fichiers LOCK — non touchés :** `scrcpy-socket.js`, `new-instance-manager.js`, `createSession()`, input, `--new-display`, sessions Type A/B.
+
+### 7. Proposition de correctif (Étape 2 — en attente validation utilisateur)
+
+**Piste unique backend** (corrige les deux UI d'un coup car source commune) :
+
+1. **`app-icon-extractor.js`** — enrichir l'extraction sans bloquer l'UI :
+   - Parcourir **tous** les APK retournés par `pm path` (pas seulement `base.apk`).
+   - Si aucun PNG/WebP launcher classique : parser `res/mipmap-anydpi-v26/ic_launcher.xml` (adaptive-icon) et résoudre les layers foreground/background en PNG/WebP dans les mêmes APK.
+   - Conserver la priorité actuelle `ic_launcher` mipmap pour ne pas casser Dofustouch.
+
+2. **`app-metadata-manager.js`** — cache :
+   - **Ne pas** traiter `iconPath: null` comme cache frais bloquant (retry prefetch / resolve), ou TTL court pour échecs.
+   - **Normaliser la clé cache** sur `stableDeviceId` ; résoudre le serial ADB transport uniquement pour les commandes `adb` (via `deviceRegistry.resolveEffectiveAdbSerial` — pattern déjà utilisé ailleurs, hors LOCK input).
+
+3. **Pas de changement UI obligatoire** si le backend renvoie `iconUrl` ; optionnel : unifier la clé `sessionIconCache` côté sidebar si normalisation deviceId.
+
+**Risques identifiés :**
+
+| Risque | Mitigation |
+|--------|------------|
+| Latence prefetch si multi-pull splits | Rester async ; concurrency 2 inchangée ; premier candidat trouvé short-circuit |
+| Régression Dofustouch | Tester en priorité ; garder `ICON_ENTRY_PRIORITY` actuel en premier pass |
+| Invalidation cache existant (changement clé deviceId) | Re-extract async one-shot ; liste/onglets restent avec placeholder jusqu'à prefetch |
+| Adaptive XML edge cases (vector only) | Fallback placeholder explicite ; pas de blocage |
+| Patch UI double si backend insuffisant | Peu probable : même `iconUrl` consommé partout |
+| WiFi serial vs stable | Normalisation clé + resolve ADB amont évite miss sidebar ↔ liste |
+
+**Hors scope proposition :** `aapt`/`apkanalyzer` externe (dépendance lourde) ; screenshot launcher (trop lent).
+
+### 8. Prochaine étape
+
+**Implémenté 2026-07-08** — voir § Implémentation icônes ci-dessous.
+
+---
+
+## Implémentation — Icônes applications (2026-07-08)
+
+**Statut : patché (backend uniquement, zones LOCK respectées).**
+
+### Clarifications validées
+
+1. **Clé cache `stableDeviceId`** : lookup en cascade (`stableDeviceId` puis serial transport) ; migration lazy à la lecture (réécriture clé canonique, **même `iconPath`**, pas de re-extract). Aucune boucle au démarrage — `loadIndex()` reste lecture JSON seule.
+2. **Retry cache négatif** : `iconAttempts` dans `app-metadata-cache.json`, **max 3** (`MAX_ICON_EXTRACT_ATTEMPTS`), puis plus de prefetch/extract jusqu'au TTL 7 jours.
+
+### Fichiers modifiés
+
+| Fichier | Changement |
+|---------|------------|
+| `app-icon-extractor.js` | Multi-APK ; adaptive XML → foreground/background raster |
+| `app-metadata-manager.js` | Fallback clés, migration lazy, `iconAttempts`, resolve ADB serial |
+| `appMetadataHandlers.js` | `enrichApps` async |
+| `new-instance-ipc.js` | Lookup cache stable + fallback transport |
+
+### Latence
+
+- Liste apps / ouverture onglet : **inchangé** (placeholder immédiat, extract async prefetch/resolve).
+- Post-patch : **pas de ré-scan global** ; seules les apps affichées/prefetchées sans icône valide et `iconAttempts < 3` sont re-tentées.
+
+---
+
 ## AUDIT — Latence ouverture fenêtres/instances + réglages par défaut (2026-07-07)
 
 **Statut : audit lecture seule (aucune modification code LOCK).**
@@ -852,7 +1020,8 @@ Référence : `AI_CONTEXT.md` § Noms appareils & onglets — LOCK.
 | Parité USB/WiFi Phase 1–2 (identité, `adbSerialArg`) | ✅ RÉSOLU | Ne pas réouvrir |
 | Flux vidéo à l'envers (orientation capture) | ✅ RÉSOLU LOCK | `scrcpy-socket.js` validé |
 | Bouton orientation portrait WiFi | ✅ RÉSOLU | Amont `stream-params-manager` / `session.js` |
-| Clic long + BACK Type B WiFi (F1–F4) | ✅ RÉSOLU | Ne pas réouvrir |
+| Clic long Type B display virtuel (USB/WiFi) | ✅ RÉSOLU LOCK | `_activeTouchStart` + ADB virtuel (2026-07-08) |
+| Clic long + BACK Type B WiFi (F1–F4) | ✅ RÉSOLU LOCK | Ne pas réouvrir |
 | Input continu mode portrait WiFi/USB | ✅ RÉSOLU LOCK | `session.js` remap + drag guards (2026-07-05) |
 | Input cassé global post-orientation (R1) | ✅ RÉSOLU LOCK | Retrait pointerleave/lostpointercapture |
 | Input Type A portrait surface complète | ✅ RÉSOLU LOCK | Fix remap `canvasWidth` vs `canvasHeight` (2026-07-05) |
@@ -3283,6 +3452,9 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-08** — **LOCK validé** — Clic long Type B : `adb-input-controller.js`, `new-instance-manager.js`, `main.js` (synthèse swipe, ADB display virtuel, contrôleur unifié).
+- **2026-07-08** — Implémentation icônes apps : multi-APK, adaptive XML, cache fallback stableDeviceId, retry max 3 (`iconAttempts`), placeholder stylé, prefetch once + auto-refresh Nouvelle instance.
+- **2026-07-08** — Diagnostic icônes apps manquantes (Nouvelle instance + sidebar) : source commune `AppMetadataManager`/`AppIconExtractor`, cache partagé, faux positifs micro-PNG filtrés.
 - **2026-07-08** — **LOCK** — Audio OFF par défaut (`globalMuted: true`, Type B `audio: false`, UI badge OFF).
 - **2026-07-08** — **LOCK** — Multi-appareils + polling devices (`973a28a`) : `pollDeviceList`, labels Type B, cache serial poll, découverte appareils Paramètres.
 - **2026-07-07** — Fix multi-device sessions, polling, device discovery (`973a28a`).

@@ -3,6 +3,10 @@ const path = require("path");
 const { exec } = require("child_process");
 const { pathToFileURL } = require("url");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
+const {
+    MIN_ICON_FILE_BYTES,
+    isValidIconFileSize
+} = require("../../shared/app-icon-placeholder");
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 20000;
 
@@ -15,6 +19,21 @@ const ICON_ENTRY_PRIORITY = [
     /[/\\]res[/\\]mipmap-[^/\\]+[/\\].*launcher.*\.(png|webp)$/i,
     /[/\\]res[/\\]drawable-[^/\\]+[/\\]ic_launcher.*\.(png|webp)$/i,
     /[/\\]res[/\\]drawable-[^/\\]+[/\\].*icon.*\.(png|webp)$/i
+];
+
+const DPI_FOLDER_PRIORITY = [
+    "mipmap-xxxhdpi",
+    "mipmap-xxhdpi",
+    "mipmap-xhdpi",
+    "mipmap-hdpi",
+    "mipmap-mdpi",
+    "mipmap-ldpi",
+    "drawable-xxxhdpi",
+    "drawable-xxhdpi",
+    "drawable-xhdpi",
+    "drawable-hdpi",
+    "drawable-mdpi",
+    "drawable-ldpi"
 ];
 
 function execPromise(command, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS) {
@@ -38,12 +57,28 @@ function execWithTimeout(command, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS) {
     ]);
 }
 
+function isIconResourcePath(filePath) {
+    const norm = String(filePath || "").replace(/\\/g, "/");
+    if (/\/assets\//i.test(norm)) return false;
+    return /\/res\/(mipmap|drawable)/i.test(norm);
+}
+
+function hasLauncherOrIconName(filePath) {
+    const baseName = path.basename(filePath).toLowerCase();
+    return baseName.includes("launcher") || baseName.includes("icon");
+}
+
+function isValidIconCandidate(filePath) {
+    return isIconResourcePath(filePath) && isValidIconFileSize(filePath);
+}
+
 function walkFiles(dir, files = []) {
     if (!fs.existsSync(dir)) return files;
 
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
+            if (/^assets$/i.test(entry.name)) continue;
             walkFiles(fullPath, files);
         } else if (/\.(png|webp)$/i.test(entry.name)) {
             files.push(fullPath);
@@ -53,21 +88,127 @@ function walkFiles(dir, files = []) {
     return files;
 }
 
-function findBestIconFile(extractDir) {
-    const candidates = walkFiles(extractDir);
-    if (!candidates.length) return null;
+function walkXmlFiles(dir, files = []) {
+    if (!fs.existsSync(dir)) return files;
 
-    for (const pattern of ICON_ENTRY_PRIORITY) {
-        const match = candidates.find((filePath) => pattern.test(filePath.replace(/\\/g, "/")));
-        if (match) return match;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            walkXmlFiles(fullPath, files);
+        } else if (/\.xml$/i.test(entry.name)) {
+            files.push(fullPath);
+        }
     }
 
-    const mipmapCandidates = candidates
-        .filter((filePath) => /[/\\]res[/\\]mipmap-/i.test(filePath))
+    return files;
+}
+
+function collectValidIconCandidates(extractDir) {
+    return walkFiles(extractDir).filter(isValidIconCandidate);
+}
+
+function findBestIconFile(extractDir) {
+    const candidates = collectValidIconCandidates(extractDir);
+    if (!candidates.length) return null;
+
+    const normalizedCandidates = candidates.map((filePath) => ({
+        filePath,
+        norm: filePath.replace(/\\/g, "/")
+    }));
+
+    for (const pattern of ICON_ENTRY_PRIORITY) {
+        const match = normalizedCandidates.find(({ norm }) => pattern.test(norm));
+        if (match) return match.filePath;
+    }
+
+    const namedCandidates = normalizedCandidates
+        .filter(({ filePath, norm }) => hasLauncherOrIconName(filePath) && /\/res\/(mipmap|drawable)/i.test(norm))
+        .map(({ filePath }) => filePath)
+        .sort((a, b) => b.length - a.length);
+    if (namedCandidates.length) return namedCandidates[0];
+
+    const mipmapCandidates = normalizedCandidates
+        .filter(({ norm }) => /\/res\/mipmap-/i.test(norm) && hasLauncherOrIconName(norm))
+        .map(({ filePath }) => filePath)
         .sort((a, b) => b.length - a.length);
     if (mipmapCandidates.length) return mipmapCandidates[0];
 
-    return candidates[0];
+    const drawableCandidates = normalizedCandidates
+        .filter(({ norm }) => /\/res\/drawable-/i.test(norm) && hasLauncherOrIconName(norm))
+        .map(({ filePath }) => filePath)
+        .sort((a, b) => b.length - a.length);
+    if (drawableCandidates.length) return drawableCandidates[0];
+
+    return null;
+}
+
+function parseDrawableRef(xmlContent, tagName) {
+    const pattern = new RegExp(`<${tagName}[^>]*android:drawable=["']@([^/"']+)/([^"']+)["']`, "i");
+    const match = xmlContent.match(pattern);
+    if (!match) return null;
+    return { type: match[1], name: match[2] };
+}
+
+function findAdaptiveLauncherXml(extractDir) {
+    const xmlFiles = walkXmlFiles(extractDir);
+    const launcherXml = xmlFiles
+        .filter((filePath) => /[/\\]res[/\\]mipmap-anydpi[^/\\]*[/\\]ic_launcher\.xml$/i.test(filePath.replace(/\\/g, "/")))
+        .sort((a, b) => a.length - b.length);
+    if (launcherXml.length) return launcherXml[0];
+
+    return xmlFiles.find((filePath) => /ic_launcher\.xml$/i.test(filePath)) || null;
+}
+
+function resolveResourceFile(extractDir, resourceType, resourceName) {
+    const resDir = path.join(extractDir, "res");
+    if (!fs.existsSync(resDir)) return null;
+
+    const folderPrefix = resourceType.startsWith("drawable") ? "drawable" : "mipmap";
+    const orderedFolders = DPI_FOLDER_PRIORITY.filter((folder) => folder.startsWith(folderPrefix));
+
+    for (const folder of orderedFolders) {
+        const folderPath = path.join(resDir, folder);
+        if (!fs.existsSync(folderPath)) continue;
+        for (const ext of ["png", "webp"]) {
+            const candidate = path.join(folderPath, `${resourceName}.${ext}`);
+            if (isValidIconCandidate(candidate)) return candidate;
+        }
+    }
+
+    for (const entry of fs.readdirSync(resDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (!entry.name.startsWith(folderPrefix)) continue;
+        for (const ext of ["png", "webp"]) {
+            const candidate = path.join(resDir, entry.name, `${resourceName}.${ext}`);
+            if (isValidIconCandidate(candidate)) return candidate;
+        }
+    }
+
+    return null;
+}
+
+function findAdaptiveIconRaster(extractDir) {
+    const xmlPath = findAdaptiveLauncherXml(extractDir);
+    if (!xmlPath) return null;
+
+    let xmlContent = "";
+    try {
+        xmlContent = fs.readFileSync(xmlPath, "utf-8");
+    } catch (_err) {
+        return null;
+    }
+
+    const foreground = parseDrawableRef(xmlContent, "foreground");
+    const background = parseDrawableRef(xmlContent, "background");
+
+    const foregroundFile = foreground
+        ? resolveResourceFile(extractDir, foreground.type, foreground.name)
+        : null;
+    const backgroundFile = background
+        ? resolveResourceFile(extractDir, background.type, background.name)
+        : null;
+
+    return foregroundFile || backgroundFile || null;
 }
 
 function sanitizeFileSegment(value) {
@@ -76,23 +217,38 @@ function sanitizeFileSegment(value) {
         .slice(0, 120);
 }
 
+function sortApkPaths(apkPaths = []) {
+    const unique = [...new Set(apkPaths.filter(Boolean))];
+    return unique.sort((a, b) => {
+        const aBase = /base\.apk$/i.test(a) ? 0 : 1;
+        const bBase = /base\.apk$/i.test(b) ? 0 : 1;
+        if (aBase !== bBase) return aBase - bBase;
+        return a.localeCompare(b);
+    });
+}
+
 class AppIconExtractor {
     constructor(adbPath) {
         this.adbPath = adbPath;
     }
 
-    async getApkPathOnDevice(serial, packageName, userId = null) {
+    async getAllApkPathsOnDevice(serial, packageName, userId = null) {
         const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
         const stdout = await execWithTimeout(
             `"${this.adbPath}" -s ${adbSerialArg(serial)} shell pm path${userArg} ${packageName}`
         );
 
-        const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        const apkLine = lines.find((line) => /base\.apk$/i.test(line)) || lines[0];
-        if (!apkLine) return null;
+        const apkPaths = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                const match = line.match(/^package:(.+)$/);
+                return match ? match[1].trim() : null;
+            })
+            .filter(Boolean);
 
-        const match = apkLine.match(/^package:(.+)$/);
-        return match ? match[1].trim() : null;
+        return sortApkPaths(apkPaths);
     }
 
     async pullApk(serial, remoteApkPath, localApkPath) {
@@ -118,11 +274,20 @@ class AppIconExtractor {
 
         try {
             await execWithTimeout(`tar -xf "${apkPath}" -C "${extractDir}"`, 30000);
-            const iconFile = findBestIconFile(extractDir);
-            if (!iconFile) return null;
 
-            fs.copyFileSync(iconFile, outputPath);
-            return outputPath;
+            const legacyIcon = findBestIconFile(extractDir);
+            if (legacyIcon) {
+                fs.copyFileSync(legacyIcon, outputPath);
+                return isValidIconFileSize(outputPath) ? outputPath : null;
+            }
+
+            const adaptiveIcon = findAdaptiveIconRaster(extractDir);
+            if (adaptiveIcon) {
+                fs.copyFileSync(adaptiveIcon, outputPath);
+                return isValidIconFileSize(outputPath) ? outputPath : null;
+            }
+
+            return null;
         } finally {
             fs.rmSync(extractDir, { recursive: true, force: true });
             if (fs.existsSync(apkPath)) {
@@ -139,7 +304,7 @@ class AppIconExtractor {
     }
 
     toIconUrl(iconPath) {
-        if (!iconPath) return null;
+        if (!iconPath || !isValidIconFileSize(iconPath)) return null;
         try {
             return pathToFileURL(iconPath).href;
         } catch (_err) {
@@ -148,13 +313,38 @@ class AppIconExtractor {
     }
 
     async extractIcon(serial, packageName, outputPath, userId = null) {
-        const remoteApkPath = await this.getApkPathOnDevice(serial, packageName, userId);
-        if (!remoteApkPath) return null;
+        const remoteApkPaths = await this.getAllApkPathsOnDevice(serial, packageName, userId);
+        if (!remoteApkPaths.length) return null;
 
-        const tempApkPath = `${outputPath}.apk`;
-        await this.pullApk(serial, remoteApkPath, tempApkPath);
-        return this.extractIconFromApk(tempApkPath, outputPath);
+        for (let index = 0; index < remoteApkPaths.length; index += 1) {
+            const remoteApkPath = remoteApkPaths[index];
+            const tempApkPath = `${outputPath}.apk${index}`;
+            try {
+                await this.pullApk(serial, remoteApkPath, tempApkPath);
+                const savedPath = await this.extractIconFromApk(tempApkPath, outputPath);
+                if (savedPath) return savedPath;
+            } catch (err) {
+                console.warn(`[AppIconExtractor] ${packageName} (${path.basename(remoteApkPath)}):`, err.message);
+            } finally {
+                if (fs.existsSync(tempApkPath)) {
+                    try {
+                        fs.unlinkSync(tempApkPath);
+                    } catch (_err) {
+                        // noop
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 }
 
-module.exports = { AppIconExtractor, findBestIconFile };
+module.exports = {
+    AppIconExtractor,
+    findBestIconFile,
+    findAdaptiveIconRaster,
+    sortApkPaths,
+    MIN_ICON_FILE_BYTES,
+    isValidIconCandidate
+};

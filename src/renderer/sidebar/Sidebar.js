@@ -18,7 +18,8 @@ function applyTabColorPill(pill, deviceColor) {
     }
 }
 
-const DEFAULT_TAB_APP_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M8 14.5l2.5-2.5 2.1 2.1 2.4-2.4 1.5 1.5"/></svg>`;
+const DEFAULT_TAB_APP_ICON_SVG = globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
+    || `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="#3d4f6f"/></svg>`;
 
 const sessionIconCache = new Map();
 const sessionIconInFlight = new Set();
@@ -46,6 +47,9 @@ function renderTabAppIcon(iconUrl = null) {
     if (iconUrl) {
         return `<span class="tab-app-icon"><img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"></span>`;
     }
+    if (globalThis.HubAppIconPlaceholder?.wrapTabAppIconPlaceholder) {
+        return globalThis.HubAppIconPlaceholder.wrapTabAppIconPlaceholder();
+    }
     return `<span class="tab-app-icon is-placeholder">${DEFAULT_TAB_APP_ICON_SVG}</span>`;
 }
 
@@ -56,7 +60,7 @@ function updateTabAppIcon(tab, iconUrl = null) {
     iconContainer.classList.toggle("is-placeholder", !iconUrl);
     iconContainer.innerHTML = iconUrl
         ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy">`
-        : DEFAULT_TAB_APP_ICON_SVG;
+        : (globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG || DEFAULT_TAB_APP_ICON_SVG);
 }
 
 function hydrateTabsWithIcon(iconKey, iconUrl) {
