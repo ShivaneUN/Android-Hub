@@ -6,17 +6,47 @@ let pollingInterval = null;
 let lastRefreshAt = 0;
 let refreshInFlight = null;
 const DEVICE_REFRESH_MIN_MS = 2500;
+const DEVICE_POLL_INTERVAL_MS = 12000;
+const DEVICE_FULL_STATUS_EVERY_N_POLLS = 4;
+let lightweightPollCount = 0;
 
 function normalizeDevices(devices) {
     if (!Array.isArray(devices)) return [];
     return devices.filter((device) => device && (device.deviceId || device.serial));
 }
 
+function deviceSnapshotKey(device) {
+    return device?.deviceId || device?.serial || "";
+}
+
+function mergeLightweightDevices(previous, incoming) {
+    if (!Array.isArray(previous) || !previous.length) return incoming;
+
+    const prevByKey = new Map();
+    for (const device of previous) {
+        const key = deviceSnapshotKey(device);
+        if (key) prevByKey.set(key, device);
+    }
+
+    return incoming.map((device) => {
+        const key = deviceSnapshotKey(device);
+        const prev = key ? prevByKey.get(key) : null;
+        if (!prev) return device;
+
+        return {
+            ...prev,
+            ...device,
+            battery: Number.isFinite(device.battery) ? device.battery : (prev.battery ?? null),
+            wifiStatus: device.wifiStatus || prev.wifiStatus || "Inconnu"
+        };
+    });
+}
+
 function dispatchDevicesRefreshed(devices) {
     window.dispatchEvent(new CustomEvent("devices-refreshed", { detail: devices.slice() }));
 }
 
-async function pollDeviceList({ force = false } = {}) {
+async function pollDeviceList({ force = false, lightweight = false } = {}) {
     const cacheIsFresh = lastRefreshAt > 0 && (Date.now() - lastRefreshAt < DEVICE_REFRESH_MIN_MS);
     const hasDevices = currentDevices.length > 0;
 
@@ -30,14 +60,19 @@ async function pollDeviceList({ force = false } = {}) {
 
     refreshInFlight = (async () => {
         try {
-            const response = await window.electronAPI.getDevices();
+            const response = await window.electronAPI.getDevices(
+                lightweight ? { lightweight: true } : {}
+            );
             const devices = Array.isArray(response)
                 ? response
                 : Array.isArray(response?.devices)
                     ? response.devices
                     : [];
 
-            currentDevices = normalizeDevices(devices);
+            const incoming = normalizeDevices(devices);
+            currentDevices = lightweight && currentDevices.length
+                ? mergeLightweightDevices(currentDevices, incoming)
+                : incoming;
             lastRefreshAt = Date.now();
             dispatchDevicesRefreshed(currentDevices);
         } catch (e) {
@@ -68,8 +103,14 @@ function startDevicePolling() {
         }
     });
     pollingInterval = setInterval(() => {
-        void pollDeviceList({ force: true });
-    }, 8000);
+        lightweightPollCount += 1;
+        if (lightweightPollCount >= DEVICE_FULL_STATUS_EVERY_N_POLLS) {
+            lightweightPollCount = 0;
+            void pollDeviceList({ force: true, lightweight: false });
+            return;
+        }
+        void pollDeviceList({ force: false, lightweight: true });
+    }, DEVICE_POLL_INTERVAL_MS);
 }
 
 function getCurrentDevices() {

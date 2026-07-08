@@ -9,6 +9,7 @@ const {
 } = require("../../shared/app-icon-placeholder");
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 20000;
+const MAX_APK_PULL_ATTEMPTS = 2;
 
 const ICON_ENTRY_PRIORITY = [
     /[/\\]res[/\\]mipmap-xxxhdpi[^/\\]*[/\\]ic_launcher\.(png|webp)$/i,
@@ -316,7 +317,8 @@ class AppIconExtractor {
         const remoteApkPaths = await this.getAllApkPathsOnDevice(serial, packageName, userId);
         if (!remoteApkPaths.length) return null;
 
-        for (let index = 0; index < remoteApkPaths.length; index += 1) {
+        const attemptCount = Math.min(remoteApkPaths.length, MAX_APK_PULL_ATTEMPTS);
+        for (let index = 0; index < attemptCount; index += 1) {
             const remoteApkPath = remoteApkPaths[index];
             const tempApkPath = `${outputPath}.apk${index}`;
             try {

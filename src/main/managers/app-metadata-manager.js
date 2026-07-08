@@ -15,6 +15,7 @@ const DUMP_TIMEOUT_MS = 12000;
 const PREFETCH_CONCURRENCY = 2;
 const DEFAULT_PREFETCH_MAX = 16;
 const MAX_ICON_EXTRACT_ATTEMPTS = 3;
+const INDEX_SAVE_DEBOUNCE_MS = 500;
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -46,6 +47,9 @@ class AppMetadataManager {
         this.iconExtractor = new AppIconExtractor(adbPath);
         this.index = {};
         this.prefetchQueues = new Map();
+        this._verifiedIconPaths = new Set();
+        this._indexDirty = false;
+        this._indexSaveTimer = null;
         this.loadIndex();
         fs.mkdirSync(this.cacheRoot, { recursive: true });
     }
@@ -90,10 +94,35 @@ class AppMetadataManager {
         }
     }
 
+    scheduleSaveIndex() {
+        this._indexDirty = true;
+        if (this._indexSaveTimer) return;
+        this._indexSaveTimer = setTimeout(() => {
+            this._indexSaveTimer = null;
+            if (!this._indexDirty) return;
+            this._indexDirty = false;
+            this.saveIndex();
+        }, INDEX_SAVE_DEBOUNCE_MS);
+    }
+
+    flushIndex() {
+        if (this._indexSaveTimer) {
+            clearTimeout(this._indexSaveTimer);
+            this._indexSaveTimer = null;
+        }
+        if (!this._indexDirty) return;
+        this._indexDirty = false;
+        this.saveIndex();
+    }
+
     isFresh(entry) {
         if (!entry?.fetchedAt) return false;
         if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) return false;
-        if (entry.iconPath && !fs.existsSync(entry.iconPath)) return false;
+        if (!entry.iconPath) return true;
+        if (this._verifiedIconPaths.has(entry.iconPath)) return true;
+        if (!fs.existsSync(entry.iconPath)) return false;
+        if (!isValidIconFileSize(entry.iconPath)) return false;
+        this._verifiedIconPaths.add(entry.iconPath);
         return true;
     }
 
@@ -131,6 +160,7 @@ class AppMetadataManager {
         const previousAttempts = Number(entry.iconAttempts) || 0;
 
         if (entry.iconPath && fs.existsSync(entry.iconPath)) {
+            this._verifiedIconPaths.delete(entry.iconPath);
             try {
                 fs.unlinkSync(entry.iconPath);
             } catch (_err) {
@@ -165,7 +195,7 @@ class AppMetadataManager {
             deviceId: cacheDeviceId
         };
         delete this.index[found.key];
-        this.saveIndex();
+        this.scheduleSaveIndex();
     }
 
     async resolveDeviceContext(deviceId) {
@@ -218,7 +248,7 @@ class AppMetadataManager {
             versionCode: data.versionCode !== undefined ? data.versionCode : (previous.versionCode ?? null),
             fetchedAt: Date.now()
         };
-        this.saveIndex();
+        this.scheduleSaveIndex();
         return this.index[key];
     }
 
@@ -230,6 +260,7 @@ class AppMetadataManager {
             const entry = this.index[key];
             if (!entry) continue;
             if (entry.iconPath && fs.existsSync(entry.iconPath)) {
+                this._verifiedIconPaths.delete(entry.iconPath);
                 try {
                     fs.unlinkSync(entry.iconPath);
                 } catch (_err) {
@@ -241,7 +272,7 @@ class AppMetadataManager {
         }
 
         if (changed) {
-            this.saveIndex();
+            this.scheduleSaveIndex();
         }
     }
 
@@ -253,6 +284,7 @@ class AppMetadataManager {
             if (activePackageKeys.has(activeKey)) continue;
 
             if (entry.iconPath && fs.existsSync(entry.iconPath)) {
+                this._verifiedIconPaths.delete(entry.iconPath);
                 try {
                     fs.unlinkSync(entry.iconPath);
                 } catch (_err) {
@@ -264,7 +296,7 @@ class AppMetadataManager {
         }
 
         if (changed) {
-            this.saveIndex();
+            this.scheduleSaveIndex();
         }
         return changed;
     }
@@ -307,7 +339,7 @@ class AppMetadataManager {
         return this.shouldRetryIconExtract(found.entry);
     }
 
-    async resolveOne(deviceId, packageName, userId = null, { appNameHint = null } = {}) {
+    async resolveOne(deviceId, packageName, userId = null, { appNameHint = null, prefetch = false } = {}) {
         const ctx = await this.resolveDeviceContext(deviceId);
         const found = this.lookupCacheEntry(
             ctx.cacheDeviceId,
@@ -386,7 +418,14 @@ class AppMetadataManager {
             });
         }
 
-        const versionCode = await this.fetchVersionCode(ctx.adbSerial, packageName, userId);
+        const versionCode = prefetch
+            ? (
+                this.index[this.buildKey(ctx.cacheDeviceId, packageName, userId)]?.versionCode
+                ?? refreshedFound?.entry?.versionCode
+                ?? found?.entry?.versionCode
+                ?? null
+            )
+            : await this.fetchVersionCode(ctx.adbSerial, packageName, userId);
         const nextAttempts = savedIconPath ? 0 : previousAttempts + 1;
 
         this.setCachedEntry(ctx.cacheDeviceId, packageName, userId, {
@@ -429,15 +468,7 @@ class AppMetadataManager {
 
     async enrichApps(serial, apps = []) {
         const ctx = await this.resolveDeviceContext(serial);
-        const activeKeys = new Set();
-        const enriched = apps.map((app) => {
-            const merged = this.mergeAppMetadata(ctx.cacheDeviceId, app, ctx.transportSerial);
-            activeKeys.add(this.buildKey(ctx.cacheDeviceId, merged.package, merged.userId));
-            return merged;
-        });
-
-        this.pruneForDevice(ctx.cacheDeviceId, activeKeys);
-        return enriched;
+        return apps.map((app) => this.mergeAppMetadata(ctx.cacheDeviceId, app, ctx.transportSerial));
     }
 
     async queuePrefetch(deviceId, apps = [], options = {}) {
@@ -484,7 +515,8 @@ class AppMetadataManager {
                     const packageName = app.package || app.packageName;
                     try {
                         const metadata = await this.resolveOne(deviceId, packageName, app.userId ?? null, {
-                            appNameHint: app.labelName || app.displayName || app.appName
+                            appNameHint: app.labelName || app.displayName || app.appName,
+                            prefetch: true
                         });
                         return {
                             deviceId: ctx.cacheDeviceId,
@@ -508,6 +540,7 @@ class AppMetadataManager {
             }
 
             this.prefetchQueues.delete(queueKey);
+            this.flushIndex();
         };
 
         runQueue().catch((err) => {
@@ -517,22 +550,54 @@ class AppMetadataManager {
     }
 
     async enrichHistoryEntries(entries = []) {
+        const contextCache = new Map();
+        const getCtx = async (deviceId) => {
+            if (!deviceId) return null;
+            if (!contextCache.has(deviceId)) {
+                contextCache.set(deviceId, await this.resolveDeviceContext(deviceId));
+            }
+            return contextCache.get(deviceId);
+        };
+
         const enriched = [];
+        const uncachedHistoryApps = [];
 
         for (const entry of entries) {
             const merged = { ...entry };
-            const ctx = await this.resolveDeviceContext(entry.deviceId);
-            const cached = this.getCachedEntry(
-                ctx.cacheDeviceId,
-                entry.packageName,
-                entry.userId ?? null,
-                { transportSerial: ctx.transportSerial }
-            );
+            const ctx = await getCtx(entry.deviceId);
 
-            if (cached) {
-                merged.appName = cached.appName || entry.appName || entry.packageName;
-                merged.iconPath = cached.iconPath || entry.iconPath || null;
-                merged.iconUrl = cached.iconUrl || entry.iconUrl || null;
+            if (ctx) {
+                const cached = this.getCachedEntry(
+                    ctx.cacheDeviceId,
+                    entry.packageName,
+                    entry.userId ?? null,
+                    { transportSerial: ctx.transportSerial }
+                );
+
+                if (cached) {
+                    merged.appName = cached.appName || entry.appName || entry.packageName;
+                    merged.iconPath = cached.iconPath || entry.iconPath || null;
+                    merged.iconUrl = cached.iconUrl || entry.iconUrl || null;
+                } else {
+                    merged.appName = isUsableAppLabel(entry.appName)
+                        ? entry.appName
+                        : humanizePackageName(entry.packageName);
+                }
+
+                if (entry.packageName && this.needsIconExtraction(
+                    ctx.cacheDeviceId,
+                    entry.packageName,
+                    entry.userId ?? null,
+                    ctx.transportSerial
+                )) {
+                    uncachedHistoryApps.push({
+                        deviceId: entry.deviceId,
+                        package: entry.packageName,
+                        packageName: entry.packageName,
+                        userId: entry.userId ?? null,
+                        appName: merged.appName
+                    });
+                }
             } else {
                 merged.appName = isUsableAppLabel(entry.appName)
                     ? entry.appName
@@ -542,36 +607,17 @@ class AppMetadataManager {
             enriched.push(merged);
         }
 
-        const uncachedHistoryApps = [];
-        for (const entry of enriched) {
-            if (!entry.deviceId || !entry.packageName) continue;
-            const ctx = await this.resolveDeviceContext(entry.deviceId);
-            if (!this.needsIconExtraction(
-                ctx.cacheDeviceId,
-                entry.packageName,
-                entry.userId ?? null,
-                ctx.transportSerial
-            )) {
-                continue;
-            }
-            uncachedHistoryApps.push({
-                deviceId: entry.deviceId,
-                package: entry.packageName,
-                packageName: entry.packageName,
-                userId: entry.userId ?? null,
-                appName: entry.appName
-            });
-        }
-
         if (uncachedHistoryApps.length) {
             const byDevice = new Map();
             for (const app of uncachedHistoryApps) {
                 if (!byDevice.has(app.deviceId)) byDevice.set(app.deviceId, []);
                 byDevice.get(app.deviceId).push(app);
             }
-            for (const [historyDeviceId, apps] of byDevice.entries()) {
-                this.queuePrefetch(historyDeviceId, apps, { maxCount: DEFAULT_PREFETCH_MAX });
-            }
+            setImmediate(() => {
+                for (const [historyDeviceId, apps] of byDevice.entries()) {
+                    this.queuePrefetch(historyDeviceId, apps, { maxCount: DEFAULT_PREFETCH_MAX });
+                }
+            });
         }
 
         return enriched;

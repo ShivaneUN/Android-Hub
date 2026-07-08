@@ -1214,7 +1214,7 @@ function requestLaunchHistoryRefresh() {
     }
 }
 
-async function listDevicesForUI() {
+async function listDevicesForUI({ lightweight = false } = {}) {
     if (wifiStartupPromise) {
         await wifiStartupPromise;
     }
@@ -1227,7 +1227,7 @@ async function listDevicesForUI() {
         connected = [];
     }
 
-    if (connected.length > 0 && deviceManager?.enrichDevicesWithStatus) {
+    if (!lightweight && connected.length > 0 && deviceManager?.enrichDevicesWithStatus) {
         try {
             connected = await deviceManager.enrichDevicesWithStatus(connected);
         } catch (err) {
@@ -1265,14 +1265,16 @@ async function listDevicesForUI() {
     return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
 }
 
-    ipcMain.handle("get-devices", async () => {
+    ipcMain.handle("get-devices", async (_event, options = {}) => {
         global.getDevicesPollState = {
             inProgress: true,
             startedAt: Date.now(),
             lastEndedAt: global.getDevicesPollState?.lastEndedAt ?? null
         };
         try {
-            const devices = await listDevicesForUI();
+            const devices = await listDevicesForUI({
+                lightweight: options?.lightweight === true
+            });
             const connectedCount = devices.filter((d) => d.connected !== false).length;
             console.log(`[get-devices] connected count=${connectedCount}`);
             return devices;

@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
     // --- Devices ---
-    getDevices: () => ipcRenderer.invoke("get-devices"),
+    getDevices: (options) => ipcRenderer.invoke("get-devices", options || {}),
     onDevicesRefreshRequest: (callback) =>
         ipcRenderer.on("devices:refresh-request", () => callback()),
     getApps: (serial) => ipcRenderer.invoke("get-apps", serial),

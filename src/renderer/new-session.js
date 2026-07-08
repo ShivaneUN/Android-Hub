@@ -25,11 +25,9 @@ const newInstanceSessions = new Map();
 let activeNewInstanceSessionId = null;
 let historyAppList = null;
 let metadataPrefetchTimer = null;
-let metadataAutoRefreshTimer = null;
 let metadataPrefetchDoneSerial = null;
 const METADATA_PREFETCH_MAX = 16;
 const METADATA_PREFETCH_DEBOUNCE_MS = 450;
-const METADATA_AUTO_REFRESH_DELAY_MS = 500;
 
 function isHubModalChildWindow() {
     return /hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"));
@@ -175,9 +173,7 @@ function resetLauncherApps() {
 
 function resetMetadataPrefetchState() {
     clearTimeout(metadataPrefetchTimer);
-    clearTimeout(metadataAutoRefreshTimer);
     metadataPrefetchTimer = null;
-    metadataAutoRefreshTimer = null;
     metadataPrefetchDoneSerial = null;
 }
 
@@ -188,27 +184,6 @@ function normalizeLauncherApps(apps = []) {
         appName: app.appName || app.labelName || app.displayName || app.package,
         labelName: app.labelName || app.appName || app.displayName || app.package
     }));
-}
-
-async function refreshLauncherAppsSilent() {
-    if (!selectedDevice?.serial) return;
-
-    try {
-        const response = await window.electronAPI.getAppsWithDetails(selectedDevice.serial);
-        if (response?.success === false) return;
-
-        const apps = Array.isArray(response)
-            ? response
-            : Array.isArray(response?.apps)
-                ? response.apps
-                : [];
-
-        launcherApps = normalizeLauncherApps(apps);
-        const { appSearchInput } = getNewInstanceElements();
-        filterLauncherAppsAndRender(appSearchInput?.value || "");
-    } catch (err) {
-        console.warn("[NewSession] refreshLauncherAppsSilent:", err.message);
-    }
 }
 
 function scheduleAppsMetadataPrefetchOnce(apps = []) {
@@ -236,14 +211,6 @@ function scheduleAppsMetadataPrefetchOnce(apps = []) {
             console.warn("[NewSession] prefetch metadata:", err.message);
         });
     }, METADATA_PREFETCH_DEBOUNCE_MS);
-}
-
-function scheduleLauncherAppsAutoRefresh() {
-    clearTimeout(metadataAutoRefreshTimer);
-    metadataAutoRefreshTimer = setTimeout(() => {
-        metadataAutoRefreshTimer = null;
-        void refreshLauncherAppsSilent();
-    }, METADATA_AUTO_REFRESH_DELAY_MS);
 }
 
 function renderLauncherAppsList(apps) {
@@ -402,6 +369,44 @@ function createHistoryAppList() {
     return historyAppList;
 }
 
+function patchLauncherAppIcons(updates = []) {
+    const { appResults } = getNewInstanceElements();
+    if (!appResults || !updates.length) return false;
+
+    const updateMap = new Map();
+    for (const update of updates) {
+        updateMap.set(buildAppKey(update), update);
+    }
+
+    let patched = false;
+    appResults.querySelectorAll(".new-instance-app-item").forEach((btn) => {
+        const update = updateMap.get(btn.dataset.appKey);
+        if (!update) return;
+
+        const iconSrc = update.iconUrl || update.iconPath;
+        if (!iconSrc) return;
+
+        const iconWrap = btn.querySelector(".new-instance-app-icon");
+        if (!iconWrap) return;
+
+        const img = iconWrap.querySelector("img");
+        if (img) {
+            if (img.getAttribute("src") !== iconSrc) {
+                img.setAttribute("src", iconSrc);
+                patched = true;
+            }
+            iconWrap.classList.remove("is-placeholder", "hub-app-icon-placeholder");
+            return;
+        }
+
+        iconWrap.classList.remove("is-placeholder", "hub-app-icon-placeholder");
+        iconWrap.innerHTML = `<img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">`;
+        patched = true;
+    });
+
+    return patched;
+}
+
 function applyMetadataUpdates(updates = []) {
     if (!updates.length) return;
 
@@ -419,7 +424,9 @@ function applyMetadataUpdates(updates = []) {
     });
 
     const { appSearchInput } = getNewInstanceElements();
-    filterLauncherAppsAndRender(appSearchInput?.value || "");
+    if (!patchLauncherAppIcons(updates)) {
+        filterLauncherAppsAndRender(appSearchInput?.value || "");
+    }
 
     historyEntries = historyEntries.map((entry) => {
         const match = updates.find((update) =>
@@ -649,7 +656,6 @@ async function loadAppsForSelectedDevice() {
         }
 
         scheduleAppsMetadataPrefetchOnce(launcherApps);
-        scheduleLauncherAppsAutoRefresh();
         setStatus(`${launcherApps.length} application(s) chargee(s).`);
     } catch (err) {
         launcherApps = [];

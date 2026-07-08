@@ -4,7 +4,6 @@
 (function initDevicesPanel() {
     const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
 
-    const PANEL_POLL_MS = 4000;
     let panelPollTimer = null;
     let panelListenersBound = false;
     let renderInFlight = false;
@@ -558,11 +557,6 @@
     function startDevicesPanelLiveRefresh() {
         stopDevicesPanelLiveRefresh();
         bindPanelRefreshListeners();
-        panelPollTimer = setInterval(() => {
-            if (isDevicesPanelActive()) {
-                void renderPanel({ silent: true });
-            }
-        }, PANEL_POLL_MS);
     }
 
     function stopDevicesPanelLiveRefresh() {

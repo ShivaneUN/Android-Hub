@@ -34,7 +34,7 @@ class DeviceManager {
     constructor(adbPath) {
         this.adbPath = adbPath;
         this._liveStatusCache = new Map();
-        this._liveStatusTtlMs = 15000;
+        this._liveStatusTtlMs = 45000;
     }
 
     _fastDisplayName(labelFromPm, pkg) {

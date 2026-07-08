@@ -194,33 +194,37 @@
                 };
             });
 
-            if (changed) {
+            if (!changed || !this.resultsContainer) return;
+
+            let patched = false;
+            this.resultsContainer.querySelectorAll(".new-instance-app-item").forEach((btn) => {
+                const patch = updateMap.get(btn.dataset.appKey);
+                if (!patch) return;
+
+                const iconSrc = patch.iconUrl || patch.iconPath;
+                if (!iconSrc) return;
+
+                const iconWrap = btn.querySelector(".new-instance-app-icon");
+                if (!iconWrap) return;
+
+                const img = iconWrap.querySelector("img");
+                if (img) {
+                    if (img.getAttribute("src") !== iconSrc) {
+                        img.setAttribute("src", iconSrc);
+                        patched = true;
+                    }
+                    iconWrap.classList.remove("is-placeholder", "hub-app-icon-placeholder");
+                    return;
+                }
+
+                iconWrap.classList.remove("is-placeholder", "hub-app-icon-placeholder");
+                iconWrap.innerHTML = `<img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">`;
+                patched = true;
+            });
+
+            if (!patched) {
                 this.filterAndRender(this.searchInput?.value || "");
             }
-        }
-
-        scheduleMetadataPrefetch(apps = []) {
-            if (!this.deviceSerial || !global.electronAPI?.prefetchAppMetadata) return;
-
-            clearTimeout(this._prefetchTimer);
-            this._prefetchTimer = setTimeout(() => {
-                const payloadApps = apps.slice(0, 16).map((app) => ({
-                    package: app.package,
-                    packageName: app.package,
-                    userId: app.userId ?? null,
-                    appName: app.appName || app.labelName || app.displayName || app.package
-                }));
-
-                if (!payloadApps.length) return;
-
-                global.electronAPI.prefetchAppMetadata({
-                    deviceId: this.deviceSerial,
-                    apps: payloadApps,
-                    maxCount: 16
-                }).catch((err) => {
-                    console.warn("[AppLauncherSearch] prefetch metadata:", err.message);
-                });
-            }, 450);
         }
 
         filterAndRender(query) {
@@ -239,7 +243,6 @@
             const sortLocale = global.HubI18n?.getLocale?.() || "fr";
             list.sort((a, b) => getAppLabel(a).localeCompare(getAppLabel(b), sortLocale, { sensitivity: "base" }));
             this.render(list);
-            this.scheduleMetadataPrefetch(list);
         }
 
         renderAppIcon(app) {

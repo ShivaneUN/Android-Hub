@@ -154,7 +154,33 @@
                 };
             });
 
-            if (changed) {
+            if (!changed) return;
+
+            let patched = false;
+            this.container.querySelectorAll(`[data-item-key]`).forEach((node) => {
+                const patch = updateMap.get(node.dataset.itemKey);
+                if (!patch) return;
+
+                const iconSrc = patch.iconUrl || patch.iconPath;
+                if (!iconSrc) return;
+
+                const iconWrap = node.querySelector(".app-list-item-icon");
+                if (!iconWrap) return;
+
+                const img = iconWrap.querySelector("img");
+                if (img) {
+                    if (img.getAttribute("src") !== iconSrc) {
+                        img.setAttribute("src", iconSrc);
+                        patched = true;
+                    }
+                    return;
+                }
+
+                iconWrap.innerHTML = `<img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">`;
+                patched = true;
+            });
+
+            if (!patched) {
                 this.applyFilter(this.searchQuery);
             }
         }
