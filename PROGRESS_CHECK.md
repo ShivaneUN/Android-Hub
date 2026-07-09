@@ -4,6 +4,39 @@ Dernière mise à jour : 2026-07-09
 
 ---
 
+## Presets d'affichage session — commit 1 (2026-07-09)
+
+**Statut : commit 1 livré — manager + persistance. IPC / UI / nouvelles sessions : commits suivants.**
+
+### Fichiers
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/managers/display-presets-manager.js` | **Nouveau** — CRUD presets nommés (`width`, `height`, `maxFps`, `bitRateMbps`) ; `defaultPreset` ; seed `full-hd` (= anciens défauts) |
+| `src/main/main.js` | `global.displayPresetsManager = new DisplayPresetsManager(userDataPath)` |
+
+### Persistance
+
+- Chemin : `{userData}/display-presets.json`
+- Schéma : `{ "defaultPreset": "full-hd", "presets": [{ "id", "name", "width", "height", "maxFps", "bitRateMbps" }] }`
+- `resolveParams(presetId)` : merge champs preset + `dpi` / `iFrameInterval` depuis `DEFAULT_STREAM_PARAMS` (`stream-params.js`)
+
+### API manager (main process)
+
+| Méthode | Rôle |
+|---------|------|
+| `list()` | Liste + `defaultPreset` |
+| `getDefault()` | Preset par défaut + `params` normalisés |
+| `resolveParams(presetId?)` | Params flux complets pour `toScrcpyOptions()` |
+| `savePreset({ name, params })` | Ajoute un preset (id slug unique) |
+| `setDefaultPreset(presetId)` | Définit le preset pour nouvelles sessions (commit 3) |
+| `deletePreset(presetId)` | Supprime (garde au moins un preset) |
+| `getAllowedOptions()` | Valeurs autorisées (miroir `CONTROL_OPTIONS`) |
+
+**LOCK intact** : aucun fichier scrcpy-socket / new-instance-manager / input / Type A-B modifié.
+
+---
+
 ## DIAGNOSTIC — Worker apps (fork) — Étape 1 lecture seule (2026-07-09)
 
 **Statut : diagnostic terminé — aucun patch code. En attente validation plan + règle rétention historique.**  

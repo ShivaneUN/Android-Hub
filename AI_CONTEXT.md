@@ -2,7 +2,7 @@
 
 > **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Dernière mise à jour : 2026-07-08
+Dernière mise à jour : 2026-07-09
 
 ---
 
@@ -249,8 +249,24 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 
 ---
 
+## Presets d'affichage session (en cours — 2026-07-09)
+
+| Commit | Fichier(s) | Rôle |
+|--------|------------|------|
+| 1 | `src/main/managers/display-presets-manager.js` | Persistance `{userData}/display-presets.json` ; seed `full-hd` ; `resolveParams()` merge dpi/gop depuis `DEFAULT_STREAM_PARAMS` |
+| 1 | `src/main/main.js` | `global.displayPresetsManager` à l'init |
+
+**LOCK intact** : pas de modification `scrcpy-socket.js`, `new-instance-manager.js`, input, Type A/B.
+
+Prochaines étapes planifiées : IPC (commit 2), défaut nouvelles sessions `new-session.js` (commit 3), UI panneau Contrôle (commit 4), appliquer à toutes les instances (commit 5).
+
+Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
+
+---
+
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — commit 1** — `display-presets-manager.js` + init `main.js` ; fichier `display-presets.json` en userData. LOCK intact.
 - 2026-07-09 — **P2 worker prefetch étendu** — `PREFETCH_APP_METADATA` dans worker ; passage 1 (16 apps) + passage 2 arrière-plan (`new-session.js`) ; push `METADATA_UPDATED` ; `resolvePrefetchContext` pour cacheDeviceId/adbSerial. Concurrence 2 inchangée. LOCK intact.
 - 2026-07-09 — **Cache icônes stale** — `pruneStaleIconCacheEntries()` : invalide `iconPath` si PNG absent (tous deviceId), conserve `iconAttempts` ; async `fs.promises` ; log par deviceId. LOCK intact.
 - 2026-07-09 — **P0 worker apps** — `src/main/workers/apps-worker.js`, `src/main/managers/apps-worker-bridge.js` : historique lancement (`GET/ADD/REMOVE_HISTORY`, purge maintenance) hors main via `fork()` ; fallback in-process si crash ; `launch-history-manager.js` option `enablePruneTimer`. LOCK intact.
