@@ -90,6 +90,18 @@ function registerDisplayPresetsHandlers(deps) {
         return result;
     });
 
+    ipcMain.handle("display-presets:update-default-from-params", (_event, { params } = {}) => {
+        const { manager, error } = requireManager();
+        if (error) return error;
+
+        const result = manager.updateDefaultFromParams(params);
+        if (result.success) {
+            notifyDisplayPresetsUpdated(getWindows);
+        }
+
+        return result;
+    });
+
     ipcMain.handle("display-presets:delete", (_event, { presetId } = {}) => {
         const { manager, error } = requireManager();
         if (error) return error;

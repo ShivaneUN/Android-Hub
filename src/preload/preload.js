@@ -187,6 +187,8 @@ contextBridge.exposeInMainWorld("displayPresetsAPI", {
     getAllowedOptions: () => ipcRenderer.invoke("display-presets:get-allowed-options"),
     save: (payload) => ipcRenderer.invoke("display-presets:save", payload),
     setDefault: (presetId) => ipcRenderer.invoke("display-presets:set-default", { presetId }),
+    updateDefaultFromParams: (params) =>
+        ipcRenderer.invoke("display-presets:update-default-from-params", { params }),
     delete: (presetId) => ipcRenderer.invoke("display-presets:delete", { presetId }),
     onUpdated: (callback) => ipcRenderer.on("display-presets:updated", () => callback())
 });

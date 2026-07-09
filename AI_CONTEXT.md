@@ -268,7 +268,7 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 | A1 | `stream-params-manager.js` | Suppression `applyParamsToAllSessions()` ✓ |
 | A2 | `sessionHandlers.js` | Suppression IPC `session:applyStreamParamsToAll` ✓ |
 | B1 | `display-presets-manager.js` | `updateDefaultFromParams()` + `_ensureDefaultPreset()` ✓ |
-| B2 | `display-presets-handlers.js`, `preload.js` | IPC + preload (à faire) |
+| B2 | `display-presets-handlers.js`, `preload.js` | IPC `update-default-from-params` + `displayPresetsAPI.updateDefaultFromParams` ✓ |
 
 **Raison :** « Appliquer à toutes » = défaut pour **prochains lancements**, pas restart des sessions actives.
 
@@ -289,6 +289,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — étape B2** — IPC + preload `updateDefaultFromParams`.
 - 2026-07-09 — **Presets affichage — étape B1** — `updateDefaultFromParams()` dans `display-presets-manager.js`.
 - 2026-07-09 — **Presets affichage — étape A3** — retrait `sessionAPI.applyStreamParamsToAll` du preload.
 - 2026-07-09 — **Presets affichage — étape A2** — retrait IPC `session:applyStreamParamsToAll`.
