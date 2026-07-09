@@ -180,6 +180,17 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
     onUpdated: (callback) => ipcRenderer.on("device-colors:updated", () => callback())
 });
 
+contextBridge.exposeInMainWorld("displayPresetsAPI", {
+    list: () => ipcRenderer.invoke("display-presets:list"),
+    getDefault: () => ipcRenderer.invoke("display-presets:get-default"),
+    resolveParams: (presetId) => ipcRenderer.invoke("display-presets:resolve-params", { presetId }),
+    getAllowedOptions: () => ipcRenderer.invoke("display-presets:get-allowed-options"),
+    save: (payload) => ipcRenderer.invoke("display-presets:save", payload),
+    setDefault: (presetId) => ipcRenderer.invoke("display-presets:set-default", { presetId }),
+    delete: (presetId) => ipcRenderer.invoke("display-presets:delete", { presetId }),
+    onUpdated: (callback) => ipcRenderer.on("display-presets:updated", () => callback())
+});
+
 contextBridge.exposeInMainWorld("launchLatencyAPI", {
     click: (payload) => ipcRenderer.invoke("launch-latency:click", payload),
     bind: (payload) => ipcRenderer.invoke("launch-latency:bind", payload),

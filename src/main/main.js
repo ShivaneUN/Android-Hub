@@ -64,6 +64,7 @@ const { MaintenanceCleanupManager } = require("./managers/maintenance-cleanup-ma
 const { registerMaintenanceHandlers } = require("./ipc/maintenanceHandlers");
 const { UiPreferencesManager } = require("./managers/ui-preferences-manager");
 const { DisplayPresetsManager } = require("./managers/display-presets-manager");
+const { registerDisplayPresetsHandlers } = require("./ipc/display-presets-handlers");
 const { registerUiPreferencesHandlers } = require("./ipc/uiPreferencesHandlers");
 const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
@@ -2582,6 +2583,11 @@ async function listDevicesForUI({ lightweight = false } = {}) {
         getDeviceColorsManager: () => global.deviceColorsManager,
         getMainWindow: () => win,
         getConnectedDeviceIds
+    });
+    registerDisplayPresetsHandlers({
+        getDisplayPresetsManager: () => global.displayPresetsManager,
+        getMainWindow: () => win,
+        getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null
     });
     registerLaunchHistoryHandlers({
         getAppsWorkerBridge: () => appsWorkerBridge,

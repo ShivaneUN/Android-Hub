@@ -255,6 +255,8 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 |--------|------------|------|
 | 1 | `src/main/managers/display-presets-manager.js` | Persistance `{userData}/display-presets.json` ; seed `full-hd` ; `resolveParams()` merge dpi/gop depuis `DEFAULT_STREAM_PARAMS` |
 | 1 | `src/main/main.js` | `global.displayPresetsManager` à l'init |
+| 2 | `src/main/ipc/display-presets-handlers.js` | IPC `display-presets:*` ; event `display-presets:updated` |
+| 2 | `src/preload/preload.js` | `window.displayPresetsAPI` |
 
 **LOCK intact** : pas de modification `scrcpy-socket.js`, `new-instance-manager.js`, input, Type A/B.
 
@@ -266,6 +268,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — commit 2** — IPC `display-presets-handlers.js` + `displayPresetsAPI` preload. LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 1** — `display-presets-manager.js` + init `main.js` ; fichier `display-presets.json` en userData. LOCK intact.
 - 2026-07-09 — **P2 worker prefetch étendu** — `PREFETCH_APP_METADATA` dans worker ; passage 1 (16 apps) + passage 2 arrière-plan (`new-session.js`) ; push `METADATA_UPDATED` ; `resolvePrefetchContext` pour cacheDeviceId/adbSerial. Concurrence 2 inchangée. LOCK intact.
 - 2026-07-09 — **Cache icônes stale** — `pruneStaleIconCacheEntries()` : invalide `iconPath` si PNG absent (tous deviceId), conserve `iconAttempts` ; async `fs.promises` ; log par deviceId. LOCK intact.

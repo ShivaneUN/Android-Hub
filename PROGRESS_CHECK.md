@@ -37,6 +37,38 @@ Dernière mise à jour : 2026-07-09
 
 ---
 
+## Presets d'affichage session — commit 2 (2026-07-09)
+
+**Statut : commit 2 livré — IPC + preload renderer.**
+
+### Fichiers
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/ipc/display-presets-handlers.js` | **Nouveau** — handlers IPC |
+| `src/main/main.js` | `registerDisplayPresetsHandlers()` |
+| `src/preload/preload.js` | `window.displayPresetsAPI` |
+
+### IPC (`display-presets:*`)
+
+| Canal | Rôle |
+|-------|------|
+| `list` | Liste presets + `defaultPreset` |
+| `get-default` | Preset par défaut + `params` |
+| `resolve-params` | Params normalisés pour un `presetId` |
+| `get-allowed-options` | Résolutions / fps / bitrates autorisés |
+| `save` | `{ name, params }` → nouveau preset |
+| `set-default` | `{ presetId }` |
+| `delete` | `{ presetId }` |
+
+Push renderer : `display-presets:updated` (fenêtre principale + hub modal) après save / set-default / delete.
+
+### Preload (`displayPresetsAPI`)
+
+`list`, `getDefault`, `resolveParams`, `getAllowedOptions`, `save`, `setDefault`, `delete`, `onUpdated`.
+
+---
+
 ## DIAGNOSTIC — Worker apps (fork) — Étape 1 lecture seule (2026-07-09)
 
 **Statut : diagnostic terminé — aucun patch code. En attente validation plan + règle rétention historique.**  
