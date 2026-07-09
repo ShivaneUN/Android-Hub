@@ -114,7 +114,19 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 
 ---
 
-## Presets d'affichage session — commit 5 (2026-07-09)
+## Presets d'affichage session — étape A retrait commit 5 (2026-07-09)
+
+**Statut : A1 livré — A2/A3 en attente validation.**
+
+Commit 5 initial (restart toutes sessions actives) **annulé** — comportement reformulé : mise à jour `defaultPreset` pour prochains lancements uniquement.
+
+| Étape | Fichier | Statut |
+|-------|---------|--------|
+| A1 | `stream-params-manager.js` | `applyParamsToAllSessions` supprimé |
+| A2 | `sessionHandlers.js` | IPC à retirer |
+| A3 | `preload.js` | preload à retirer |
+
+---
 
 **Statut : commit 5 livré — application globale aux sessions ouvertes.**
 
@@ -134,6 +146,13 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 - Erreur si aucune session ouvertes ou échec sur toutes
 
 **LOCK intact.**
+
+### Correctif UI (2026-07-09)
+
+| Problème | Cause | Fix |
+|----------|-------|-----|
+| Enregistrer ne fait rien | `window.prompt()` non supporté dans Electron → retourne `null` | Champ `#control-preset-name-input` |
+| Appliquer à toutes inactif après action | `setLoading(true)` désactivait les boutons sans les réactiver | `syncPresetControls()` |
 
 ---
 

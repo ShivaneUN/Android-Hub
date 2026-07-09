@@ -291,58 +291,6 @@ class StreamParamsManager {
         }
     }
 
-    async applyParamsToAllSessions(rawParams) {
-        const validation = validateParams(rawParams);
-        if (!validation.valid) {
-            return { success: false, error: validation.errors.join(" · ") };
-        }
-
-        const manager = this._manager();
-        if (!manager) {
-            return { success: false, error: "Gestionnaire de sessions indisponible" };
-        }
-
-        const sessions = manager.getAllSessions();
-        if (!sessions.length) {
-            return { success: false, error: "Aucune session ouverte" };
-        }
-
-        const results = [];
-        for (const session of sessions) {
-            const result = await this.applyParams(session.sessionId, validation.params);
-            results.push({
-                sessionId: session.sessionId,
-                label: session.label,
-                success: Boolean(result?.success),
-                error: result?.error || null
-            });
-        }
-
-        const applied = results.filter((item) => item.success).length;
-        const failed = results.length - applied;
-
-        if (applied === 0) {
-            return {
-                success: false,
-                error: results[0]?.error || "Échec sur toutes les sessions",
-                results
-            };
-        }
-
-        this.notifySessionListChanged();
-
-        return {
-            success: true,
-            params: validation.params,
-            applied,
-            failed,
-            results,
-            message: failed > 0
-                ? `Paramètres appliqués à ${applied}/${results.length} session(s).`
-                : "Paramètres appliqués à toutes les instances ouvertes."
-        };
-    }
-
     getActiveSessionOrientation() {
         const manager = this._manager();
         const sessionId = manager?.getActiveSessionId();

@@ -259,18 +259,37 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 | 2 | `src/preload/preload.js` | `window.displayPresetsAPI` |
 | 3 | `src/renderer/new-session.js` | Défaut lancement Type A/B via `displayPresetsAPI.getDefault()` → `toScrcpyOptions()` |
 | 4 | `hub-modal-window.html`, `ControlPanel.js`, `control-panel.css`, locales | UI presets : sélecteur, enregistrer, défaut, appliquer à toutes (UI) |
-| 5 | `stream-params-manager.js`, `sessionHandlers.js`, `preload.js` | `applyParamsToAllSessions` + IPC `session:applyStreamParamsToAll` |
+| 5 | ~~`applyParamsToAllSessions`~~ **annulé** — étape A en cours : retrait restart global ; étape B à venir : `updateDefaultFromParams` |
+
+### Étape A — retrait commit 5 (restart global) — en cours
+
+| Commit | Fichier | Action |
+|--------|---------|--------|
+| A1 | `stream-params-manager.js` | Suppression `applyParamsToAllSessions()` |
+| A2 | `sessionHandlers.js` | Suppression IPC `session:applyStreamParamsToAll` (à faire) |
+| A3 | `preload.js` | Suppression `sessionAPI.applyStreamParamsToAll` (à faire) |
+
+**Raison :** « Appliquer à toutes » = défaut pour **prochains lancements**, pas restart des sessions actives.
+
+---
 
 **LOCK intact** : pas de modification `scrcpy-socket.js`, `new-instance-manager.js`, input, Type A/B.
 
-Prochaines étapes planifiées : IPC (commit 2), défaut nouvelles sessions `new-session.js` (commit 3), UI panneau Contrôle (commit 4), appliquer à toutes les instances (commit 5).
+Prochaines étapes planifiées : commits 1–5 livrés.
 
 Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
+
+### Correctif UI (2026-07-09)
+
+- `window.prompt()` remplacé par champ texte (Electron ne supporte pas `prompt`)
+- `syncPresetControls()` : réactive les boutons après chargement
 
 ---
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — étape A1** — retrait `applyParamsToAllSessions` de `stream-params-manager.js` (commit 5 annulé).
+- 2026-07-09 — **Presets affichage — fix UI** — champ nom preset (plus `window.prompt`) ; `syncPresetControls()` réactive boutons après loading.
 - 2026-07-09 — **Presets affichage — commit 5** — `applyParamsToAllSessions` + IPC `applyStreamParamsToAll`. LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 4** — UI panneau Contrôle (sélecteur, enregistrer, défaut, bouton appliquer toutes). LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 3** — `new-session.js` : preset par défaut pour miroir Type A et `streamOptions` Type B. LOCK intact.
