@@ -267,7 +267,7 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 |--------|---------|--------|
 | A1 | `stream-params-manager.js` | Suppression `applyParamsToAllSessions()` ✓ |
 | A2 | `sessionHandlers.js` | Suppression IPC `session:applyStreamParamsToAll` ✓ |
-| A3 | `preload.js` | Suppression `sessionAPI.applyStreamParamsToAll` (à faire) |
+| A3 | `preload.js` | Suppression `sessionAPI.applyStreamParamsToAll` ✓ |
 
 **Raison :** « Appliquer à toutes » = défaut pour **prochains lancements**, pas restart des sessions actives.
 
@@ -288,6 +288,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — étape A3** — retrait `sessionAPI.applyStreamParamsToAll` du preload.
 - 2026-07-09 — **Presets affichage — étape A2** — retrait IPC `session:applyStreamParamsToAll`.
 - 2026-07-09 — **Presets affichage — étape A1** — retrait `applyParamsToAllSessions` de `stream-params-manager.js` (commit 5 annulé).
 - 2026-07-09 — **Presets affichage — fix UI** — champ nom preset (plus `window.prompt`) ; `syncPresetControls()` réactive boutons après loading.

@@ -116,8 +116,6 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     getStreamParams: (sessionId) => ipcRenderer.invoke("session:getStreamParams", sessionId),
     applyStreamParams: (sessionId, params) =>
         ipcRenderer.invoke("session:applyStreamParams", { sessionId, params }),
-    applyStreamParamsToAll: (params) =>
-        ipcRenderer.invoke("session:applyStreamParamsToAll", { params }),
     resetStreamParams: (sessionId) => ipcRenderer.invoke("session:resetStreamParams", sessionId),
     getFrameCounts: () => ipcRenderer.invoke("session:getFrameCounts"),
     getPreviewFrame: (sessionId) => ipcRenderer.invoke("session:getPreviewFrame", sessionId),

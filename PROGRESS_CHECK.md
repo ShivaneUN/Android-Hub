@@ -110,49 +110,19 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 - **Sélecteur** : charge le draft (résolution / fps / bitrate) sans appliquer à la session
 - **Enregistrer le réglage actuel** : `prompt` nom → `displayPresetsAPI.save` (3 champs cibles + résolution)
 - **Définir par défaut** : checkbox → `setDefault` pour le preset sélectionné (★ dans la liste)
-- **Appliquer à toutes les instances** : bouton actif via `sessionAPI.applyStreamParamsToAll` (commit 5)
+- **Appliquer à toutes les instances** : ~~restart global~~ → étape B : mise à jour `defaultPreset` pour prochains lancements
 
 ---
 
 ## Presets d'affichage session — étape A retrait commit 5 (2026-07-09)
 
-**Statut : A1 livré — A2/A3 en attente validation.**
-
-Commit 5 initial (restart toutes sessions actives) **annulé** — comportement reformulé : mise à jour `defaultPreset` pour prochains lancements uniquement.
+**Statut : étape A terminée (A1–A3). En attente validation avant étape B.**
 
 | Étape | Fichier | Statut |
 |-------|---------|--------|
-| A1 | `stream-params-manager.js` | `applyParamsToAllSessions` supprimé |
-| A2 | `sessionHandlers.js` | IPC à retirer |
-| A3 | `preload.js` | preload à retirer |
-
----
-
-**Statut : commit 5 livré — application globale aux sessions ouvertes.**
-
-### Fichiers
-
-| Fichier | Changement |
-|---------|------------|
-| `src/main/managers/stream-params-manager.js` | `applyParamsToAllSessions(params)` — boucle séquentielle sur `getAllSessions()` |
-| `src/main/ipc/sessionHandlers.js` | IPC `session:applyStreamParamsToAll` |
-| `src/preload/preload.js` | `sessionAPI.applyStreamParamsToAll(params)` |
-| `src/renderer/control-panel/ControlPanel.js` | Message backend + refresh liste sessions |
-
-### Comportement
-
-- Valide les params une fois, applique à chaque session via `applyParams()` existant (redémarrage flux Type A/B inchangé)
-- Succès partiel possible : message `X/Y session(s)`
-- Erreur si aucune session ouvertes ou échec sur toutes
-
-**LOCK intact.**
-
-### Correctif UI (2026-07-09)
-
-| Problème | Cause | Fix |
-|----------|-------|-----|
-| Enregistrer ne fait rien | `window.prompt()` non supporté dans Electron → retourne `null` | Champ `#control-preset-name-input` |
-| Appliquer à toutes inactif après action | `setLoading(true)` désactivait les boutons sans les réactiver | `syncPresetControls()` |
+| A1 | `stream-params-manager.js` | `applyParamsToAllSessions` supprimé ✓ |
+| A2 | `sessionHandlers.js` | IPC retiré ✓ |
+| A3 | `preload.js` | preload retiré ✓ |
 
 ---
 
