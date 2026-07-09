@@ -1,36 +1,63 @@
 const { ipcMain } = require("electron");
 
 function registerLaunchHistoryHandlers(deps) {
-    const getManager = deps.getLaunchHistoryManager;
+    const getBridge = deps.getAppsWorkerBridge;
+    const getFacade = deps.getLaunchHistoryManager;
+
+    async function resolveHistoryEntries() {
+        const bridge = getBridge?.();
+        if (bridge) {
+            return bridge.listHistory();
+        }
+        const manager = getFacade?.();
+        return manager?.list?.() || [];
+    }
 
     ipcMain.handle("launch-history:list", async () => {
-        const manager = getManager();
-        if (!manager) {
-            return { success: false, error: "Historique indisponible.", entries: [] };
+        try {
+            const entries = await resolveHistoryEntries();
+            const metadataManager = deps.getAppMetadataManager?.();
+            const enrichedEntries = metadataManager
+                ? await metadataManager.enrichHistoryEntries(entries)
+                : entries;
+            console.log("[LaunchHistory] list IPC", enrichedEntries.length, "entrée(s)");
+            return { success: true, entries: enrichedEntries };
+        } catch (err) {
+            console.warn("[LaunchHistory] list IPC:", err.message);
+            return { success: false, error: err.message, entries: [] };
         }
-        const entries = manager.list();
-        const metadataManager = deps.getAppMetadataManager?.();
-        const enrichedEntries = metadataManager
-            ? await metadataManager.enrichHistoryEntries(entries)
-            : entries;
-        console.log("[LaunchHistory] list IPC", enrichedEntries.length, "entrée(s)");
-        return { success: true, entries: enrichedEntries };
     });
 
-    ipcMain.handle("launch-history:record", (_event, payload = {}) => {
-        const manager = getManager();
-        if (!manager) {
-            return { success: false, error: "Historique indisponible." };
+    ipcMain.handle("launch-history:record", async (_event, payload = {}) => {
+        try {
+            const bridge = getBridge?.();
+            if (bridge) {
+                return await bridge.recordLaunch(payload);
+            }
+            const manager = getFacade?.();
+            if (!manager) {
+                return { success: false, error: "Historique indisponible." };
+            }
+            return manager.recordLaunch(payload);
+        } catch (err) {
+            return { success: false, error: err.message };
         }
-        return manager.recordLaunch(payload);
     });
 
-    ipcMain.handle("launch-history:remove", (_event, payload = {}) => {
-        const manager = getManager();
-        if (!manager) {
-            return { success: false, error: "Historique indisponible." };
+    ipcMain.handle("launch-history:remove", async (_event, payload = {}) => {
+        try {
+            const bridge = getBridge?.();
+            if (bridge) {
+                return await bridge.remove(payload);
+            }
+            const manager = getFacade?.();
+            if (!manager) {
+                return { success: false, error: "Historique indisponible." };
+            }
+            return manager.remove(payload);
+        } catch (err) {
+            return { success: false, error: err.message };
         }
-        return manager.remove(payload);
     });
 }
 

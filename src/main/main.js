@@ -48,6 +48,7 @@ const { StreamDeckDuoPopupManager } = require("./managers/stream-deck-duo-popup-
 const { registerStreamDeckDuoPopupHandlers } = require("./ipc/streamDeckDuoPopupHandlers");
 const { registerContextMenuHandlers } = require("./ipc/contextMenuHandlers");
 const { LaunchHistoryManager } = require("./managers/launch-history-manager");
+const { AppsWorkerBridge } = require("./managers/apps-worker-bridge");
 const { registerLaunchHistoryHandlers } = require("./ipc/launchHistoryHandlers");
 const { DeviceColorsManager } = require("./managers/device-colors-manager");
 const { registerDeviceColorsHandlers } = require("./ipc/deviceColorsHandlers");
@@ -293,6 +294,8 @@ let appMetadataManager;
 let maintenanceCleanupManager;
 let newInstanceManager;
 let launchHistoryManager;
+let appsWorkerBridge;
+let launchHistoryBootstrap;
 let devicePowerManager;
 let deviceOrientationManager;
 let lastConnectedSerials = [];
@@ -1145,23 +1148,40 @@ app.whenReady().then(() => {
         }
     });
 
-    launchHistoryManager = new LaunchHistoryManager(app.getPath("userData"), {
+    const userDataPath = app.getPath("userData");
+
+    launchHistoryBootstrap = new LaunchHistoryManager(userDataPath, {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
+    appsWorkerBridge = new AppsWorkerBridge();
+    appsWorkerBridge.bootstrapReady((async () => {
+        try {
+            if (wifiStartupPromise) await wifiStartupPromise;
+            if (launchHistoryBootstrap && deviceRegistry) {
+                await launchHistoryBootstrap.migrateDeviceIdsToStable((id) =>
+                    deviceRegistry.resolveStableDeviceIdFromTransport(id)
+                );
+            }
+        } finally {
+            launchHistoryBootstrap?.destroy();
+            launchHistoryBootstrap = null;
+        }
+        await appsWorkerBridge.start({
+            userDataPath,
+            getActiveTypeBKeys: getActiveTypeBHistoryKeys
+        });
+    })().catch((err) => {
+        console.warn("[AppsWorkerBridge] bootstrap:", err.message);
+    }));
+    launchHistoryManager = appsWorkerBridge.getFacade();
     global.launchHistoryManager = launchHistoryManager;
-    maintenanceCleanupManager = new MaintenanceCleanupManager(app.getPath("userData"), {
+    global.appsWorkerBridge = appsWorkerBridge;
+
+    maintenanceCleanupManager = new MaintenanceCleanupManager(userDataPath, {
         launchHistoryManager
     });
     global.maintenanceCleanupManager = maintenanceCleanupManager;
     void maintenanceCleanupManager.startAutoCleanup();
-    void (async () => {
-        if (wifiStartupPromise) await wifiStartupPromise;
-        if (launchHistoryManager && deviceRegistry) {
-            await launchHistoryManager.migrateDeviceIdsToStable((id) =>
-                deviceRegistry.resolveStableDeviceIdFromTransport(id)
-            );
-        }
-    })();
     global.globalAudioOutputManager = new GlobalAudioOutputManager();
     global.sessionAudioProcessManager = new SessionAudioProcessManager(scrcpyBinaryPath);
     global.sessionAudioProcessManager.setResolvers({
@@ -2473,6 +2493,7 @@ async function listDevicesForUI({ lightweight = false } = {}) {
         getConnectedDeviceIds
     });
     registerLaunchHistoryHandlers({
+        getAppsWorkerBridge: () => appsWorkerBridge,
         getLaunchHistoryManager: () => launchHistoryManager,
         getAppMetadataManager: () => appMetadataManager
     });
@@ -2521,5 +2542,9 @@ app.on("before-quit", () => {
     if (global.maintenanceCleanupManager?.stopAutoCleanup) {
         global.maintenanceCleanupManager.stopAutoCleanup();
     }
+    if (appsWorkerBridge) {
+        void appsWorkerBridge.shutdown();
+    }
+    launchHistoryBootstrap?.destroy();
     flushDeviceHistoryNow();
 });

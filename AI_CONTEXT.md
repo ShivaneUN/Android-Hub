@@ -219,10 +219,40 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 6. Pour le **mode Stream Deck** : bounds + overlay uniquement — voir § Mode Stream Deck LOCK ; ne pas toucher scrcpy-socket / new-instance-manager / session.js input.
 7. Préférer des changements **additifs** ; ne pas supprimer de comportement validé.
 
+### Worker apps (fork) — plan validé diagnostic 2026-07-09
+
+> **P0 livré (2026-07-09)** — Historique dans `apps-worker.js` via `AppsWorkerBridge`. **P1+ en attente** (liste apps, icônes). **LOCK inchangé**.
+
+**Fichiers cibles (création) :**
+
+| Fichier | Rôle |
+|---------|------|
+| `src/main/workers/apps-worker.js` | Process enfant : managers apps/métadonnées/historique |
+| `src/main/managers/apps-worker-bridge.js` | Pont IPC main ↔ worker, lifecycle, fallback crash |
+
+**Pont main (modifications minimales, hors LOCK) :** `main.js` (init/shutdown + `device:apps`), `appMetadataHandlers.js`, `launchHistoryHandlers.js`, `new-instance-ipc.js` (seul `recordLaunch` → bridge).
+
+#### Ajouter un nouveau type de message IPC worker
+
+1. Définir la constante `TYPE` dans `apps-worker.js` (handler `process.on("message")`).
+2. Documenter le contrat request/response dans ce fichier (payload + erreurs).
+3. Exposer une méthode sur `AppsWorkerBridge` (ex. `bridge.request("MON_TYPE", payload)`).
+4. Appeler depuis le handler IPC Electron concerné (main reste relayeur).
+5. Si push worker → renderer : envoyer `METADATA_UPDATED` (ou équivalent) depuis le worker, bridge relaye vers `webContents.send` existant.
+6. Logger le changement dans `PROGRESS_CHECK.md` + entrée journal ci-dessous.
+
+**Messages initiaux prévus :** `INIT`, `GET_APP_LIST`, `ENRICH_APPS`, `RESOLVE_APP_METADATA`, `PREFETCH_APP_METADATA`, `GET_HISTORY`, `ADD_HISTORY_ENTRY`, `REMOVE_HISTORY_ENTRY`, `METADATA_UPDATED` (push), `SHUTDOWN`.
+
+**Cache partagé :** réutiliser `{userData}/app-metadata-cache.json`, `{userData}/app-icons/`, `{userData}/launch-history.json` — pas de second stockage.
+
+Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork) 2026-07-09.
+
 ---
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **P0 worker apps** — `src/main/workers/apps-worker.js`, `src/main/managers/apps-worker-bridge.js` : historique lancement (`GET/ADD/REMOVE_HISTORY`, purge maintenance) hors main via `fork()` ; fallback in-process si crash ; `launch-history-manager.js` option `enablePruneTimer`. LOCK intact.
+- 2026-07-09 — **Plan worker apps (fork)** — Diagnostic lecture seule validé ; rétention historique 2 j + exception sessions Type B actives conservée.
 - 2026-07-08 — **LOCK** — Clic long Type B : `adb-input-controller.js` (`_activeTouchStart`, tolérance 12 px, seuil 400 ms), `new-instance-manager.js` (touch display virtuel → ADB, pas scrcpy), `main.js` (contrôleur ADB session unifié). Raison : long press KO (micro-mouvements + chemin scrcpy sans synthèse).
 - 2026-07-08 — `src/renderer/apps/app-list.css`, `src/renderer/styles/style.css` (historique), `src/shared/app-icon-placeholder.js` (classe `hub-app-icon-placeholder`) — `fill: none` limité aux SVG stroke ; placeholder historique visible. Raison : carré gris dans liste historique Nouvelle instance.
 - 2026-07-08 — `src/renderer/new-session.js` — Après chargement apps : prefetch métadonnées une seule fois par appareil connecté + refresh silencieux (500 ms) ; plus de prefetch à chaque recherche/filtre tant que l'appareil reste connecté.

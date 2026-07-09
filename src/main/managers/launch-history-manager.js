@@ -5,15 +5,17 @@ const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 class LaunchHistoryManager {
-    constructor(userDataPath, { getActiveTypeBKeys } = {}) {
+    constructor(userDataPath, { getActiveTypeBKeys, enablePruneTimer = true } = {}) {
         this.filePath = path.join(userDataPath, "launch-history.json");
         this.entries = {};
         this.getActiveTypeBKeys = typeof getActiveTypeBKeys === "function" ? getActiveTypeBKeys : () => new Set();
         this.load();
         this.pruneStale();
-        this._pruneTimer = setInterval(() => this.pruneStale(), PRUNE_INTERVAL_MS);
-        if (typeof this._pruneTimer.unref === "function") {
-            this._pruneTimer.unref();
+        if (enablePruneTimer) {
+            this._pruneTimer = setInterval(() => this.pruneStale(), PRUNE_INTERVAL_MS);
+            if (typeof this._pruneTimer.unref === "function") {
+                this._pruneTimer.unref();
+            }
         }
     }
 

@@ -1,6 +1,211 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-08
+Dernière mise à jour : 2026-07-09
+
+---
+
+## DIAGNOSTIC — Worker apps (fork) — Étape 1 lecture seule (2026-07-09)
+
+**Statut : diagnostic terminé — aucun patch code. En attente validation plan + règle rétention historique.**  
+**Objectif :** déporter liste apps / logos / historique dans `child_process.fork()` pour libérer le main process, **sans toucher au LOCK** (§ rappel ci-dessous).
+
+### Rappel LOCK (inchangé)
+
+Ne pas modifier : `scrcpy-socket.js`, `new-instance-manager.js`, `createSession()`, fichiers input, flag `--new-display`, logique sessions Type A / Type B.
+
+---
+
+### 1. Où sont gérés app list / logos / historique ?
+
+| Domaine | Fichier(s) | Fonctions / rôle |
+|---------|------------|------------------|
+| **Liste apps installées** | `src/main/managers/device-manager.js` | `getInstalledApps`, `getInstalledAppsWithDetails`, `_fetchAllPackages`, `getInstalledPackagesByUser`, `getUserIds` |
+| **IPC liste apps** | `src/main/main.js` | `ipcMain.handle("device:apps")`, `ipcMain.handle("get-apps")` |
+| **Enrichissement cache logos** | `src/main/managers/app-metadata-manager.js` | `enrichApps`, `resolveOne`, `queuePrefetch`, `enrichHistoryEntries`, `mergeAppMetadata` |
+| **Extraction icône APK** | `src/main/managers/app-icon-extractor.js` | `extractIcon`, `getAllApkPathsOnDevice`, `pullApk`, `extractIconFromApk` |
+| **IPC métadonnées** | `src/main/ipc/appMetadataHandlers.js` | `app-metadata:resolve`, `app-metadata:prefetch` ; monkey-patch `getInstalledAppsWithDetails` → `enrichApps` |
+| **Historique lancement** | `src/main/managers/launch-history-manager.js` | `recordLaunch`, `list`, `remove`, `pruneStale`, `migrateDeviceIdsToStable` |
+| **IPC historique** | `src/main/ipc/launchHistoryHandlers.js` | `launch-history:list`, `launch-history:record`, `launch-history:remove` |
+| **Init main** | `src/main/main.js` (~L1122–1164) | `new AppMetadataManager`, `attachAppMetadataPrefetch`, `new LaunchHistoryManager`, handlers IPC |
+| **Enregistrement historique Type B** | `src/main/ipc/new-instance-ipc.js` (~L65–87) | `launchHistoryManager.recordLaunch` après `startNewInstanceSession` (lecture cache icône via `appMetadataManager`) |
+| **Preload renderer** | `src/preload/preload.js` | `getAppsWithDetails`, `resolveAppMetadata`, `prefetchAppMetadata`, `launchHistoryAPI.*` |
+| **UI** | `src/renderer/new-session.js`, `AppLauncherSearch.js`, `AppList.js`, `Sidebar.js` | Affichage liste / historique / hydratation icônes |
+
+**Verdict :** tout le métier lourd est aujourd'hui dans le **main process** (managers + IPC), pas dans le renderer.
+
+---
+
+### 2. Appels ADB utilisés (liste apps + icônes)
+
+| Étape | Commande ADB / outil | Fichier |
+|-------|----------------------|---------|
+| Profils Android | `shell pm list users` | `device-manager.js` |
+| Liste packages | `shell pm list packages -3 -l --user {N}` (fallback sans `-l`) | `device-manager.js` |
+| Chemins APK | `shell pm path [--user N] {package}` | `app-icon-extractor.js` |
+| Pull APK | `pull {remoteApk} {local}` (timeout 45 s) | `app-icon-extractor.js` |
+| Label app (optionnel) | `shell pm dump [--user N] {package}` (timeout 12 s) | `app-metadata-manager.js` |
+| versionCode (hors prefetch) | `shell dumpsys package [--user N] {package}` (timeout 12 s) | `app-metadata-manager.js` |
+| Extraction locale | `tar -xf {apk} -C {dir}` (pas ADB) | `app-icon-extractor.js` |
+
+**Concurrence prefetch :** `PREFETCH_CONCURRENCY = 2` dans `app-metadata-manager.js` — jusqu'à 2 extractions parallèles par appareil.
+
+---
+
+### 3. Async vs bloquant — impact event loop main
+
+| Type | Détail | Bloquant main ? |
+|------|--------|-----------------|
+| **ADB** | `child_process.exec` enveloppé en `Promise` (`execPromise` / `execWithTimeout`) | **Non** pendant l'attente I/O (async) |
+| **Cache JSON** | `readFileSync` / `writeFileSync` (`launch-history.json`, `app-metadata-cache.json`) | **Oui** — pics courts ; `saveIndex` déjà debouncé (500 ms) côté métadonnées |
+| **Extraction icône** | `readdirSync`, `readFileSync`, `rmSync`, `copyFileSync`, `statSync`, `existsSync` dans `app-icon-extractor.js` | **Oui** — **principal risque** : arborescence APK + `tar` sur le thread Node du main |
+| **Lookup cache** | `isFresh` → `existsSync` (atténué par `_verifiedIconPaths` en mémoire) | Faible si cache chaud |
+| **enrichApps** | Merge mémoire uniquement (prune retiré du hot path, 2026-07-08) | Faible |
+
+**Verdict :** les appels ADB sont async, mais **le CPU/disque synchrone** (tar, walk `res/`, écritures JSON) sur le main process peut retarder IPC sessions / scrcpy pendant un chargement apps ou prefetch icônes. Un worker isolé déplace ce coût hors du main.
+
+**Référence pattern existant :** `SessionAudioProcessManager` utilise `spawn` (scrcpy audio) — pas de `fork` métier aujourd'hui ; le worker apps sera le **premier fork dédié données**.
+
+---
+
+### 4. Cache logos — existe déjà
+
+| Stockage | Chemin | Contenu |
+|----------|--------|---------|
+| **Index métadonnées** | `{userData}/app-metadata-cache.json` | Clé `deviceId::packageName::userId`, `appName`, `iconPath`, `iconAttempts`, `versionCode`, `fetchedAt` |
+| **PNG icônes** | `{userData}/app-icons/{deviceId}/{package}[@uN].png` | Fichiers raster (seuil min 1 Ko, filtre faux positifs) |
+| **URL renderer** | `file://` via `pathToFileURL` | Exposé comme `iconUrl` |
+| **TTL** | 7 jours (`CACHE_TTL_MS`) | Entrée sans icône : retry max 3 (`iconAttempts`) |
+| **Historique** | `{userData}/launch-history.json` | Entrées par clé `deviceId::packageName::userId` |
+
+**Verdict :** le cache est **persistant entre redémarrages** — pas de re-extraction systématique. Le worker **doit réutiliser les mêmes chemins `{userData}`** pour compatibilité.
+
+---
+
+### 5. Historique — règle de rétention actuelle (à confirmer)
+
+| Règle | Valeur | Fichier |
+|-------|--------|---------|
+| Auto-suppression | Entrées **> 2 jours** sans lancement récent | `TWO_DAYS_MS` dans `launch-history-manager.js` |
+| Exception | Entrées dont la clé est dans **sessions Type B actives** (`getActiveTypeBKeys`) | Callback injecté depuis `main.js` → lit `newInstanceManager` + `browserViewManager` (**lecture seule**, pas de patch LOCK) |
+| Fréquence prune | Toutes les **6 h** + à chaque `list()` | `PRUNE_INTERVAL_MS` |
+| Purge manuelle | `purgeOlderThan(cutoffMs)` via maintenance | `maintenance-cleanup-manager.js` |
+
+**Question ouverte pour le mainteneur :** conserver **2 jours / exception sessions actives / prune 6 h**, ou ajuster avant implémentation worker ?
+
+---
+
+### 6. Plan d'implémentation proposé (après validation)
+
+**Principe :** le main process **relaye uniquement** (résolution serial stable → worker → réponse UI). Managers existants **réutilisés dans le worker** (pas de duplication métier) ; bridge IPC typé.
+
+#### Fichiers à créer (hors LOCK)
+
+| Fichier | Rôle |
+|---------|------|
+| `src/main/workers/apps-worker.js` | Process enfant `fork()` : instancie `DeviceManager` (partie apps), `AppMetadataManager`, `LaunchHistoryManager` avec `{userData, adbPath}` |
+| `src/main/managers/apps-worker-bridge.js` | Lifecycle fork, file de requêtes, timeout, crash → restart / fallback in-process |
+
+#### Messages IPC worker (proposition)
+
+| Type | Direction | Payload | Réponse |
+|------|-----------|---------|---------|
+| `INIT` | main → worker | `{ userDataPath, adbPath }` | `{ ok }` |
+| `GET_APP_LIST` | main → worker | `{ adbSerial, cacheDeviceId?, transportSerial? }` | `{ apps }` |
+| `ENRICH_APPS` | main → worker | `{ serial, apps[] }` | `{ apps }` |
+| `RESOLVE_APP_METADATA` | main → worker | `{ deviceId, packageName, userId, appNameHint? }` | `{ metadata }` |
+| `PREFETCH_APP_METADATA` | main → worker | `{ deviceId, apps[], maxCount }` | `{ ok }` (+ push `METADATA_UPDATED` worker → main) |
+| `GET_HISTORY` | main → worker | `{ activeKeys?: string[] }` | `{ entries }` |
+| `ADD_HISTORY_ENTRY` | main → worker | `{ deviceId, packageName, appName, iconPath?, userId? }` | `{ entry }` |
+| `REMOVE_HISTORY_ENTRY` | main → worker | `{ key \| deviceId+packageName+userId }` | `{ success }` |
+| `SHUTDOWN` | main → worker | — | process exit |
+
+**Note :** `activeKeys` pour prune/list fourni par le **main** (calcul `getActiveTypeBHistoryKeys` inchangé) — évite d'importer `new-instance-manager.js` dans le worker.
+
+#### Fichiers main à modifier (minimal, hors LOCK)
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/main.js` | Init / shutdown bridge ; `device:apps` délègue au worker |
+| `src/main/ipc/appMetadataHandlers.js` | Handlers → bridge |
+| `src/main/ipc/launchHistoryHandlers.js` | Handlers → bridge |
+| `src/main/ipc/new-instance-ipc.js` | `recordLaunch` → bridge (**1 appel**, pas de changement `startNewInstanceSession`) |
+
+#### Fichiers LOCK — non touchés
+
+`scrcpy-socket.js`, `new-instance-manager.js`, `session.js` (input), `adb-input-controller.js`, `createSession()`, routage input Type A/B.
+
+#### Lifecycle / robustesse
+
+1. **Démarrage :** `fork` après `app.whenReady`, message `INIT` avec chemins `userData` + `adbPath`.
+2. **Quit :** `app.on("before-quit")` → `SHUTDOWN` + `worker.kill()` ; `unref` timer prune dans worker.
+3. **Crash worker :** log + restart (max 3) ; si échec → **fallback in-process** temporaire (managers actuels sur main) pour ne pas casser l'UI.
+4. **Push prefetch :** worker envoie `METADATA_UPDATED` → bridge relaye `app-metadata:updated` vers renderer (comportement actuel).
+
+#### Phases livraison
+
+| Phase | Contenu | Test manuel |
+|-------|---------|-------------|
+| **P0** | Bridge + worker skeleton ; historique (`GET/ADD/REMOVE`) | Ouvrir Nouvelle instance → historique OK |
+| **P1** | `GET_APP_LIST` + `ENRICH_APPS` | Liste apps charge ; session Type A/B reste fluide pendant chargement |
+| **P2** | `RESOLVE` + `PREFETCH` icônes | Logos apparaissent ; pas de freeze main |
+| **P3** | Shutdown propre + crash recovery | Quit app → pas de zombie ; kill worker → retry OK |
+
+#### Test manuel cible (section 5 livrable)
+
+1. Démarrer session Type B active (flux + input).
+2. Ouvrir panneau Nouvelle instance → charger liste apps (200+ packages).
+3. Vérifier : pas de freeze input/vidéo ; batterie sidebar inchangée ; historique + icônes OK après prefetch.
+
+---
+
+### 7. Décision requise avant code
+
+- [x] Valider le plan phases P0–P3 (**P0 validé 2026-07-09**)
+- [x] Confirmer règle rétention historique (2 j / exception Type B actif / prune 6 h) — **conservée**
+- [x] Valider `new-instance-ipc.js` — **inchangé** ; `global.launchHistoryManager` = facade bridge
+
+---
+
+## IMPL — Worker apps P0 historique (2026-07-09)
+
+**Statut : ✅ implémenté (P0).** LOCK intact.
+
+### Fichiers ajoutés
+
+| Fichier | Rôle |
+|---------|------|
+| `src/main/workers/apps-worker.js` | Process enfant : `INIT`, `GET_HISTORY`, `ADD_HISTORY_ENTRY`, `REMOVE_HISTORY_ENTRY`, `PURGE_HISTORY_OLDER_THAN`, `SHUTDOWN` |
+| `src/main/managers/apps-worker-bridge.js` | `fork()`, requêtes corrélées, restart (max 3), fallback in-process, facade `global.launchHistoryManager` |
+
+### Fichiers modifiés (hors LOCK)
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/main.js` | Bootstrap migration → worker ; shutdown `before-quit` |
+| `src/main/ipc/launchHistoryHandlers.js` | Délégation au bridge |
+| `src/main/managers/launch-history-manager.js` | Option `enablePruneTimer` (désactivé dans worker ; prune via `list` + `activeKeys` main) |
+
+### Messages IPC worker (P0)
+
+| Type | Sens |
+|------|------|
+| `INIT` | `{ userDataPath }` |
+| `GET_HISTORY` | `{ activeKeys }` ← `getActiveTypeBHistoryKeys()` main |
+| `ADD_HISTORY_ENTRY` | payload `recordLaunch` |
+| `REMOVE_HISTORY_ENTRY` | payload `remove` |
+| `PURGE_HISTORY_OLDER_THAN` | maintenance cleanup |
+| `SHUTDOWN` | quit propre worker |
+
+### Test manuel P0
+
+1. Ouvrir Nouvelle instance → historique visible.
+2. Lancer Type B → entrée ajoutée à l'historique.
+3. Supprimer une entrée historique → OK.
+4. Quit app → pas de process `apps-worker` zombie (Task Manager).
+
+### Prochaine étape
+
+**P1** — `GET_APP_LIST` + `ENRICH_APPS` dans le worker.
 
 ---
 
