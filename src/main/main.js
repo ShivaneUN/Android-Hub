@@ -232,6 +232,21 @@ async function runAutomatedTypeAMirrorLatencyRuns(mainWindow, runCount = 3) {
     console.log("[LATENCE-UI-RUNS] Terminé.");
 }
 
+function shouldOpenDevTools() {
+    return process.argv.includes("--devtools")
+        || process.env.ANDROID_HUB_DEVTOOLS === "1";
+}
+
+function openMainWindowDevTools() {
+    if (!win || win.isDestroyed()) return;
+    if (win.webContents.isDevToolsOpened()) {
+        win.webContents.devToolsWebContents?.focus();
+        return;
+    }
+    win.webContents.openDevTools({ mode: "undocked", activate: true });
+    win.webContents.devToolsWebContents?.focus();
+}
+
 function createWindow() {
     win = new BrowserWindow({
         width: 1200,
@@ -260,6 +275,9 @@ function createWindow() {
     win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
     win.webContents.once("did-finish-load", () => {
+        if (shouldOpenDevTools()) {
+            setImmediate(() => openMainWindowDevTools());
+        }
         const runs = Number(process.env.ANDROID_HUB_UI_LATENCY_RUNS || 0);
         if (runs > 0) {
             void runAutomatedTypeAMirrorLatencyRuns(win, runs).finally(() => {
@@ -373,6 +391,37 @@ async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut 
     }
 
     return serial;
+}
+
+async function resolveAppListDeviceContext(transportSerial) {
+    const serial = String(transportSerial || "").trim();
+    if (!serial) {
+        throw new Error("Serial appareil manquant");
+    }
+
+    let cacheDeviceId = serial;
+    let adbSerial = serial;
+
+    if (deviceRegistry) {
+        try {
+            const stable = await deviceRegistry.resolveStableDeviceIdFromTransport(serial);
+            if (stable) cacheDeviceId = stable;
+        } catch (_err) {
+            // noop
+        }
+
+        try {
+            const resolved = await deviceRegistry.resolveEffectiveAdbSerial({
+                deviceId: cacheDeviceId,
+                serial
+            });
+            if (resolved) adbSerial = resolved;
+        } catch (_err) {
+            // noop
+        }
+    }
+
+    return { transportSerial: serial, cacheDeviceId, adbSerial };
 }
 
 async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, timingOut = null) {
@@ -1154,6 +1203,14 @@ app.whenReady().then(() => {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
     appsWorkerBridge = new AppsWorkerBridge();
+    appsWorkerBridge.setAppListFallback({
+        getAppList: ({ adbSerial }) => deviceManager.getInstalledAppsWithDetails(adbSerial),
+        enrichApps: ({ transportSerial, cacheDeviceId }, apps) => appMetadataManager.enrichApps(
+            transportSerial,
+            apps,
+            { cacheDeviceId, transportSerial }
+        )
+    });
     appsWorkerBridge.bootstrapReady((async () => {
         try {
             if (wifiStartupPromise) await wifiStartupPromise;
@@ -1168,6 +1225,7 @@ app.whenReady().then(() => {
         }
         await appsWorkerBridge.start({
             userDataPath,
+            adbPath,
             getActiveTypeBKeys: getActiveTypeBHistoryKeys
         });
     })().catch((err) => {
@@ -1321,16 +1379,24 @@ async function listDevicesForUI({ lightweight = false } = {}) {
 
     ipcMain.handle("device:apps", async (event, serial) => {
         try {
-            if (!deviceManager) {
-                return { success: false, error: "DeviceManager non initialise", apps: [] };
-            }
             if (!serial) {
                 return { success: false, error: "Serial appareil manquant", apps: [] };
             }
 
-            console.log(`[device:apps] Demande pour ${serial}`);
-            const apps = await deviceManager.getInstalledAppsWithDetails(serial);
-            console.log(`[device:apps] ${apps.length} apps retournees`);
+            const ctx = await resolveAppListDeviceContext(serial);
+            console.log(
+                `[device:apps] Demande pour ${ctx.transportSerial}`
+                + ` cache=${ctx.cacheDeviceId} adb=${ctx.adbSerial}`
+            );
+            let apps;
+            if (appsWorkerBridge) {
+                apps = await appsWorkerBridge.getAppList(ctx);
+            } else if (deviceManager) {
+                apps = await deviceManager.getInstalledAppsWithDetails(ctx.adbSerial);
+            } else {
+                return { success: false, error: "DeviceManager non initialise", apps: [] };
+            }
+            console.log(`[device:apps] ${apps.length} apps retournees (worker=${Boolean(appsWorkerBridge && !appsWorkerBridge.useFallback)})`);
             return { success: true, apps };
         } catch (err) {
             console.error("[device:apps] Erreur:", err.message);
@@ -2497,6 +2563,15 @@ async function listDevicesForUI({ lightweight = false } = {}) {
         getLaunchHistoryManager: () => launchHistoryManager,
         getAppMetadataManager: () => appMetadataManager
     });
+
+    // TEMP DEBUG - à retirer avant release
+    ipcMain.handle("apps-worker:debug-crash", async () => {
+        if (!appsWorkerBridge) {
+            return { success: false, error: "AppsWorkerBridge indisponible." };
+        }
+        return appsWorkerBridge.debugCrashWorker();
+    });
+
     registerAppMetadataHandlers({
         ipcMain,
         getAppMetadataManager: () => appMetadataManager,

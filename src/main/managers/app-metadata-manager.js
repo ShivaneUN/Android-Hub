@@ -466,7 +466,16 @@ class AppMetadataManager {
         };
     }
 
-    async enrichApps(serial, apps = []) {
+    async enrichApps(serial, apps = [], options = {}) {
+        const transportSerial = String(options.transportSerial ?? serial ?? "");
+        const cacheDeviceId = options.cacheDeviceId
+            ? String(options.cacheDeviceId)
+            : null;
+
+        if (cacheDeviceId) {
+            return apps.map((app) => this.mergeAppMetadata(cacheDeviceId, app, transportSerial));
+        }
+
         const ctx = await this.resolveDeviceContext(serial);
         return apps.map((app) => this.mergeAppMetadata(ctx.cacheDeviceId, app, ctx.transportSerial));
     }

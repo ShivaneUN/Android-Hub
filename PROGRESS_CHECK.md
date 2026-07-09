@@ -110,8 +110,8 @@ Ne pas modifier : `scrcpy-socket.js`, `new-instance-manager.js`, `createSession(
 | Type | Direction | Payload | Réponse |
 |------|-----------|---------|---------|
 | `INIT` | main → worker | `{ userDataPath, adbPath }` | `{ ok }` |
-| `GET_APP_LIST` | main → worker | `{ adbSerial, cacheDeviceId?, transportSerial? }` | `{ apps }` |
-| `ENRICH_APPS` | main → worker | `{ serial, apps[] }` | `{ apps }` |
+| `GET_APP_LIST` | main → worker | `{ transportSerial, cacheDeviceId, adbSerial }` | `{ apps }` |
+| `ENRICH_APPS` | main → worker | `{ transportSerial, cacheDeviceId, apps[] }` | `{ apps }` |
 | `RESOLVE_APP_METADATA` | main → worker | `{ deviceId, packageName, userId, appNameHint? }` | `{ metadata }` |
 | `PREFETCH_APP_METADATA` | main → worker | `{ deviceId, apps[], maxCount }` | `{ ok }` (+ push `METADATA_UPDATED` worker → main) |
 | `GET_HISTORY` | main → worker | `{ activeKeys?: string[] }` | `{ entries }` |
@@ -174,7 +174,7 @@ Ne pas modifier : `scrcpy-socket.js`, `new-instance-manager.js`, `createSession(
 
 | Fichier | Rôle |
 |---------|------|
-| `src/main/workers/apps-worker.js` | Process enfant : `INIT`, `GET_HISTORY`, `ADD_HISTORY_ENTRY`, `REMOVE_HISTORY_ENTRY`, `PURGE_HISTORY_OLDER_THAN`, `SHUTDOWN` |
+| `src/main/workers/apps-worker.js` | Process enfant : `INIT`, historique P0, `GET_APP_LIST`, `ENRICH_APPS` P1, `SHUTDOWN` |
 | `src/main/managers/apps-worker-bridge.js` | `fork()`, requêtes corrélées, restart (max 3), fallback in-process, facade `global.launchHistoryManager` |
 
 ### Fichiers modifiés (hors LOCK)
@@ -189,7 +189,7 @@ Ne pas modifier : `scrcpy-socket.js`, `new-instance-manager.js`, `createSession(
 
 | Type | Sens |
 |------|------|
-| `INIT` | `{ userDataPath }` |
+| `INIT` | `{ userDataPath, adbPath }` |
 | `GET_HISTORY` | `{ activeKeys }` ← `getActiveTypeBHistoryKeys()` main |
 | `ADD_HISTORY_ENTRY` | payload `recordLaunch` |
 | `REMOVE_HISTORY_ENTRY` | payload `remove` |
@@ -203,9 +203,80 @@ Ne pas modifier : `scrcpy-socket.js`, `new-instance-manager.js`, `createSession(
 3. Supprimer une entrée historique → OK.
 4. Quit app → pas de process `apps-worker` zombie (Task Manager).
 
-### Prochaine étape
+### Prochaine étape (P0)
 
-**P1** — `GET_APP_LIST` + `ENRICH_APPS` dans le worker.
+~~**P1** — `GET_APP_LIST` + `ENRICH_APPS` dans le worker.~~ → voir section IMPL P1 ci-dessous.
+
+---
+
+## IMPL — Worker apps P1 liste + enrich (2026-07-09)
+
+**Statut : ✅ implémenté (P1).** LOCK intact.
+
+### Changements
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/workers/apps-worker.js` | `INIT` reçoit `adbPath` ; instancie `DeviceManager` + `AppMetadataManager` ; handlers `GET_APP_LIST`, `ENRICH_APPS` |
+| `src/main/managers/apps-worker-bridge.js` | `getAppList(serial)`, `enrichApps(serial, apps)` ; timeout 90 s liste ; fallback in-process via `setAppListFallback` |
+| `src/main/main.js` | `device:apps` → bridge ; `adbPath` passé au `start()` ; fallback `deviceManager` + `appMetadataManager` |
+
+### Messages IPC worker (P1)
+
+| Type | Payload | Réponse |
+|------|---------|---------|
+| `INIT` | `{ userDataPath, adbPath }` | `{ ready: true }` |
+| `GET_APP_LIST` | `{ transportSerial, cacheDeviceId, adbSerial }` | `{ apps }` — `pm list` (adbSerial) + enrich (cacheDeviceId) |
+| `ENRICH_APPS` | `{ transportSerial, cacheDeviceId, apps[] }` | `{ apps }` — cache métadonnées uniquement |
+
+**Note :** clé cache unifiée via `cacheDeviceId` résolu sur le main — voir **P1.5** ci-dessous. Prefetch icônes (`resolveOne`) reste sur main → **P2**.
+
+### Test manuel P1
+
+1. Ouvrir Nouvelle instance → liste apps charge (200+ packages).
+2. Pendant chargement : session Type B active — input/vidéo fluides.
+3. Icônes en cache visibles ; nouvelles icônes via prefetch main (P2).
+4. `await electronAPI.debugCrashWorker()` → fallback ; recharger liste apps → OK.
+
+---
+
+## IMPL — Worker apps P1.5 unification cache deviceId (2026-07-09)
+
+**Statut : ✅ implémenté (P1.5).** LOCK intact.
+
+### Problème P1
+
+Le worker n'a pas accès à `global.deviceRegistry` : `enrichApps` utilisait le serial transport (`ABC123` USB vs `192.168.x.x:5555` WiFi) comme clé cache → entrées dupliquées ou miss (icônes prefetchées sous `ro.serialno` introuvables après switch transport).
+
+### Correctif
+
+Le **main** résout l'identité avant chaque appel worker (pattern Hub existant) ; le worker consomme les champs sans importer `device-registry`.
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/main.js` | `resolveAppListDeviceContext()` : `resolveStableDeviceIdFromTransport` + `resolveEffectiveAdbSerial` ; `device:apps` passe `{ transportSerial, cacheDeviceId, adbSerial }` |
+| `src/main/managers/apps-worker-bridge.js` | `getAppList(ctx)`, `enrichApps(ctx, apps)` — payload IPC aligné plan diagnostic |
+| `src/main/workers/apps-worker.js` | `GET_APP_LIST` : `adbSerial` pour ADB, `cacheDeviceId` pour cache ; `ENRICH_APPS` : `cacheDeviceId` + `transportSerial` |
+| `src/main/managers/app-metadata-manager.js` | `enrichApps(serial, apps, { cacheDeviceId, transportSerial })` — bypass `resolveDeviceContext` si contexte fourni |
+
+### Messages IPC worker (P1.5)
+
+| Type | Payload | Usage |
+|------|---------|-------|
+| `GET_APP_LIST` | `{ transportSerial, cacheDeviceId, adbSerial }` | ADB → `adbSerial` ; index cache → `cacheDeviceId` ; lookup cascade inclut `transportSerial` |
+| `ENRICH_APPS` | `{ transportSerial, cacheDeviceId, apps[] }` | idem enrich sans `pm list` |
+
+### Test manuel P1.5
+
+1. Ouvrir Nouvelle instance en **USB** → liste apps avec logos (prefetch ou cache existant).
+2. Basculer le même appareil en **WiFi** (sans débrancher physiquement si possible).
+3. Rouvrir / rafraîchir la liste apps sur le transport WiFi.
+4. **Attendu :** logos et noms inchangés (cache partagé sous `cacheDeviceId` stable) — pas de placeholders, pas de re-extraction APK.
+5. Logs `[device:apps]` : `cache=<ro.serialno>` identique USB et WiFi ; `adb=` change selon transport.
+
+### Prochaine étape (après P1.5)
+
+**P2** — `RESOLVE_APP_METADATA` + `PREFETCH_APP_METADATA` dans le worker (+ push `METADATA_UPDATED`).
 
 ---
 

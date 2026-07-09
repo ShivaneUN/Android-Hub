@@ -4,6 +4,7 @@ const { LaunchHistoryManager } = require("./launch-history-manager");
 
 const WORKER_PATH = path.join(__dirname, "../workers/apps-worker.js");
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const APP_LIST_REQUEST_TIMEOUT_MS = 90000;
 const MAX_RESTART_ATTEMPTS = 3;
 
 class AppsWorkerBridge {
@@ -16,6 +17,11 @@ class AppsWorkerBridge {
         this.useFallback = false;
         this.restartAttempts = 0;
         this.userDataPath = null;
+        this.adbPath = null;
+        /** @type {((ctx: { transportSerial: string, cacheDeviceId: string, adbSerial: string }) => Promise<unknown[]>)|null} */
+        this.fallbackGetAppList = null;
+        /** @type {((ctx: { transportSerial: string, cacheDeviceId: string }, apps: unknown[]) => Promise<unknown[]>)|null} */
+        this.fallbackEnrichApps = null;
         /** @type {(() => Set<string>)|null} */
         this.getActiveTypeBKeys = null;
         /** @type {LaunchHistoryManager|null} */
@@ -118,14 +124,23 @@ class AppsWorkerBridge {
             windowsHide: true
         });
         this.attachChildListeners();
-        await this.request("INIT", { userDataPath: this.userDataPath }, 15000);
+        await this.request("INIT", {
+            userDataPath: this.userDataPath,
+            adbPath: this.adbPath
+        }, 15000);
         this.restartAttempts = 0;
     }
 
-    async start({ userDataPath, getActiveTypeBKeys }) {
+    setAppListFallback({ getAppList, enrichApps } = {}) {
+        this.fallbackGetAppList = typeof getAppList === "function" ? getAppList : null;
+        this.fallbackEnrichApps = typeof enrichApps === "function" ? enrichApps : null;
+    }
+
+    async start({ userDataPath, adbPath, getActiveTypeBKeys }) {
         if (this.started) return;
 
         this.userDataPath = userDataPath;
+        this.adbPath = adbPath;
         this.getActiveTypeBKeys = getActiveTypeBKeys;
         this.started = true;
         this.useFallback = false;
@@ -133,7 +148,7 @@ class AppsWorkerBridge {
 
         try {
             await this.spawnWorker();
-            console.log("[AppsWorkerBridge] worker pret (P0 historique)");
+            console.log("[AppsWorkerBridge] worker pret (P0 historique + P1 apps)");
         } catch (err) {
             this.activateFallback(err.message);
         }
@@ -242,6 +257,38 @@ class AppsWorkerBridge {
         });
     }
 
+    async getAppList({ transportSerial, cacheDeviceId, adbSerial }) {
+        await this.ensureReady();
+        if (this.useFallback) {
+            if (this.fallbackGetAppList) {
+                return this.fallbackGetAppList({ transportSerial, cacheDeviceId, adbSerial });
+            }
+            throw new Error("Liste apps indisponible (fallback sans handler).");
+        }
+        const result = await this.request("GET_APP_LIST", {
+            transportSerial,
+            cacheDeviceId,
+            adbSerial
+        }, APP_LIST_REQUEST_TIMEOUT_MS);
+        return result?.apps || [];
+    }
+
+    async enrichApps({ transportSerial, cacheDeviceId }, apps = []) {
+        await this.ensureReady();
+        if (this.useFallback) {
+            if (this.fallbackEnrichApps) {
+                return this.fallbackEnrichApps({ transportSerial, cacheDeviceId }, apps);
+            }
+            return apps;
+        }
+        const result = await this.request("ENRICH_APPS", {
+            transportSerial,
+            cacheDeviceId,
+            apps
+        }, DEFAULT_REQUEST_TIMEOUT_MS);
+        return result?.apps || apps;
+    }
+
     getFacade() {
         const bridge = this;
         return {
@@ -254,6 +301,23 @@ class AppsWorkerBridge {
 
     bootstrapReady(readyPromise) {
         this.readyPromise = readyPromise;
+    }
+
+    // TEMP DEBUG - à retirer avant release
+    async debugCrashWorker() {
+        await this.ensureReady();
+        if (this.useFallback) {
+            return { success: false, error: "AppsWorker en fallback in-process." };
+        }
+        if (!this.child || this.child.killed) {
+            return { success: false, error: "AppsWorker non demarre." };
+        }
+        try {
+            this.child.send({ id: "debug-crash", type: "DEBUG_CRASH", payload: {} });
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err?.message || String(err) };
+        }
     }
 }
 
