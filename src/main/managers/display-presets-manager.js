@@ -116,6 +116,15 @@ class DisplayPresetsManager {
         return this.data.presets.find((preset) => preset.id === presetId) || null;
     }
 
+    _ensureDefaultPreset() {
+        if (!this.data.presets.length) {
+            this.data = structuredClone(DEFAULT_SEED);
+        }
+        if (!this._findPreset(this.data.defaultPreset)) {
+            this.data.defaultPreset = this.data.presets[0].id;
+        }
+    }
+
     _makeUniqueId(baseId, excludeId = null) {
         let candidate = baseId;
         let suffix = 2;
@@ -201,6 +210,27 @@ class DisplayPresetsManager {
             success: true,
             defaultPreset: presetId,
             params: this.resolveParams(presetId)
+        };
+    }
+
+    updateDefaultFromParams(params = {}) {
+        this._ensureDefaultPreset();
+
+        const preset = this._findPreset(this.data.defaultPreset);
+        if (!preset) {
+            return { success: false, error: "Preset par défaut introuvable" };
+        }
+
+        const sanitized = sanitizePresetInput(params);
+        Object.assign(preset, sanitized);
+        this.save();
+
+        return {
+            success: true,
+            defaultPreset: preset.id,
+            preset: { ...preset },
+            params: this.resolveParams(preset.id),
+            message: "Paramètres enregistrés pour les prochains lancements."
         };
     }
 

@@ -116,13 +116,13 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 
 ## Presets d'affichage session — étape A retrait commit 5 (2026-07-09)
 
-**Statut : étape A terminée (A1–A3). En attente validation avant étape B.**
+**Statut : B1 livré — B2 en cours.**
 
 | Étape | Fichier | Statut |
 |-------|---------|--------|
-| A1 | `stream-params-manager.js` | `applyParamsToAllSessions` supprimé ✓ |
-| A2 | `sessionHandlers.js` | IPC retiré ✓ |
-| A3 | `preload.js` | preload retiré ✓ |
+| B1 | `display-presets-manager.js` | `updateDefaultFromParams()` ✓ |
+| B2 | handlers + preload | à faire |
+| C | `ControlPanel.js` + locales | à faire |
 
 ---
 
