@@ -92,6 +92,28 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 
 ---
 
+## Presets d'affichage session — commit 4 (2026-07-09)
+
+**Statut : commit 4 livré — UI panneau Contrôle.**
+
+### Fichiers
+
+| Fichier | Changement |
+|---------|------------|
+| `src/renderer/hub-modal/hub-modal-window.html` | Section presets (select, checkbox, boutons) |
+| `src/renderer/control-panel/ControlPanel.js` | Chargement presets, save, défaut, draft depuis preset |
+| `src/renderer/styles/control-panel.css` | Styles section presets |
+| `src/shared/locales/{fr,en}.json` + `src/renderer/locales/{fr,en}.json` | Clés `controlPanel.presets.*` |
+
+### UI
+
+- **Sélecteur** : charge le draft (résolution / fps / bitrate) sans appliquer à la session
+- **Enregistrer le réglage actuel** : `prompt` nom → `displayPresetsAPI.save` (3 champs cibles + résolution)
+- **Définir par défaut** : checkbox → `setDefault` pour le preset sélectionné (★ dans la liste)
+- **Appliquer à toutes les instances** : bouton présent ; actif quand `sessionAPI.applyStreamParamsToAll` existera (commit 5)
+
+---
+
 ## DIAGNOSTIC — Worker apps (fork) — Étape 1 lecture seule (2026-07-09)
 
 **Statut : diagnostic terminé — aucun patch code. En attente validation plan + règle rétention historique.**  

@@ -295,3 +295,48 @@
   background: var(--border-subtle);
   margin: 2px 0;
 }
+
+.control-preset-row {
+  margin-bottom: 8px;
+}
+
+.control-preset-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: #0a0e14;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.control-preset-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.control-preset-default-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.control-preset-default-toggle input {
+  accent-color: var(--accent-blue);
+}
+
+.control-preset-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-preset-actions .control-btn {
+  flex: unset;
+  width: 100%;
+}

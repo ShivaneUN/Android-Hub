@@ -92,7 +92,10 @@
         appliedParams: null,
         draftParams: SP.cloneParams(SP.DEFAULT_STREAM_PARAMS || DEFAULT_PARAMS),
         isApplying: false,
-        uiReady: false
+        uiReady: false,
+        presets: [],
+        defaultPresetId: null,
+        selectedPresetId: null
     };
 
     const els = {};
@@ -169,11 +172,211 @@
         if (els.loadingOverlay) {
             els.loadingOverlay.classList.toggle("hidden", !active);
         }
-        if (!active) updateDirtyState();
-        else {
+        if (!active) {
+            updateDirtyState();
+            syncPresetDefaultCheckbox();
+        } else {
             if (els.btnApply) els.btnApply.disabled = true;
             if (els.btnCancel) els.btnCancel.disabled = true;
             if (els.btnReset) els.btnReset.disabled = true;
+            if (els.btnSavePreset) els.btnSavePreset.disabled = true;
+            if (els.btnApplyAll) els.btnApplyAll.disabled = true;
+            if (els.presetSelect) els.presetSelect.disabled = true;
+            if (els.presetSetDefault) els.presetSetDefault.disabled = true;
+        }
+    }
+
+    function syncPresetDefaultCheckbox() {
+        if (!els.presetSetDefault) return;
+        const presetId = els.presetSelect?.value || "";
+        const isDefault = Boolean(presetId) && presetId === state.defaultPresetId;
+        els.presetSetDefault.checked = isDefault;
+        els.presetSetDefault.disabled = !presetId || state.isApplying || isDefault;
+    }
+
+    function renderPresetSelect() {
+        if (!els.presetSelect) return;
+
+        const previous = els.presetSelect.value;
+        els.presetSelect.innerHTML = "";
+
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = t("controlPanel.presets.none");
+        els.presetSelect.appendChild(emptyOption);
+
+        state.presets.forEach((preset) => {
+            const option = document.createElement("option");
+            option.value = preset.id;
+            const defaultMark = preset.id === state.defaultPresetId ? " ★" : "";
+            option.textContent = `${preset.name}${defaultMark}`;
+            els.presetSelect.appendChild(option);
+        });
+
+        const targetId = (previous && state.presets.some((preset) => preset.id === previous))
+            ? previous
+            : (state.selectedPresetId || "");
+        els.presetSelect.value = targetId;
+        els.presetSelect.disabled = state.isApplying;
+        if (els.btnSavePreset) els.btnSavePreset.disabled = state.isApplying;
+        if (els.btnApplyAll) {
+            els.btnApplyAll.disabled = state.isApplying || !window.sessionAPI?.applyStreamParamsToAll;
+        }
+        syncPresetDefaultCheckbox();
+    }
+
+    async function loadPresets() {
+        if (!window.displayPresetsAPI?.list) {
+            state.presets = [];
+            state.defaultPresetId = null;
+            renderPresetSelect();
+            return;
+        }
+
+        try {
+            const result = await window.displayPresetsAPI.list();
+            if (!result?.success) {
+                setStatus(t("controlPanel.presets.loadFailed"), "error");
+                return;
+            }
+            state.presets = result.presets || [];
+            state.defaultPresetId = result.defaultPreset || null;
+            renderPresetSelect();
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.loadFailed"), "error");
+        }
+    }
+
+    async function applyPresetToDraft(presetId) {
+        if (!presetId || !window.displayPresetsAPI?.resolveParams) return;
+
+        const result = await window.displayPresetsAPI.resolveParams(presetId);
+        if (!result?.success || !result.params) {
+            setStatus(t("controlPanel.presets.loadFailed"), "error");
+            return;
+        }
+
+        state.draftParams = SP.cloneParams(result.params);
+        syncSegmentUI();
+        updateDirtyState();
+    }
+
+    async function onPresetSelectChange() {
+        const presetId = els.presetSelect?.value || "";
+        state.selectedPresetId = presetId || null;
+        syncPresetDefaultCheckbox();
+        if (!presetId) return;
+        await applyPresetToDraft(presetId);
+    }
+
+    async function saveCurrentPreset() {
+        if (!window.displayPresetsAPI?.save) {
+            setStatus(t("controlPanel.validation.apiUnavailable"), "error");
+            return;
+        }
+
+        const draft = readDraftParams();
+        const name = window.prompt(t("controlPanel.presets.namePrompt"));
+        if (!name || !String(name).trim()) return;
+
+        setLoading(true);
+        setStatus(t("controlPanel.validation.applying"));
+
+        try {
+            const result = await window.displayPresetsAPI.save({
+                name: String(name).trim(),
+                params: {
+                    width: draft.width,
+                    height: draft.height,
+                    maxFps: draft.maxFps,
+                    bitRateMbps: draft.bitRateMbps
+                }
+            });
+
+            if (!result?.success) {
+                setStatus(result?.error || t("controlPanel.presets.saveFailed"), "error");
+                return;
+            }
+
+            state.selectedPresetId = result.preset?.id || null;
+            await loadPresets();
+            if (state.selectedPresetId && els.presetSelect) {
+                els.presetSelect.value = state.selectedPresetId;
+            }
+            syncPresetDefaultCheckbox();
+            setStatus(
+                t("controlPanel.presets.saved", { name: result.preset?.name || name }),
+                "success"
+            );
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.saveFailed"), "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function setSelectedPresetAsDefault() {
+        const presetId = els.presetSelect?.value;
+        if (!presetId || presetId === state.defaultPresetId) return;
+        if (!window.displayPresetsAPI?.setDefault) {
+            setStatus(t("controlPanel.validation.apiUnavailable"), "error");
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const result = await window.displayPresetsAPI.setDefault(presetId);
+            if (!result?.success) {
+                setStatus(result?.error || t("controlPanel.presets.defaultSetFailed"), "error");
+                return;
+            }
+
+            state.defaultPresetId = result.defaultPreset;
+            const preset = state.presets.find((item) => item.id === presetId);
+            await loadPresets();
+            if (els.presetSelect) els.presetSelect.value = presetId;
+            setStatus(
+                t("controlPanel.presets.defaultSet", { name: preset?.name || presetId }),
+                "success"
+            );
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.defaultSetFailed"), "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function applyToAllInstances() {
+        if (!window.sessionAPI?.applyStreamParamsToAll) {
+            setStatus(t("controlPanel.presets.applyAllUnavailable"), "error");
+            return;
+        }
+
+        const validation = SP.validateParams(readDraftParams());
+        if (!validation.valid) {
+            setStatus(validation.errors.join(" · "), "error");
+            return;
+        }
+
+        setLoading(true);
+        setStatus(t("controlPanel.presets.applyingAll"));
+
+        try {
+            const result = await window.sessionAPI.applyStreamParamsToAll(validation.params);
+            if (!result?.success) {
+                setStatus(result?.error || t("controlPanel.presets.applyAllFailed"), "error");
+                return;
+            }
+
+            if (state.selectedSessionId) {
+                await loadSessionParams(state.selectedSessionId);
+            }
+            setStatus(t("controlPanel.presets.appliedAll"), "success");
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.applyAllFailed"), "error");
+        } finally {
+            setLoading(false);
         }
     }
 
@@ -537,6 +740,30 @@
             els.btnReset._bound = true;
             els.btnReset.addEventListener("click", () => resetToOriginal().catch(console.error));
         }
+        if (els.presetSelect && !els.presetSelect._bound) {
+            els.presetSelect._bound = true;
+            els.presetSelect.addEventListener("change", () => {
+                onPresetSelectChange().catch(console.error);
+            });
+        }
+        if (els.presetSetDefault && !els.presetSetDefault._bound) {
+            els.presetSetDefault._bound = true;
+            els.presetSetDefault.addEventListener("change", () => {
+                if (els.presetSetDefault.checked) {
+                    setSelectedPresetAsDefault().catch(console.error);
+                } else {
+                    syncPresetDefaultCheckbox();
+                }
+            });
+        }
+        if (els.btnSavePreset && !els.btnSavePreset._bound) {
+            els.btnSavePreset._bound = true;
+            els.btnSavePreset.addEventListener("click", () => saveCurrentPreset().catch(console.error));
+        }
+        if (els.btnApplyAll && !els.btnApplyAll._bound) {
+            els.btnApplyAll._bound = true;
+            els.btnApplyAll.addEventListener("click", () => applyToAllInstances().catch(console.error));
+        }
 
         if (!window.__controlPanelEventsBound) {
             window.__controlPanelEventsBound = true;
@@ -549,6 +776,9 @@
             window.addEventListener("custom-names-updated", () => {
                 refreshSessions().catch(console.error);
             });
+            window.displayPresetsAPI?.onUpdated?.(() => {
+                loadPresets().catch(console.error);
+            });
         }
     }
 
@@ -560,6 +790,10 @@
         els.btnApply = $("control-btn-apply");
         els.btnCancel = $("control-btn-cancel");
         els.btnReset = $("control-btn-reset");
+        els.presetSelect = $("control-preset-select");
+        els.presetSetDefault = $("control-preset-set-default");
+        els.btnSavePreset = $("control-btn-save-preset");
+        els.btnApplyAll = $("control-btn-apply-all");
         els.statusMessage = $("control-status-message");
         els.loadingOverlay = $("control-loading-overlay");
     }
@@ -581,6 +815,12 @@
         return true;
     }
 
+    async function ensureUIAsync() {
+        if (!ensureUI()) return false;
+        await loadPresets();
+        return true;
+    }
+
     window.openControlPanel = async function openControlPanel(options = {}) {
         if (!options.inChildWindow && !/hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"))) {
             if (window.openSettingsPanel) {
@@ -591,7 +831,7 @@
             return;
         }
 
-        if (!ensureUI()) {
+        if (!(await ensureUIAsync())) {
             setStatus(t("controlPanel.validation.unexpectedError"), "error");
             return;
         }
@@ -604,6 +844,7 @@
     function boot() {
         try {
             ensureUI();
+            loadPresets().catch(console.error);
             renderSessionList();
         } catch (err) {
             console.error("[ControlPanel] Erreur initialisation:", err);
@@ -615,6 +856,7 @@
         SP = getSP();
         OPT = SP.CONTROL_OPTIONS || getFallbackOptions();
         buildParamGroups();
+        renderPresetSelect();
         updateSessionMeta();
         updateAppliedDisplay();
         renderSessionList();

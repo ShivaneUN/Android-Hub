@@ -279,6 +279,23 @@
     "sessionType": "Type {type}",
     "sessionMeta": "{label} · Type {type}",
     "active": "Active",
+    "presets": {
+      "label": "Display presets",
+      "none": "— No preset —",
+      "setDefault": "Set as default",
+      "saveCurrent": "Save current settings",
+      "applyAll": "Apply to all instances",
+      "namePrompt": "Preset name:",
+      "saved": "Preset \"{name}\" saved.",
+      "saveFailed": "Could not save preset.",
+      "defaultSet": "Preset \"{name}\" set as default for new sessions.",
+      "defaultSetFailed": "Could not set default preset.",
+      "loadFailed": "Could not load presets.",
+      "applyAllUnavailable": "Apply-to-all is not available yet.",
+      "applyingAll": "Applying to all instances…",
+      "appliedAll": "Settings applied to all open instances.",
+      "applyAllFailed": "Failed to apply settings to all instances."
+    },
     "resolution": {
       "label": "Resolution",
       "fullHd": "FULL HD",

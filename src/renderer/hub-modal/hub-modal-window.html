@@ -103,6 +103,23 @@
             <div class="control-session-list" id="control-session-list"></div>
           </div>
           <div class="control-divider"></div>
+          <div id="control-presets-section">
+            <div class="control-section-label" data-i18n="controlPanel.presets.label">Presets d'affichage</div>
+            <div class="control-preset-row">
+              <select class="control-preset-select" id="control-preset-select" aria-label="Preset">
+                <option value="" data-i18n="controlPanel.presets.none">— Aucun preset —</option>
+              </select>
+            </div>
+            <label class="control-preset-default-toggle">
+              <input type="checkbox" id="control-preset-set-default">
+              <span data-i18n="controlPanel.presets.setDefault">Définir par défaut</span>
+            </label>
+            <div class="control-preset-actions">
+              <button type="button" class="control-btn" id="control-btn-save-preset" data-i18n="controlPanel.presets.saveCurrent">Enregistrer le réglage actuel</button>
+              <button type="button" class="control-btn control-btn-primary" id="control-btn-apply-all" data-i18n="controlPanel.presets.applyAll">Appliquer à toutes les instances</button>
+            </div>
+          </div>
+          <div class="control-divider"></div>
           <div id="control-params-section">
             <div class="control-section-label" data-i18n="controlPanel.selectedSession">Instance sélectionnée</div>
             <div class="control-session-meta" id="control-session-meta" data-i18n="controlPanel.noSessionSelected">Aucune instance sélectionnée</div>
