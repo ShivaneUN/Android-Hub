@@ -285,16 +285,19 @@
       "setDefault": "Set as default",
       "saveCurrent": "Save current settings",
       "applyAll": "Apply to all instances",
+      "applyAllHint": "Updates the default preset for future launches. Open sessions are not restarted.",
+      "namePlaceholder": "Preset name",
+      "nameEmpty": "Enter a preset name.",
       "namePrompt": "Preset name:",
       "saved": "Preset \"{name}\" saved.",
       "saveFailed": "Could not save preset.",
       "defaultSet": "Preset \"{name}\" set as default for new sessions.",
       "defaultSetFailed": "Could not set default preset.",
       "loadFailed": "Could not load presets.",
-      "applyAllUnavailable": "Apply-to-all is not available yet.",
-      "applyingAll": "Applying to all instances…",
-      "appliedAll": "Settings applied to all open instances.",
-      "applyAllFailed": "Failed to apply settings to all instances."
+      "applyAllUnavailable": "Default preset update is unavailable.",
+      "applyingAll": "Saving for future launches…",
+      "appliedAll": "Settings saved for future launches. Active sessions are unchanged.",
+      "applyAllFailed": "Could not save settings for future launches."
     },
     "resolution": {
       "label": "Resolution",

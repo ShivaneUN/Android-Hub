@@ -108,21 +108,27 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 ### UI
 
 - **Sélecteur** : charge le draft (résolution / fps / bitrate) sans appliquer à la session
-- **Enregistrer le réglage actuel** : `prompt` nom → `displayPresetsAPI.save` (3 champs cibles + résolution)
+- **Enregistrer le réglage actuel** : champ nom → `displayPresetsAPI.save`
 - **Définir par défaut** : checkbox → `setDefault` pour le preset sélectionné (★ dans la liste)
-- **Appliquer à toutes les instances** : ~~restart global~~ → étape B : mise à jour `defaultPreset` pour prochains lancements
+- **Appliquer à toutes les instances** : `displayPresetsAPI.updateDefaultFromParams` → prochains lancements
 
 ---
 
 ## Presets d'affichage session — étape A retrait commit 5 (2026-07-09)
 
-**Statut : étape B terminée (B1–B2). Étape C en attente.**
+**Statut : étapes A–C terminées.**
 
-| Étape | Fichier | Statut |
-|-------|---------|--------|
-| B1 | `display-presets-manager.js` | `updateDefaultFromParams()` ✓ |
-| B2 | handlers + preload | ✓ |
-| C | `ControlPanel.js` + locales | à faire |
+| Étape | Rôle |
+|-------|------|
+| A | Retrait `applyParamsToAllSessions` (restart global) |
+| B | `updateDefaultFromParams` — écrase `defaultPreset` |
+| C | UI : bouton → `displayPresetsAPI.updateDefaultFromParams` |
+
+### Comportement final « Appliquer à toutes les instances »
+
+- Écrit le draft (résolution / fps / bitrate) dans le preset `defaultPreset`
+- `new-session.js` lit ce preset au **prochain** lancement Type A / B
+- Sessions **actives** : inchangées (sauf « Appliquer » manuel sur une session)
 
 ---
 

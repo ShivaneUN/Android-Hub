@@ -114,9 +114,13 @@
               <input type="checkbox" id="control-preset-set-default">
               <span data-i18n="controlPanel.presets.setDefault">Définir par défaut</span>
             </label>
-            <div class="control-preset-actions">
+            <div class="control-preset-save-row">
+              <input type="text" id="control-preset-name-input" class="control-preset-name-input" maxlength="48" autocomplete="off" data-i18n-placeholder="controlPanel.presets.namePlaceholder" placeholder="Nom du preset">
               <button type="button" class="control-btn" id="control-btn-save-preset" data-i18n="controlPanel.presets.saveCurrent">Enregistrer le réglage actuel</button>
+            </div>
+            <div class="control-preset-actions">
               <button type="button" class="control-btn control-btn-primary" id="control-btn-apply-all" data-i18n="controlPanel.presets.applyAll">Appliquer à toutes les instances</button>
+              <p class="control-preset-hint" id="control-preset-apply-all-hint" data-i18n="controlPanel.presets.applyAllHint">Met à jour le preset par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.</p>
             </div>
           </div>
           <div class="control-divider"></div>

@@ -259,9 +259,9 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 | 2 | `src/preload/preload.js` | `window.displayPresetsAPI` |
 | 3 | `src/renderer/new-session.js` | Défaut lancement Type A/B via `displayPresetsAPI.getDefault()` → `toScrcpyOptions()` |
 | 4 | `hub-modal-window.html`, `ControlPanel.js`, `control-panel.css`, locales | UI presets : sélecteur, enregistrer, défaut, appliquer à toutes (UI) |
-| 5 | ~~`applyParamsToAllSessions`~~ **annulé** — étape A terminée ; étape B à venir : `updateDefaultFromParams` |
+| 5 | Étapes A–C : « Appliquer à toutes » → `updateDefaultFromParams` (prochains lancements, pas restart) |
 
-### Étape A — retrait commit 5 (restart global) — en cours
+### Étapes A–C — « Appliquer à toutes » reformulé (terminé)
 
 | Commit | Fichier | Action |
 |--------|---------|--------|
@@ -269,6 +269,7 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 | A2 | `sessionHandlers.js` | Suppression IPC `session:applyStreamParamsToAll` ✓ |
 | B1 | `display-presets-manager.js` | `updateDefaultFromParams()` + `_ensureDefaultPreset()` ✓ |
 | B2 | `display-presets-handlers.js`, `preload.js` | IPC `update-default-from-params` + `displayPresetsAPI.updateDefaultFromParams` ✓ |
+| C | `ControlPanel.js`, locales, hint UI | bouton → `updateDefaultFromParams` ✓ |
 
 **Raison :** « Appliquer à toutes » = défaut pour **prochains lancements**, pas restart des sessions actives.
 
@@ -276,7 +277,7 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 
 **LOCK intact** : pas de modification `scrcpy-socket.js`, `new-instance-manager.js`, input, Type A/B.
 
-Prochaines étapes planifiées : commits 1–5 livrés.
+Prochaines étapes : feature presets complète (commits 1–5 + reformulation A–C).
 
 Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
@@ -289,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — étape C** — bouton « Appliquer à toutes » → `updateDefaultFromParams` (prochains lancements, pas restart).
 - 2026-07-09 — **Presets affichage — étape B2** — IPC + preload `updateDefaultFromParams`.
 - 2026-07-09 — **Presets affichage — étape B1** — `updateDefaultFromParams()` dans `display-presets-manager.js`.
 - 2026-07-09 — **Presets affichage — étape A3** — retrait `sessionAPI.applyStreamParamsToAll` du preload.

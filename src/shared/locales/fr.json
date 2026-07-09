@@ -285,16 +285,19 @@
       "setDefault": "Définir par défaut",
       "saveCurrent": "Enregistrer le réglage actuel",
       "applyAll": "Appliquer à toutes les instances",
+      "applyAllHint": "Met à jour le preset par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.",
+      "namePlaceholder": "Nom du preset",
+      "nameEmpty": "Indiquez un nom pour le preset.",
       "namePrompt": "Nom du preset :",
       "saved": "Preset « {name} » enregistré.",
       "saveFailed": "Impossible d'enregistrer le preset.",
       "defaultSet": "Preset « {name} » défini par défaut pour les nouvelles sessions.",
       "defaultSetFailed": "Impossible de définir le preset par défaut.",
       "loadFailed": "Impossible de charger les presets.",
-      "applyAllUnavailable": "Application globale indisponible (prochaine mise à jour).",
-      "applyingAll": "Application à toutes les instances…",
-      "appliedAll": "Paramètres appliqués à toutes les instances ouvertes.",
-      "applyAllFailed": "Échec de l'application globale."
+      "applyAllUnavailable": "Mise à jour du preset par défaut indisponible.",
+      "applyingAll": "Enregistrement pour les prochains lancements…",
+      "appliedAll": "Paramètres enregistrés pour les prochains lancements. Les sessions actives restent inchangées.",
+      "applyAllFailed": "Impossible d'enregistrer les paramètres pour les prochains lancements."
     },
     "resolution": {
       "label": "Résolution",
