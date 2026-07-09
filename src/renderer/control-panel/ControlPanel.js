@@ -174,16 +174,24 @@
         }
         if (!active) {
             updateDirtyState();
-            syncPresetDefaultCheckbox();
         } else {
             if (els.btnApply) els.btnApply.disabled = true;
             if (els.btnCancel) els.btnCancel.disabled = true;
             if (els.btnReset) els.btnReset.disabled = true;
-            if (els.btnSavePreset) els.btnSavePreset.disabled = true;
-            if (els.btnApplyAll) els.btnApplyAll.disabled = true;
-            if (els.presetSelect) els.presetSelect.disabled = true;
-            if (els.presetSetDefault) els.presetSetDefault.disabled = true;
         }
+        syncPresetControls();
+    }
+
+    function syncPresetControls() {
+        const busy = state.isApplying;
+        if (els.presetSelect) els.presetSelect.disabled = busy;
+        if (els.presetNameInput) els.presetNameInput.disabled = busy;
+        if (els.btnSavePreset) els.btnSavePreset.disabled = busy;
+        if (els.btnApplyAll) {
+            els.btnApplyAll.disabled = busy
+                || typeof window.displayPresetsAPI?.updateDefaultFromParams !== "function";
+        }
+        syncPresetDefaultCheckbox();
     }
 
     function syncPresetDefaultCheckbox() {
@@ -217,12 +225,7 @@
             ? previous
             : (state.selectedPresetId || "");
         els.presetSelect.value = targetId;
-        els.presetSelect.disabled = state.isApplying;
-        if (els.btnSavePreset) els.btnSavePreset.disabled = state.isApplying;
-        if (els.btnApplyAll) {
-            els.btnApplyAll.disabled = state.isApplying || !window.sessionAPI?.applyStreamParamsToAll;
-        }
-        syncPresetDefaultCheckbox();
+        syncPresetControls();
     }
 
     async function loadPresets() {
@@ -275,16 +278,21 @@
             return;
         }
 
+        const name = els.presetNameInput?.value?.trim() || "";
+        if (!name) {
+            setStatus(t("controlPanel.presets.nameEmpty"), "error");
+            els.presetNameInput?.focus();
+            return;
+        }
+
         const draft = readDraftParams();
-        const name = window.prompt(t("controlPanel.presets.namePrompt"));
-        if (!name || !String(name).trim()) return;
 
         setLoading(true);
         setStatus(t("controlPanel.validation.applying"));
 
         try {
             const result = await window.displayPresetsAPI.save({
-                name: String(name).trim(),
+                name,
                 params: {
                     width: draft.width,
                     height: draft.height,
@@ -298,12 +306,13 @@
                 return;
             }
 
+            if (els.presetNameInput) els.presetNameInput.value = "";
             state.selectedPresetId = result.preset?.id || null;
             await loadPresets();
             if (state.selectedPresetId && els.presetSelect) {
                 els.presetSelect.value = state.selectedPresetId;
             }
-            syncPresetDefaultCheckbox();
+            syncPresetControls();
             setStatus(
                 t("controlPanel.presets.saved", { name: result.preset?.name || name }),
                 "success"
@@ -348,7 +357,7 @@
     }
 
     async function applyToAllInstances() {
-        if (!window.sessionAPI?.applyStreamParamsToAll) {
+        if (!window.displayPresetsAPI?.updateDefaultFromParams) {
             setStatus(t("controlPanel.presets.applyAllUnavailable"), "error");
             return;
         }
@@ -359,31 +368,32 @@
             return;
         }
 
-        setLoading(true);
+        const draft = validation.params;
         setStatus(t("controlPanel.presets.applyingAll"));
 
         try {
-            const result = await window.sessionAPI.applyStreamParamsToAll(validation.params);
+            const result = await window.displayPresetsAPI.updateDefaultFromParams({
+                width: draft.width,
+                height: draft.height,
+                maxFps: draft.maxFps,
+                bitRateMbps: draft.bitRateMbps
+            });
+
             if (!result?.success) {
                 setStatus(result?.error || t("controlPanel.presets.applyAllFailed"), "error");
                 return;
             }
 
-            if (state.selectedSessionId) {
-                await loadSessionParams(state.selectedSessionId);
-            } else {
-                state.appliedParams = SP.normalizeParams(validation.params);
-                state.draftParams = SP.cloneParams(state.appliedParams);
-                updateAppliedDisplay();
-                syncSegmentUI();
-                updateDirtyState();
+            state.defaultPresetId = result.defaultPreset || state.defaultPresetId;
+            state.selectedPresetId = result.defaultPreset || state.selectedPresetId;
+            await loadPresets();
+            if (els.presetSelect && result.defaultPreset) {
+                els.presetSelect.value = result.defaultPreset;
             }
-            await refreshSessions();
+            syncPresetControls();
             setStatus(result.message || t("controlPanel.presets.appliedAll"), "success");
         } catch (err) {
             setStatus(err.message || t("controlPanel.presets.applyAllFailed"), "error");
-        } finally {
-            setLoading(false);
         }
     }
 
@@ -767,6 +777,15 @@
             els.btnSavePreset._bound = true;
             els.btnSavePreset.addEventListener("click", () => saveCurrentPreset().catch(console.error));
         }
+        if (els.presetNameInput && !els.presetNameInput._bound) {
+            els.presetNameInput._bound = true;
+            els.presetNameInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    saveCurrentPreset().catch(console.error);
+                }
+            });
+        }
         if (els.btnApplyAll && !els.btnApplyAll._bound) {
             els.btnApplyAll._bound = true;
             els.btnApplyAll.addEventListener("click", () => applyToAllInstances().catch(console.error));
@@ -798,6 +817,7 @@
         els.btnCancel = $("control-btn-cancel");
         els.btnReset = $("control-btn-reset");
         els.presetSelect = $("control-preset-select");
+        els.presetNameInput = $("control-preset-name-input");
         els.presetSetDefault = $("control-preset-set-default");
         els.btnSavePreset = $("control-btn-save-preset");
         els.btnApplyAll = $("control-btn-apply-all");
