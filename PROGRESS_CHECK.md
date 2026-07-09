@@ -110,7 +110,30 @@ Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARA
 - **Sélecteur** : charge le draft (résolution / fps / bitrate) sans appliquer à la session
 - **Enregistrer le réglage actuel** : `prompt` nom → `displayPresetsAPI.save` (3 champs cibles + résolution)
 - **Définir par défaut** : checkbox → `setDefault` pour le preset sélectionné (★ dans la liste)
-- **Appliquer à toutes les instances** : bouton présent ; actif quand `sessionAPI.applyStreamParamsToAll` existera (commit 5)
+- **Appliquer à toutes les instances** : bouton actif via `sessionAPI.applyStreamParamsToAll` (commit 5)
+
+---
+
+## Presets d'affichage session — commit 5 (2026-07-09)
+
+**Statut : commit 5 livré — application globale aux sessions ouvertes.**
+
+### Fichiers
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/managers/stream-params-manager.js` | `applyParamsToAllSessions(params)` — boucle séquentielle sur `getAllSessions()` |
+| `src/main/ipc/sessionHandlers.js` | IPC `session:applyStreamParamsToAll` |
+| `src/preload/preload.js` | `sessionAPI.applyStreamParamsToAll(params)` |
+| `src/renderer/control-panel/ControlPanel.js` | Message backend + refresh liste sessions |
+
+### Comportement
+
+- Valide les params une fois, applique à chaque session via `applyParams()` existant (redémarrage flux Type A/B inchangé)
+- Succès partiel possible : message `X/Y session(s)`
+- Erreur si aucune session ouvertes ou échec sur toutes
+
+**LOCK intact.**
 
 ---
 

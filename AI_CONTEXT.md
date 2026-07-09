@@ -259,6 +259,7 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 | 2 | `src/preload/preload.js` | `window.displayPresetsAPI` |
 | 3 | `src/renderer/new-session.js` | Défaut lancement Type A/B via `displayPresetsAPI.getDefault()` → `toScrcpyOptions()` |
 | 4 | `hub-modal-window.html`, `ControlPanel.js`, `control-panel.css`, locales | UI presets : sélecteur, enregistrer, défaut, appliquer à toutes (UI) |
+| 5 | `stream-params-manager.js`, `sessionHandlers.js`, `preload.js` | `applyParamsToAllSessions` + IPC `session:applyStreamParamsToAll` |
 
 **LOCK intact** : pas de modification `scrcpy-socket.js`, `new-instance-manager.js`, input, Type A/B.
 
@@ -270,6 +271,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-09 — **Presets affichage — commit 5** — `applyParamsToAllSessions` + IPC `applyStreamParamsToAll`. LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 4** — UI panneau Contrôle (sélecteur, enregistrer, défaut, bouton appliquer toutes). LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 3** — `new-session.js` : preset par défaut pour miroir Type A et `streamOptions` Type B. LOCK intact.
 - 2026-07-09 — **Presets affichage — commit 2** — IPC `display-presets-handlers.js` + `displayPresetsAPI` preload. LOCK intact.

@@ -371,8 +371,15 @@
 
             if (state.selectedSessionId) {
                 await loadSessionParams(state.selectedSessionId);
+            } else {
+                state.appliedParams = SP.normalizeParams(validation.params);
+                state.draftParams = SP.cloneParams(state.appliedParams);
+                updateAppliedDisplay();
+                syncSegmentUI();
+                updateDirtyState();
             }
-            setStatus(t("controlPanel.presets.appliedAll"), "success");
+            await refreshSessions();
+            setStatus(result.message || t("controlPanel.presets.appliedAll"), "success");
         } catch (err) {
             setStatus(err.message || t("controlPanel.presets.applyAllFailed"), "error");
         } finally {
