@@ -434,13 +434,6 @@ function registerStreamParamsHandlers(streamParamsManager) {
         return streamParamsManager.applyParams(sessionId, params);
     });
 
-    ipcMain.handle("session:applyStreamParamsToAll", async (_event, { params } = {}) => {
-        if (!streamParamsManager) {
-            return { success: false, error: "Gestionnaire de paramètres indisponible" };
-        }
-        return streamParamsManager.applyParamsToAllSessions(params);
-    });
-
     ipcMain.handle("session:resetStreamParams", async (_event, sessionId) => {
         if (!streamParamsManager) {
             return { success: false, error: "Gestionnaire de paramètres indisponible" };
