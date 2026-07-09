@@ -43,6 +43,48 @@ function dismissHubModalPanel() {
     }
 }
 
+async function resolveDefaultLaunchStreamParams() {
+    try {
+        if (window.displayPresetsAPI?.getDefault) {
+            const result = await window.displayPresetsAPI.getDefault();
+            if (result?.success && result.params) {
+                return result.params;
+            }
+        }
+        if (window.displayPresetsAPI?.resolveParams) {
+            const result = await window.displayPresetsAPI.resolveParams();
+            if (result?.success && result.params) {
+                return result.params;
+            }
+        }
+    } catch (err) {
+        console.warn("[NewSession] displayPresetsAPI indisponible:", err.message);
+    }
+
+    if (typeof StreamParams !== "undefined" && StreamParams.DEFAULT_STREAM_PARAMS) {
+        return StreamParams.cloneParams
+            ? StreamParams.cloneParams(StreamParams.DEFAULT_STREAM_PARAMS)
+            : { ...StreamParams.DEFAULT_STREAM_PARAMS };
+    }
+
+    return {
+        width: 1920,
+        height: 1080,
+        dpi: 240,
+        maxFps: 60,
+        bitRateMbps: 8,
+        iFrameInterval: 1
+    };
+}
+
+async function buildDefaultScrcpyOptions(sessionType) {
+    const params = await resolveDefaultLaunchStreamParams();
+    if (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions) {
+        return StreamParams.toScrcpyOptions(params, sessionType);
+    }
+    return {};
+}
+
 async function invokeMainAction(action, args = []) {
     const response = await window.hubModalWindowAPI.invokeMain(action, args);
     if (!response?.success) {
@@ -940,7 +982,9 @@ async function launchTypeBSession({
         throw new Error(t("newSession.virtualDisplayMissing"));
     }
 
+    const presetScrcpyOpts = await buildDefaultScrcpyOptions("B");
     const streamOptions = {
+        ...presetScrcpyOpts,
         stayAwake: true,
         turnScreenOff: true,
         audio: false
@@ -1178,9 +1222,7 @@ async function launchMirrorSession(options = {}) {
             latencyTraceId = started.traceId;
         }
 
-        const scrcpyOpts = typeof StreamParams !== "undefined"
-            ? StreamParams.toScrcpyOptions(StreamParams.DEFAULT_STREAM_PARAMS, "A")
-            : {};
+        const scrcpyOpts = await buildDefaultScrcpyOptions("A");
 
         await createInstance(serial, deviceName, null, {
             tabLabel: mirrorLabel,

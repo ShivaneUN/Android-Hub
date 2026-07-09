@@ -69,6 +69,29 @@ Push renderer : `display-presets:updated` (fenêtre principale + hub modal) apr�
 
 ---
 
+## Presets d'affichage session — commit 3 (2026-07-09)
+
+**Statut : commit 3 livré — défaut sur nouvelles sessions.**
+
+### Fichier
+
+| Fichier | Changement |
+|---------|------------|
+| `src/renderer/new-session.js` | `resolveDefaultLaunchStreamParams()` + `buildDefaultScrcpyOptions(type)` |
+
+### Comportement
+
+| Lancement | Avant | Après |
+|-----------|-------|-------|
+| **Type A** (`launchMirrorSession`) | `toScrcpyOptions(DEFAULT_STREAM_PARAMS, "A")` | `toScrcpyOptions(defaultPreset.params, "A")` via IPC |
+| **Type B** (`launchTypeBSession`) | `streamOptions` = flags seulement | merge `toScrcpyOptions(defaultPreset.params, "B")` + `stayAwake` / `turnScreenOff` / `audio: false` |
+
+Fallback si `displayPresetsAPI` indisponible : `StreamParams.DEFAULT_STREAM_PARAMS` (comportement inchangé).
+
+**LOCK intact** : `new-instance-manager.js` non modifié — reçoit `streamOptions` enrichis en amont.
+
+---
+
 ## DIAGNOSTIC — Worker apps (fork) — Étape 1 lecture seule (2026-07-09)
 
 **Statut : diagnostic terminé — aucun patch code. En attente validation plan + règle rétention historique.**  
