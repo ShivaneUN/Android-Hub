@@ -8,12 +8,13 @@ const {
 } = require("../../shared/app-display");
 const { AppIconExtractor } = require("./app-icon-extractor");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
-const { isValidIconFileSize } = require("../../shared/app-icon-placeholder");
+const { isValidIconFileSize, MIN_ICON_FILE_BYTES } = require("../../shared/app-icon-placeholder");
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DUMP_TIMEOUT_MS = 12000;
-const PREFETCH_CONCURRENCY = 2;
-const DEFAULT_PREFETCH_MAX = 16;
+const PREFETCH_CONCURRENCY = 4;
+const PREFETCH_PRIORITY_CONCURRENCY = 6;
+const DEFAULT_PREFETCH_MAX = 32;
 const MAX_ICON_EXTRACT_ATTEMPTS = 3;
 const INDEX_SAVE_DEBOUNCE_MS = 500;
 
@@ -47,11 +48,15 @@ class AppMetadataManager {
         this.iconExtractor = new AppIconExtractor(adbPath);
         this.index = {};
         this.prefetchQueues = new Map();
+        /** @type {Map<string, { concurrency: number }>} */
+        this.prefetchQueueMeta = new Map();
         this._verifiedIconPaths = new Set();
         this._indexDirty = false;
         this._indexSaveTimer = null;
+        this._stalePrunePromise = null;
         this.loadIndex();
         fs.mkdirSync(this.cacheRoot, { recursive: true });
+        void this.pruneStaleIconCacheEntries();
     }
 
     buildKey(deviceId, packageName, userId = null) {
@@ -84,6 +89,57 @@ class AppMetadataManager {
             console.warn("[AppMetadataManager] lecture cache:", err.message);
             this.index = {};
         }
+    }
+
+    async isIconFileAccessible(iconPath) {
+        if (!iconPath || typeof iconPath !== "string") return false;
+        try {
+            await fs.promises.access(iconPath, fs.constants.R_OK);
+            const stat = await fs.promises.stat(iconPath);
+            return stat.size >= MIN_ICON_FILE_BYTES;
+        } catch (_err) {
+            return false;
+        }
+    }
+
+    async pruneStaleIconCacheEntries() {
+        if (this._stalePrunePromise) {
+            return this._stalePrunePromise;
+        }
+
+        this._stalePrunePromise = (async () => {
+            let invalidated = 0;
+            /** @type {Map<string, number>} */
+            const byDeviceId = new Map();
+
+            for (const entry of Object.values(this.index)) {
+                if (!entry?.iconPath) continue;
+
+                if (await this.isIconFileAccessible(entry.iconPath)) continue;
+
+                this._verifiedIconPaths.delete(entry.iconPath);
+                entry.iconPath = null;
+                entry.iconAttempts = 0;
+                invalidated += 1;
+
+                const deviceId = String(entry.deviceId || "unknown");
+                byDeviceId.set(deviceId, (byDeviceId.get(deviceId) || 0) + 1);
+            }
+
+            if (invalidated > 0) {
+                this.scheduleSaveIndex();
+                console.log(
+                    `[AppMetadataManager] prune stale icon cache: ${invalidated} entree(s) invalidee(s)`,
+                    Object.fromEntries(byDeviceId)
+                );
+            } else {
+                console.log("[AppMetadataManager] prune stale icon cache: 0 entree stale");
+            }
+        })().catch((err) => {
+            console.warn("[AppMetadataManager] prune stale icon cache:", err.message);
+        });
+
+        return this._stalePrunePromise;
     }
 
     saveIndex() {
@@ -119,9 +175,14 @@ class AppMetadataManager {
         if (!entry?.fetchedAt) return false;
         if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) return false;
         if (!entry.iconPath) return true;
-        if (this._verifiedIconPaths.has(entry.iconPath)) return true;
-        if (!fs.existsSync(entry.iconPath)) return false;
-        if (!isValidIconFileSize(entry.iconPath)) return false;
+        if (!fs.existsSync(entry.iconPath)) {
+            this._verifiedIconPaths.delete(entry.iconPath);
+            return false;
+        }
+        if (!isValidIconFileSize(entry.iconPath)) {
+            this._verifiedIconPaths.delete(entry.iconPath);
+            return false;
+        }
         this._verifiedIconPaths.add(entry.iconPath);
         return true;
     }
@@ -339,8 +400,57 @@ class AppMetadataManager {
         return this.shouldRetryIconExtract(found.entry);
     }
 
-    async resolveOne(deviceId, packageName, userId = null, { appNameHint = null, prefetch = false } = {}) {
-        const ctx = await this.resolveDeviceContext(deviceId);
+    async resolvePrefetchContext(deviceId, options = {}) {
+        if (options.cacheDeviceId) {
+            const transportSerial = String(options.transportSerial ?? deviceId ?? "");
+            return {
+                cacheDeviceId: String(options.cacheDeviceId),
+                adbSerial: String(options.adbSerial ?? transportSerial),
+                transportSerial
+            };
+        }
+        return this.resolveDeviceContext(deviceId);
+    }
+
+    reopenBlockedPrefetchTargets(ctx, apps = []) {
+        let changed = false;
+
+        for (const app of apps) {
+            const packageName = app.package || app.packageName;
+            if (!packageName) continue;
+
+            const found = this.lookupCacheEntry(
+                ctx.cacheDeviceId,
+                packageName,
+                app.userId ?? null,
+                ctx.transportSerial
+            );
+            if (!found?.entry || this.hasUsableIcon(found.entry)) continue;
+
+            const attempts = Number(found.entry.iconAttempts) || 0;
+            if (!found.entry.iconPath && attempts >= MAX_ICON_EXTRACT_ATTEMPTS) {
+                found.entry.iconAttempts = 0;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.scheduleSaveIndex();
+        }
+    }
+
+    async resolveOne(deviceId, packageName, userId = null, {
+        appNameHint = null,
+        prefetch = false,
+        cacheDeviceId = null,
+        transportSerial = null,
+        adbSerial = null
+    } = {}) {
+        const ctx = await this.resolvePrefetchContext(deviceId, {
+            cacheDeviceId,
+            transportSerial,
+            adbSerial
+        });
         const found = this.lookupCacheEntry(
             ctx.cacheDeviceId,
             packageName,
@@ -467,6 +577,8 @@ class AppMetadataManager {
     }
 
     async enrichApps(serial, apps = [], options = {}) {
+        await this.pruneStaleIconCacheEntries();
+
         const transportSerial = String(options.transportSerial ?? serial ?? "");
         const cacheDeviceId = options.cacheDeviceId
             ? String(options.cacheDeviceId)
@@ -481,14 +593,26 @@ class AppMetadataManager {
     }
 
     async queuePrefetch(deviceId, apps = [], options = {}) {
+        await this.pruneStaleIconCacheEntries();
+
         const notify = typeof options.onUpdate === "function"
             ? options.onUpdate
             : this.notifyUpdate;
         const maxCount = Number.isInteger(options.maxCount) && options.maxCount > 0
             ? options.maxCount
             : DEFAULT_PREFETCH_MAX;
+        const priority = options.priority === "high" ? "high" : "normal";
+        const concurrency = priority === "high"
+            ? PREFETCH_PRIORITY_CONCURRENCY
+            : PREFETCH_CONCURRENCY;
 
-        const ctx = await this.resolveDeviceContext(deviceId);
+        const ctx = await this.resolvePrefetchContext(deviceId, {
+            cacheDeviceId: options.cacheDeviceId,
+            transportSerial: options.transportSerial,
+            adbSerial: options.adbSerial
+        });
+
+        this.reopenBlockedPrefetchTargets(ctx, apps);
 
         const pending = apps.filter((app) => {
             const packageName = app.package || app.packageName;
@@ -504,30 +628,50 @@ class AppMetadataManager {
 
         const queueKey = ctx.cacheDeviceId;
         const existing = this.prefetchQueues.get(queueKey) || [];
-        const remaining = Math.max(0, maxCount - existing.length);
+        const remaining = priority === "high"
+            ? maxCount
+            : Math.max(0, maxCount - existing.length);
         if (remaining === 0) return;
 
         const toAdd = pending.slice(0, remaining);
         if (!toAdd.length) return;
 
         if (this.prefetchQueues.has(queueKey)) {
-            this.prefetchQueues.get(queueKey).push(...toAdd);
+            const queue = this.prefetchQueues.get(queueKey);
+            if (priority === "high") {
+                queue.unshift(...toAdd);
+                const meta = this.prefetchQueueMeta.get(queueKey) || { concurrency };
+                meta.concurrency = Math.max(meta.concurrency || concurrency, concurrency);
+                this.prefetchQueueMeta.set(queueKey, meta);
+            } else {
+                queue.push(...toAdd);
+            }
             return;
         }
 
         this.prefetchQueues.set(queueKey, [...toAdd]);
+        this.prefetchQueueMeta.set(queueKey, { concurrency });
+
+        const resolveCtx = {
+            cacheDeviceId: ctx.cacheDeviceId,
+            transportSerial: ctx.transportSerial,
+            adbSerial: ctx.adbSerial
+        };
 
         const runQueue = async () => {
             while (this.prefetchQueues.get(queueKey)?.length) {
-                const batch = this.prefetchQueues.get(queueKey).splice(0, PREFETCH_CONCURRENCY);
-                const results = await Promise.all(batch.map(async (app) => {
+                const meta = this.prefetchQueueMeta.get(queueKey) || { concurrency: PREFETCH_CONCURRENCY };
+                const batchSize = meta.concurrency || PREFETCH_CONCURRENCY;
+                const batch = this.prefetchQueues.get(queueKey).splice(0, batchSize);
+                await Promise.all(batch.map(async (app) => {
                     const packageName = app.package || app.packageName;
                     try {
                         const metadata = await this.resolveOne(deviceId, packageName, app.userId ?? null, {
                             appNameHint: app.labelName || app.displayName || app.appName,
-                            prefetch: true
+                            prefetch: true,
+                            ...resolveCtx
                         });
-                        return {
+                        const update = {
                             deviceId: ctx.cacheDeviceId,
                             package: packageName,
                             packageName,
@@ -536,25 +680,24 @@ class AppMetadataManager {
                             iconPath: metadata.iconPath,
                             iconUrl: metadata.iconUrl
                         };
+                        if ((update.iconUrl || update.iconPath) && typeof notify === "function") {
+                            notify({ serial: ctx.transportSerial, updates: [update] });
+                        }
                     } catch (err) {
                         console.warn(`[AppMetadataManager] prefetch ${packageName}:`, err.message);
-                        return null;
                     }
                 }));
-
-                const updates = results.filter(Boolean);
-                if (updates.length && typeof notify === "function") {
-                    notify({ serial: ctx.transportSerial, updates });
-                }
             }
 
             this.prefetchQueues.delete(queueKey);
+            this.prefetchQueueMeta.delete(queueKey);
             this.flushIndex();
         };
 
         runQueue().catch((err) => {
             console.warn("[AppMetadataManager] prefetch queue:", err.message);
             this.prefetchQueues.delete(queueKey);
+            this.prefetchQueueMeta.delete(queueKey);
         });
     }
 

@@ -663,6 +663,7 @@
         "Device disconnects randomly: plug directly into the PC and avoid USB hubs.",
         "Mirroring does not start: close other ADB tools (Android Studio, scrcpy CLI).",
         "Keyboard input ignored: click once on the video stream to focus it.",
+        "AZERTY keyboard: accented letters, Shift (digits and ?./§%…), Alt Gr (@, #, {, }), and € are sent to the device. Ctrl+Tab / Ctrl+Shift+Tab switch session tabs (not typing).",
         "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
         "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
       ]

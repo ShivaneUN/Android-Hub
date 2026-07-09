@@ -356,6 +356,50 @@ const KEYCODE_MAP = {
     Power: true
 };
 
+function isAltGraphKeyboardEvent(event) {
+    return typeof event.getModifierState === "function" && event.getModifierState("AltGraph");
+}
+
+/** AZERTY / QWERTY : autorise caractères imprimables, Alt Gr (Ctrl+Alt), Shift+chiffres. */
+function resolveSessionKeyFromEvent(event) {
+    if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
+        return null;
+    }
+
+    const key = event.key;
+    if (!key || key === "Dead" || key === "Unidentified") {
+        return null;
+    }
+
+    const isSpecial = Boolean(KEYCODE_MAP[key]);
+    const isPrintable = key.length === 1;
+    if (!isPrintable && !isSpecial) {
+        return null;
+    }
+
+    // Ctrl+Tab / Ctrl+Shift+Tab : cycle onglets (géré côté Main).
+    if ((event.ctrlKey || event.metaKey) && key === "Tab") {
+        return null;
+    }
+
+    const altGraph = isAltGraphKeyboardEvent(event);
+
+    if (event.metaKey && !altGraph) {
+        return null;
+    }
+
+    // Alt Gr sous Windows = ctrlKey + altKey : ne pas bloquer les caractères (@, #, {, …).
+    if ((event.ctrlKey || event.metaKey) && !altGraph) {
+        return null;
+    }
+
+    if (event.altKey && !altGraph && !isPrintable && !isSpecial) {
+        return null;
+    }
+
+    return key;
+}
+
 function attachSessionInputActivation(canvasEl, sessionIdParam, onActivate) {
     if (!canvasEl || !sessionIdParam) return;
 
@@ -1146,19 +1190,16 @@ function initTypeAInputHandlers(canvasEl, tabId, serial, orientation = "landscap
     );
 
     async function onKeyDown(event) {
-        if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) return;
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
-        const key = event.key;
-        if (key.length === 1 || KEYCODE_MAP[key]) {
-            event.preventDefault();
-            event.stopPropagation();
-            const deviceId = await ensureDeviceId();
-            if (!deviceId) return;
-            try {
-                await window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId, type: "key", key });
-            } catch (err) {
-                console.warn(`[SessionView ${tabId}] key:`, err?.message || err);
-            }
+        const key = resolveSessionKeyFromEvent(event);
+        if (!key) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const deviceId = await ensureDeviceId();
+        if (!deviceId) return;
+        try {
+            await window.videoAPI.sendInput({ tabId, sessionId: tabId, deviceId, type: "key", key });
+        } catch (err) {
+            console.warn(`[SessionView ${tabId}] key:`, err?.message || err);
         }
     }
 
@@ -1220,27 +1261,24 @@ function initTypeBInputHandlers(canvasEl, sessionIdParam) {
     );
 
     async function onKeyDown(event) {
-        if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) return;
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
-        const key = event.key;
-        if (key.length === 1 || KEYCODE_MAP[key]) {
-            event.preventDefault();
-            event.stopPropagation();
-            const devId = await ensureDeviceId();
-            try {
-                const result = await window.videoAPI.sendInput({
-                    sessionId: sessionIdParam,
-                    tabId: sessionIdParam,
-                    deviceId: devId || undefined,
-                    type: "key",
-                    key
-                });
-                if (result && result.success === false) {
-                    console.warn(`[SessionView ${sessionIdParam}] Erreur input key:`, result.error);
-                }
-            } catch (err) {
-                console.warn(`[SessionView ${sessionIdParam}] Erreur input key:`, err?.message || err);
+        const key = resolveSessionKeyFromEvent(event);
+        if (!key) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const devId = await ensureDeviceId();
+        try {
+            const result = await window.videoAPI.sendInput({
+                sessionId: sessionIdParam,
+                tabId: sessionIdParam,
+                deviceId: devId || undefined,
+                type: "key",
+                key
+            });
+            if (result && result.success === false) {
+                console.warn(`[SessionView ${sessionIdParam}] Erreur input key:`, result.error);
             }
+        } catch (err) {
+            console.warn(`[SessionView ${sessionIdParam}] Erreur input key:`, err?.message || err);
         }
     }
 

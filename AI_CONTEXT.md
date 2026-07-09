@@ -221,7 +221,7 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 
 ### Worker apps (fork) — plan validé diagnostic 2026-07-09
 
-> **P0+P1 livré (2026-07-09)** — Historique + liste apps / enrich cache dans `apps-worker.js` via `AppsWorkerBridge`. **P2 en attente** (prefetch icônes). **LOCK inchangé**.
+> **P0–P1.5+P2 prefetch livré (2026-07-09)** — Historique, liste apps, enrich cache, prefetch étendu (16 + reste) dans le worker via `AppsWorkerBridge`. **Extracteur adaptive-icon en attente.** **LOCK inchangé**.
 
 **Fichiers cibles (création) :**
 
@@ -251,7 +251,8 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 
 ## Journal des micro-changements (validés)
 
-- 2026-07-09 — **P1.5 worker apps** — unification cache : main résout `cacheDeviceId` + `adbSerial` via `deviceRegistry` ; worker utilise ces champs sans registry. Fix USB→WiFi cache dupliqué. LOCK intact.
+- 2026-07-09 — **P2 worker prefetch étendu** — `PREFETCH_APP_METADATA` dans worker ; passage 1 (16 apps) + passage 2 arrière-plan (`new-session.js`) ; push `METADATA_UPDATED` ; `resolvePrefetchContext` pour cacheDeviceId/adbSerial. Concurrence 2 inchangée. LOCK intact.
+- 2026-07-09 — **Cache icônes stale** — `pruneStaleIconCacheEntries()` : invalide `iconPath` si PNG absent (tous deviceId), conserve `iconAttempts` ; async `fs.promises` ; log par deviceId. LOCK intact.
 - 2026-07-09 — **P0 worker apps** — `src/main/workers/apps-worker.js`, `src/main/managers/apps-worker-bridge.js` : historique lancement (`GET/ADD/REMOVE_HISTORY`, purge maintenance) hors main via `fork()` ; fallback in-process si crash ; `launch-history-manager.js` option `enablePruneTimer`. LOCK intact.
 - 2026-07-09 — **Plan worker apps (fork)** — Diagnostic lecture seule validé ; rétention historique 2 j + exception sessions Type B actives conservée.
 - 2026-07-08 — **LOCK** — Clic long Type B : `adb-input-controller.js` (`_activeTouchStart`, tolérance 12 px, seuil 400 ms), `new-instance-manager.js` (touch display virtuel → ADB, pas scrcpy), `main.js` (contrôleur ADB session unifié). Raison : long press KO (micro-mouvements + chemin scrcpy sans synthèse).

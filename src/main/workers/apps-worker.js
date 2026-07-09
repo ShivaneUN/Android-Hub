@@ -136,6 +136,27 @@ async function handleMessage(message) {
                 break;
             }
 
+            case "PREFETCH_APP_METADATA": {
+                const { transportSerial, cacheDeviceId, adbSerial } = normalizeAppListPayload(payload);
+                const apps = Array.isArray(payload.apps) ? payload.apps : [];
+                const maxCount = Number.isInteger(payload.maxCount) && payload.maxCount > 0
+                    ? payload.maxCount
+                    : undefined;
+                const priority = payload.priority === "high" ? "high" : "normal";
+                await ensureAppMetadataManager().queuePrefetch(transportSerial, apps, {
+                    maxCount,
+                    priority,
+                    cacheDeviceId,
+                    transportSerial,
+                    adbSerial,
+                    onUpdate: (data) => {
+                        process.send?.({ type: "METADATA_UPDATED", payload: data });
+                    }
+                });
+                result = { ok: true, queued: apps.length };
+                break;
+            }
+
             case "SHUTDOWN": {
                 if (historyManager) {
                     historyManager.destroy();

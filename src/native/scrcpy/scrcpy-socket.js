@@ -707,6 +707,28 @@ class ScrcpySocketClient extends EventEmitter {
         return this.sendControlMessage(payload);
     }
 
+    /** Injection UTF-8 (accents, §, symboles) — protocole scrcpy INJECT_TEXT. */
+    async sendInjectText(text) {
+        if (!this.controlSocket) {
+            throw new Error("Contrôle scrcpy non connecté");
+        }
+        const value = String(text ?? "");
+        const utf8 = Buffer.from(value, "utf8");
+        const maxLen = 300;
+        if (utf8.length === 0) {
+            return;
+        }
+        if (utf8.length > maxLen) {
+            throw new Error(`Texte trop long (${utf8.length} > ${maxLen})`);
+        }
+
+        const buffer = Buffer.alloc(1 + 4 + utf8.length);
+        buffer.writeUInt8(SC_CONTROL_MSG_TYPE_INJECT_TEXT, 0);
+        buffer.writeUInt32BE(utf8.length, 1);
+        utf8.copy(buffer, 5);
+        return this.sendControlMessage(buffer);
+    }
+
     _serializeControlMessage(msg) {
         const buffer = Buffer.alloc(32);
         buffer[0] = msg.type;

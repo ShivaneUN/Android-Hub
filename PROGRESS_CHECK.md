@@ -280,6 +280,250 @@ Le **main** résout l'identité avant chaque appel worker (pattern Hub existant)
 
 ---
 
+## IMPL — Nettoyage cache icônes stale (2026-07-09)
+
+**Statut : ✅ implémenté (2026-07-09).** LOCK intact (hors `app-metadata-manager.js`).
+
+### Journal
+
+- 2026-07-09 — Demande correctif cache stale (`iconPath` JSON présent, fichier PNG absent). Périmètre : **tous les `deviceId`** du cache (`e176518f`, `a3acba7c`, `192.168.1.10:5555`, `192.168.1.11:5555`, …).
+
+### Diagnostic pré-code (§2)
+
+#### Où `enrichApps()` lit `iconPath` ?
+
+Chaîne complète dans `src/main/managers/app-metadata-manager.js` :
+
+| Étape | Lignes | Rôle |
+|-------|--------|------|
+| `enrichApps()` | 469–481 | Délègue à `mergeAppMetadata()` par app |
+| `mergeAppMetadata()` | 445–467 | `lookupCacheEntry` → `getCachedEntry` → lit `cached?.iconPath` / `cached?.iconUrl` |
+| `lookupCacheEntry()` | 179–186 | Parcourt `this.index[key]` ; filtre via `isFresh(entry)` |
+| `getCachedEntry()` | 228–232 | `formatCachedEntry(found.entry)` |
+| `formatCachedEntry()` | 147–155 | `iconPath` exposé **uniquement si** `hasUsableIcon(entry)` (fichier ≥ 1 Ko) |
+| `isFresh()` | 118–127 | Si `iconPath` absent → fresh ; si `_verifiedIconPaths` contient le chemin → fresh **sans re-vérifier le disque** ; sinon `fs.existsSync` |
+
+**Important :** `enrichApps` n'affiche en général **pas** un `iconPath` stale (fichier absent) grâce à `hasUsableIcon` / `isFresh`. Le bug opérationnel est **en amont** :
+
+1. **Index JSON pollué** : `iconPath` non null alors que le PNG n'existe plus → état incohérent pour `needsIconExtraction` / prefetch / logs.
+2. **`_verifiedIconPaths` (mémoire)** : si le fichier a été supprimé après une vérification réussie dans la même session, `isFresh()` peut retourner `true` sans `existsSync` (l.122) → entrée traitée comme valide jusqu'au redémarrage.
+3. **Prefetch plafonné à 16 apps** (cause séparée) : même après nettoyage, seules 16 apps/session sont candidates à `resolveOne`.
+
+#### `rejectFalsePositiveCacheEntry` — existe ? rôle ?
+
+**Oui**, `app-metadata-manager.js` l.157–177. Appelée **uniquement** depuis `resolveOne()` (l.374) quand :
+
+- une entrée cache est trouvée,
+- l'icône n'est pas utilisable,
+- et `shouldRetryIconExtract` est encore vrai.
+
+**Comportement actuel :**
+
+1. Supprime le fichier PNG s'il existe encore (`unlinkSync`).
+2. Réécrit l'entrée via `setCachedEntry` avec `iconPath: null`.
+3. **Incrémente** `iconAttempts` (plafonné à `MAX_ICON_EXTRACT_ATTEMPTS`).
+
+Ne s'applique **pas** aux entrées stale jamais repassées par `resolveOne` (prefetch hors batch, ou session longue avec `_verifiedIconPaths`).
+
+#### Où faire la vérification d'existence ? (a / b / c)
+
+| Option | Verdict |
+|--------|---------|
+| **(a) À la lecture** (`enrichApps` / `lookupCacheEntry`) | Utile pour corriger `_verifiedIconPaths` à chaud, mais coûteux si scan complet à chaque liste (52–200+ apps × `access`). |
+| **(b) Tâche ponctuelle au démarrage** | **Recommandé principal** : scan async une fois par process (main + worker fork), tous `deviceId`, persiste le JSON nettoyé. |
+| **(c) Les deux** | **Retenu** : (b) scan complet async au init + `await` du même promise au début de `enrichApps()` / `queuePrefetch()` pour garantir cohérence avant lecture (sans re-scan si déjà fait). Pas de `existsSync` en boucle synchrone sur le main. |
+
+#### `iconAttempts` après invalidation stale ?
+
+**Garder le compteur existant** (ne pas remettre à 0).
+
+| Raison |
+|--------|
+| Stale ≠ échec d'extraction ; souvent fichier supprimé / migration / `rejectFalsePositive` partiel. |
+| Remettre à 0 relancerait 3 tentatives sur des apps **déjà** à 2–3 échecs réels → boucle inutile. |
+| Entrées **abandonnées légitimes** (`iconPath` null, `iconAttempts ≥ 3`) : **non touchées** (skip `!entry.iconPath`). |
+| Cas limite `iconPath` set + `iconAttempts ≥ 3` + fichier absent : nettoyer `iconPath` seulement, **conserver** `attempts ≥ 3` → pas de nouvelle extraction (échec réel antérieur). |
+
+### Plan d'implémentation (avant code)
+
+| # | Action | Fichier |
+|---|--------|---------|
+| 1 | `async isIconFileAccessible(iconPath)` — `fs.promises.access` + `stat` (≥ `MIN_ICON_FILE_BYTES`) | `app-metadata-manager.js` |
+| 2 | `async pruneStaleIconCacheEntries()` — parcours **tout** `this.index` ; si `iconPath` truthy et fichier invalide → `iconPath = null`, purge `_verifiedIconPaths`, **conserver** `iconAttempts` | idem |
+| 3 | Logger : total invalidé + répartition par `deviceId` | idem |
+| 4 | Déclencher : constructeur (`void prune…()`) + `await` même promise en tête de `enrichApps()` / `queuePrefetch()` | idem |
+| 5 | Ne pas toucher : entrées sans `iconPath` (dont 17 abandonnées e176518f) | idem |
+
+**Hors scope immédiat (causes séparées) :** quota prefetch 16, `MAX_APK_PULL_ATTEMPTS`, extracteur adaptive-icon.
+
+### Implémentation livrée
+
+| Fichier | Changement |
+|---------|------------|
+| `src/main/managers/app-metadata-manager.js` | `isIconFileAccessible()` (async) ; `pruneStaleIconCacheEntries()` (tous deviceId) ; appel au constructeur + avant `enrichApps` / `queuePrefetch` ; `isFresh()` ne fait plus confiance à `_verifiedIconPaths` sans vérif disque |
+
+### Test manuel
+
+1. Avant fix : compter entrées stale dans JSON (`iconPath` non null, fichier absent) — tous `deviceId`.
+2. Relancer l'app → log `[AppMetadataManager] prune stale icon cache: N entrée(s)…` avec détail par device.
+3. Réinspecter JSON : `iconPath` null pour les anciennes stale ; `iconAttempts` inchangé.
+4. Nouvelle instance sur `e176518f` → apps stale redeviennent éligibles `needsIconExtraction` (si `iconAttempts < 3`).
+5. Autres devices (`a3acba7c`, `192.168.1.10:5555`, …) : vérifier dans JSON post-fix même nettoyage (pas d'appareil requis si 0 PNG physique).
+
+### Prochaine étape (après stale cache)
+
+Prefetch élargi + déport worker (P2) — voir section ci-dessous.
+
+---
+
+## IMPL — P2 prefetch icônes étendu + worker (2026-07-09)
+
+**Statut : ✅ implémenté (2026-07-09).** LOCK intact.
+
+### Journal
+
+- 2026-07-09 — Demande : étendre le prefetch à **toutes** les apps (52 typiques), arrière-plan non bloquant, fusion avec P2 (worker). Hors scope : extracteur adaptive-icon (YouTube Music, Spotify, AR Core…).
+
+### Diagnostic pré-code (§2)
+
+#### Où tourne le prefetch aujourd'hui ?
+
+**100 % main process** — le worker apps (P1/P1.5) ne gère **pas** encore le prefetch.
+
+| Étape | Emplacement | Fichier / ligne |
+|-------|-------------|-----------------|
+| Déclenchement UI | Renderer après chargement liste | `new-session.js` l.189–213 `scheduleAppsMetadataPrefetchOnce` |
+| IPC | `app-metadata:prefetch` | `preload.js` → `appMetadataHandlers.js` l.23–37 |
+| Orchestration | `queuePrefetch` → `resolveOne` → `extractIcon` | `app-metadata-manager.js` l.542–620 |
+| Instance utilisée | `getAppMetadataManager()` sur **main** | `main.js` l.1174–1179 (`notifyUpdate` → `app-metadata:updated`) |
+| Worker fork | `GET_APP_LIST` + `ENRICH_APPS` uniquement | `apps-worker.js` — **pas** de `PREFETCH_APP_METADATA` |
+
+Le worker instancie déjà `AppMetadataManager` (enrich cache) mais **sans** `notifyUpdate` et sans handler prefetch. Le CPU/disque sync (`tar`, walk `res/`) du prefetch bloque encore le **main** pendant les extractions.
+
+#### `PREFETCH_CONCURRENCY = 2` — choix ou arbitraire ?
+
+**Choix délibéré de modération ADB**, documenté dans le diagnostic worker (`PROGRESS_CHECK.md` § worker apps l.50) : « jusqu'à 2 extractions parallèles par appareil ».
+
+| Contexte audit perf | Observation |
+|---------------------|-------------|
+| `connectSockets` benchmark isolé | ~9–30 ms |
+| `connectSockets` avec session + audio + polls | **457–497 ms** (×14) — contention ADB / charge parallèle |
+| Prefetch actuel | 2× (`pm path` + `pull` + parfois `pm dump`) en parallèle sur le **même serial** |
+
+**Verdict :** augmenter à 3–4 **possible** mais **non recommandé** tant qu'une session Type A/B + audio est active sur le même appareil. **Garder 2** pour le second passage (plan §3) ; réévaluer après mesure si sessions fermées.
+
+#### Estimation temps total (36 apps positions 17–52, hors cache)
+
+Timeouts codés (plafonds, pas temps typiques) : `pm path` 20 s, `pull` 45 s, `tar` 30 s, `pm dump` 12 s (`app-icon-extractor.js` / `app-metadata-manager.js`).
+
+**Temps observés sur `e176518f` (diagnostic 2026-07-09) :**
+
+| Opération | Mesure réelle |
+|-----------|---------------|
+| `pm path` | < 1 s |
+| `adb pull` base.apk (ARCore 52 Mo) | **~1,3 s** |
+| `extractIcon` Cast WebVideo (succès) | **~quelques s** (total pipeline) |
+| `extractIcon` ARCore (échec raster) | pull OK, extract `null` en ~tens of s (2 APK max) |
+
+**Estimation second passage (36 apps, concurrence 2) :**
+
+| Scénario | Calcul | Durée indicative |
+|----------|--------|------------------|
+| Optimiste (50 % déjà en cache / skip `needsIconExtraction`) | ~18 extractions × ~4 s / 2 | **~35–45 s** |
+| Nominal (30 apps à tenter, ~4–6 s/succès, 6 échecs rapides) | 15 batches × ~5 s | **~1–1,5 min** |
+| Pessimiste (36 apps, échecs lents 2 APK × 3 tentatives déjà en cache) | majorité skip si `iconAttempts ≥ 3` | **< 30 s** (peu de travail réel) |
+| Pire cas (36 extractions lourdes type gros APK) | 18 × ~8–15 s | **2–4 min** |
+
+→ Le test manuel **1–2 min** pour voir des icônes apparaître (apps 17–52) est **réaliste** pour le cas nominal. Les timeouts 20/45/30 s ne s'appliquent qu'en cas de blocage ADB.
+
+#### Priorité viewport vs séquentiel 17–52 ?
+
+| Approche | Pour | Contre |
+|----------|------|--------|
+| **Viewport d'abord** (IntersectionObserver) | UX optimale scroll | Complexité renderer ; hors scope minimal |
+| **Séquentiel slice(16) puis slice(16+)** (plan §3) | Simple ; les 16 premières = déjà visibles sans scroll ; ordre liste = ordre prefetch | Apps en bas de liste attendent plus longtemps |
+| **Une seule queue 52 apps, concurrence 2** | Même effet que séquentiel si ordre liste préservé | Mélange avec cap `maxCount` actuel |
+
+**Recommandation :** **séquentiel simple** — passage 1 = apps `[0..15]`, passage 2 = apps `[16..]` en arrière-plan (pas de viewport pour P2). Option viewport = amélioration ultérieure si le scroll long reste frustrant.
+
+### Plan proposé (validation avant code)
+
+Aligné sur la demande §3 + fusion P2 worker.
+
+#### Phase A — Worker : handlers prefetch (P2 cœur)
+
+| # | Fichier | Changement |
+|---|---------|------------|
+| A1 | `apps-worker.js` | Handler `PREFETCH_APP_METADATA` : `{ transportSerial, cacheDeviceId, adbSerial, apps[], maxCount? }` → `appMetadataManager.queuePrefetch` avec `notifyUpdate` = `process.send({ type: 'METADATA_UPDATED', … })` |
+| A2 | `apps-worker.js` | Handler `RESOLVE_APP_METADATA` (optionnel sidebar, même PR) — hors chemin critique liste |
+| A3 | `app-metadata-manager.js` | **Aucun changement logique extraction** ; réutiliser `queuePrefetch` / `resolveOne` tels quels |
+| A4 | `apps-worker-bridge.js` | `prefetchAppMetadata(ctx, apps, options)` ; écouter push `METADATA_UPDATED` → relayer `win.webContents.send('app-metadata:updated')` |
+| A5 | `app-metadataHandlers.js` | `app-metadata:prefetch` → bridge si worker actif, sinon fallback main `appMetadataManager` |
+| A6 | `main.js` | Résoudre `cacheDeviceId` + `adbSerial` (comme `device:apps` / P1.5) avant appel bridge |
+
+#### Phase B — UI : deux passages prefetch
+
+| # | Fichier | Changement |
+|---|---------|------------|
+| B1 | `new-session.js` | **Passage 1 (inchangé)** : `apps.slice(0, 16)`, `maxCount: 16`, debounce 450 ms |
+| B2 | `new-session.js` | **Passage 2 (nouveau)** : `apps.slice(16)`, `maxCount: apps.length` (ou constante `METADATA_PREFETCH_EXTENDED_MAX`), déclenché `setTimeout` ~500 ms après passage 1 — **fire-and-forget**, pas d'await UI |
+| B3 | `new-session.js` | Remplacer le garde `metadataPrefetchDoneSerial` unique par **deux flags** (`prefetchPrimaryDoneSerial`, `prefetchExtendedDoneSerial`) ou une structure `{ serial, extended: boolean }` pour autoriser le second passage une fois par ouverture de liste |
+| B4 | Renderer | **Aucune popup** — icônes via `onAppMetadataUpdated` → `applyMetadataUpdates` (déjà en place l.1293–1301) |
+
+#### Phase C — Concurrence & non-régression
+
+- `PREFETCH_CONCURRENCY = 2` **inchangé** (main et worker).
+- `MAX_ICON_EXTRACT_ATTEMPTS = 3`, `MAX_APK_PULL_ATTEMPTS = 2` **inchangés**.
+- Passage 1 reste sur le **même chemin** qu'aujourd'hui (priorité perçue identique).
+- Passage 2 dans le **worker** → `tar`/walk hors main → sessions Type A/B moins impactées côté event loop.
+- ADB reste partagé (worker + sessions) : **test manuel obligatoire** fluidité Type B pendant passage 2.
+
+#### Flux cible
+
+```
+loadAppsForSelectedDevice()
+  → GET_APP_LIST (worker) + enrich cache     [immédiat, UI liste]
+  → prefetch passage 1 : apps[0..15]         [worker, concurrence 2]
+  → prefetch passage 2 : apps[16..]         [worker, concurrence 2, async différé]
+       → METADATA_UPDATED (push worker→main→renderer)
+       → applyMetadataUpdates (icônes au fur et à mesure)
+```
+
+#### Hors scope (confirmé)
+
+- `extractIcon`, `findBestIconFile`, adaptive-icon XML
+- Augmentation `PREFETCH_CONCURRENCY` > 2
+- Prefetch viewport / scroll-triggered
+
+### Test manuel (§5)
+
+1. Appareil 50+ apps → **16 premières** icônes / placeholders comme avant (pas de régression temps ouverture panneau).
+2. Attendre **1–2 min** → icônes apps **17–52** apparaissent progressivement (pas toutes si échec extracteur légitime).
+3. **Session Type B active** pendant passage 2 → input/vidéo fluides (comparer à baseline sans prefetch étendu).
+4. `app-metadata-cache.json` : apps hors top-16 ont `iconAttempts` incrémenté si extraction tentée ; entrées `≥ 3` inchangées si déjà abandonnées.
+5. Log worker : `[AppMetadataManager] prefetch …` / `METADATA_UPDATED` sans erreur bridge.
+
+### Prochaine étape
+
+~~**Validation plan** → implémentation Phase A + B (LOCK respecté).~~ → livré ci-dessous.
+
+### Implémentation livrée
+
+| Fichier | Changement |
+|---------|------------|
+| `apps-worker.js` | `PREFETCH_APP_METADATA` → `queuePrefetch` + push `METADATA_UPDATED` |
+| `apps-worker-bridge.js` | `prefetchAppMetadata`, relay push → `app-metadata:updated`, fallback prefetch |
+| `app-metadata-manager.js` | `resolvePrefetchContext()` pour worker (cacheDeviceId/adbSerial explicites) |
+| `appMetadataHandlers.js` | Prefetch délégué au bridge + `resolveAppListDeviceContext` |
+| `main.js` | `setMetadataUpdatedRelay`, fallback prefetch |
+| `new-session.js` | Passage 1 (16 apps) + passage 2 différé (`slice(16)`, `maxCount` = reste) |
+
+### Prochaine étape (après P2 prefetch)
+
+Extracteur adaptive-icon (YouTube Music, Spotify, AR Core) — hors scope P2.
+
+---
+
 ## DIAGNOSTIC — Icônes applications manquantes (2026-07-08)
 
 **Statut : Étape 1 terminée (lecture seule, aucun patch).**  

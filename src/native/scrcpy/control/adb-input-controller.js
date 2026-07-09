@@ -1,5 +1,7 @@
-const { exec } = require("child_process");
+const { exec, spawn } = require("child_process");
 const { adbSerialArg } = require("../../../shared/adb-serial-arg");
+
+const CREATE_NO_WINDOW = 0x08000000;
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -9,6 +11,32 @@ function execPromise(command) {
                 return;
             }
             resolve(stdout.trim());
+        });
+    });
+}
+
+function spawnAdbShell(adbPath, serial, shellTokens) {
+    return new Promise((resolve, reject) => {
+        const args = ["-s", serial, "shell", ...shellTokens];
+        const options = { windowsHide: true };
+        if (process.platform === "win32") {
+            options.creationFlags = CREATE_NO_WINDOW;
+        }
+
+        const child = spawn(adbPath, args, options);
+        let stderr = "";
+
+        child.stderr?.on("data", (chunk) => {
+            stderr += chunk.toString();
+        });
+
+        child.on("error", reject);
+        child.on("close", (code) => {
+            if (code !== 0) {
+                reject(new Error(stderr.trim() || `adb shell exit ${code}`));
+                return;
+            }
+            resolve("");
         });
     });
 }
@@ -31,6 +59,35 @@ const KEYCODE_MAP = {
     VolumeDown: 25,
     Power: 26,
 };
+
+/** `input text` interprète % — doubler uniquement pour un pourcentage littéral. */
+function prepareLiteralInputText(text) {
+    return String(text).replace(/%/g, "%%");
+}
+
+/** Guillemets simples : caractère ASCII littéral pour `input text`. */
+function quoteForDeviceShell(literalText) {
+    return `'${literalText.replace(/'/g, "'\\''")}'`;
+}
+
+/** UTF-8 multi-octets via printf sur le shell Android (é, è, §, …). */
+function formatAdbUtf8TextArg(text) {
+    const bytes = Buffer.from(String(text), "utf8");
+    let octal = "";
+    for (const b of bytes) {
+        octal += `\\${b.toString(8).padStart(3, "0")}`;
+    }
+    return `$(printf '${octal}')`;
+}
+
+function isAsciiOnlyText(text) {
+    for (const ch of String(text)) {
+        if (ch.codePointAt(0) > 0x7f) {
+            return false;
+        }
+    }
+    return true;
+}
 
 function shellQuote(value) {
     return adbSerialArg(value);
@@ -90,8 +147,19 @@ class AdbInputController {
         this.displayId = Number.isInteger(displayId) ? displayId : null;
     }
 
-    _displayPrefix() {
-        return Number.isInteger(this.displayId) ? `-d ${this.displayId} ` : "";
+    _buildInputShellCommand(...parts) {
+        let cmd = "input";
+        if (Number.isInteger(this.displayId)) {
+            cmd += ` -d ${this.displayId}`;
+        }
+        if (parts.length > 0) {
+            cmd += ` ${parts.join(" ")}`;
+        }
+        return cmd;
+    }
+
+    _runAdbShellCommand(command) {
+        return spawnAdbShell(this.adbPath, this.serial, [command]);
     }
 
     _runAdb(args) {
@@ -172,7 +240,6 @@ class AdbInputController {
         const { x, y } = isStreamPixel
             ? this._normalizeStreamPixelCoordinate(normX, normY)
             : this._normalizeCoordinate(normX, normY);
-        const prefix = this._displayPrefix();
 
         const LONG_PRESS_MIN_MS = 400;
         const TAP_MOVE_TOLERANCE = 12;
@@ -203,22 +270,33 @@ class AdbInputController {
             if (moveDistance <= TAP_MOVE_TOLERANCE) {
                 if (heldMs >= LONG_PRESS_MIN_MS) {
                     const duration = Math.min(Math.max(heldMs, LONG_PRESS_MIN_MS), 3000);
-                    return this._runAdb(
-                        `shell input ${prefix}swipe ${start.x} ${start.y} ${start.x} ${start.y} ${duration}`
+                    return this._runAdbShellCommand(
+                        this._buildInputShellCommand(
+                            "swipe",
+                            start.x,
+                            start.y,
+                            start.x,
+                            start.y,
+                            duration
+                        )
                     );
                 }
-                return this._runAdb(`shell input ${prefix}tap ${start.x} ${start.y}`);
+                return this._runAdbShellCommand(this._buildInputShellCommand("tap", start.x, start.y));
             }
-            return this._runAdb(`shell input ${prefix}swipe ${start.x} ${start.y} ${end.x} ${end.y} 150`);
+            return this._runAdbShellCommand(
+                this._buildInputShellCommand("swipe", start.x, start.y, end.x, end.y, 150)
+            );
         }
 
         if (type === "tap") {
-            return this._runAdb(`shell input ${prefix}tap ${x} ${y}`);
+            return this._runAdbShellCommand(this._buildInputShellCommand("tap", x, y));
         }
 
         if (type === "swipe") {
             const duration = 200;
-            return this._runAdb(`shell input ${prefix}swipe ${x} ${y} ${x} ${y} ${duration}`);
+            return this._runAdbShellCommand(
+                this._buildInputShellCommand("swipe", x, y, x, y, duration)
+            );
         }
 
         throw new Error(`Type de touch inconnu: ${type}`);
@@ -232,30 +310,30 @@ class AdbInputController {
             ? this._normalizeStreamPixelCoordinate(endNormX, endNormY)
             : this._normalizeCoordinate(endNormX, endNormY);
         const duration = 150;
-        const prefix = this._displayPrefix();
-        return this._runAdb(`shell input ${prefix}swipe ${start.x} ${start.y} ${end.x} ${end.y} ${duration}`);
+        return this._runAdbShellCommand(
+            this._buildInputShellCommand("swipe", start.x, start.y, end.x, end.y, duration)
+        );
     }
 
     async sendKey(key) {
-        const prefix = this._displayPrefix();
-
-        // Spacebar is injected by the renderer as event.key === " " (single-char),
-        // which would otherwise take the "text" path. Some apps expect KEYCODE_SPACE (62),
-        // so we force a keyevent for the physical spacebar.
         if (key === " ") {
-            return this._runAdb(`shell input ${prefix}keyevent 62`);
+            return this._runAdbShellCommand(this._buildInputShellCommand("keyevent", 62));
         }
 
         if (key.length === 1) {
-            const escaped = key.replace(/([$`"\\])/g, "\\$1");
-            return this._runAdb(`shell input ${prefix}text "${escaped}"`);
+            const textArg = isAsciiOnlyText(key)
+                ? quoteForDeviceShell(prepareLiteralInputText(key))
+                : formatAdbUtf8TextArg(key);
+            return this._runAdbShellCommand(
+                this._buildInputShellCommand("text", textArg)
+            );
         }
 
         const keycode = KEYCODE_MAP[key] ?? Number(key);
         if (!Number.isFinite(keycode)) {
             throw new Error(`Touche Android inconnue: ${key}`);
         }
-        return this._runAdb(`shell input ${prefix}keyevent ${keycode}`);
+        return this._runAdbShellCommand(this._buildInputShellCommand("keyevent", keycode));
     }
 }
 

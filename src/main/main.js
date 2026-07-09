@@ -1,4 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
+const {
+    registerAppIconProtocolSchemes,
+    setupAppIconProtocol
+} = require("./app-icon-protocol");
+
+registerAppIconProtocolSchemes();
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const path = require("path");
 const fs = require("fs");
@@ -1139,12 +1145,15 @@ function registerLaunchLatencyHandlers() {
 }
 
 app.whenReady().then(() => {
-    historyPath = path.join(app.getPath("userData"), "device-history.json");
-    global.customNamesManager = new CustomNamesManager(app.getPath("userData"));
-    global.uiPreferencesManager = new UiPreferencesManager(app.getPath("userData"));
-    global.deviceColorsManager = new DeviceColorsManager(app.getPath("userData"));
+    const userDataPath = app.getPath("userData");
+    setupAppIconProtocol(userDataPath);
+
+    historyPath = path.join(userDataPath, "device-history.json");
+    global.customNamesManager = new CustomNamesManager(userDataPath);
+    global.uiPreferencesManager = new UiPreferencesManager(userDataPath);
+    global.deviceColorsManager = new DeviceColorsManager(userDataPath);
     deviceManager = new DeviceManager(adbPath);
-    wifiDevicesManager = new WifiDevicesManager(app.getPath("userData"));
+    wifiDevicesManager = new WifiDevicesManager(userDataPath);
     global.wifiDevicesManager = wifiDevicesManager;
     wifiAdbService = new WifiAdbService(adbPath, wifiDevicesManager);
     global.wifiAdbService = wifiAdbService;
@@ -1171,11 +1180,8 @@ app.whenReady().then(() => {
     global.devicePowerManager = devicePowerManager;
     deviceOrientationManager = new DeviceOrientationManager(adbPath);
     global.deviceOrientationManager = deviceOrientationManager;
-    appMetadataManager = new AppMetadataManager(app.getPath("userData"), adbPath, {
-        notifyUpdate: ({ serial, updates }) => {
-            if (!win || win.isDestroyed()) return;
-            win.webContents.send("app-metadata:updated", { serial, updates });
-        }
+    appMetadataManager = new AppMetadataManager(userDataPath, adbPath, {
+        notifyUpdate: (payload) => broadcastAppMetadataUpdated(payload)
     });
     global.appMetadataManager = appMetadataManager;
     attachAppMetadataPrefetch(deviceManager, appMetadataManager);
@@ -1197,8 +1203,6 @@ app.whenReady().then(() => {
         }
     });
 
-    const userDataPath = app.getPath("userData");
-
     launchHistoryBootstrap = new LaunchHistoryManager(userDataPath, {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
@@ -1209,8 +1213,18 @@ app.whenReady().then(() => {
             transportSerial,
             apps,
             { cacheDeviceId, transportSerial }
-        )
+        ),
+        prefetchAppMetadata: ({ transportSerial, cacheDeviceId, adbSerial }, apps, options = {}) => {
+            appMetadataManager.queuePrefetch(transportSerial, apps, {
+                ...options,
+                cacheDeviceId,
+                transportSerial,
+                adbSerial
+            });
+            return Promise.resolve();
+        }
     });
+    appsWorkerBridge.setMetadataUpdatedRelay((payload) => broadcastAppMetadataUpdated(payload));
     appsWorkerBridge.bootstrapReady((async () => {
         try {
             if (wifiStartupPromise) await wifiStartupPromise;
@@ -1289,6 +1303,22 @@ function requestLaunchHistoryRefresh() {
     const overlay = hubModal?.overlayWindow;
     if (overlay && !overlay.isDestroyed()) {
         overlay.webContents.send("launch-history:updated");
+    }
+}
+
+function broadcastAppMetadataUpdated({ serial, updates } = {}) {
+    if (!Array.isArray(updates) || !updates.length) return;
+
+    const payload = { serial, updates };
+
+    if (win && !win.isDestroyed()) {
+        win.webContents.send("app-metadata:updated", payload);
+    }
+
+    const hubModal = global.hubModalOverlayManager;
+    const overlay = hubModal?.overlayWindow;
+    if (overlay && !overlay.isDestroyed()) {
+        overlay.webContents.send("app-metadata:updated", payload);
     }
 }
 
@@ -1741,6 +1771,9 @@ async function listDevicesForUI({ lightweight = false } = {}) {
 
         if (scrcpyClient?.controlSocket && type === "key") {
             try {
+                if (key.length === 1 && typeof scrcpyClient.sendInjectText === "function") {
+                    return scrcpyClient.sendInjectText(key);
+                }
                 if (key.length > 1) {
                     const keycode = KEYCODE_MAP[key] ?? Number(key);
                     if (Number.isFinite(keycode)) {
@@ -1750,7 +1783,7 @@ async function listDevicesForUI({ lightweight = false } = {}) {
                 }
             } catch (err) {
                 console.warn(`[Input] scrcpy key echoue (${routingId}):`, err.message);
-                if (isTypeA) {
+                if (isTypeA && key.length > 1) {
                     throw err;
                 }
             }
@@ -1769,16 +1802,6 @@ async function listDevicesForUI({ lightweight = false } = {}) {
 
         if (streamWidth && streamHeight) {
             controller.setStreamSize(streamWidth, streamHeight);
-        }
-
-        if (scrcpyClient?.controlSocket && type === "key") {
-            try {
-                if (key.length === 1) {
-                    return controller.sendKey(key);
-                }
-            } catch (err) {
-                console.warn(`[Input] scrcpy key echoue (${routingId}), fallback ADB:`, err.message);
-            }
         }
 
         if (type === "touch") {
@@ -2575,12 +2598,16 @@ async function listDevicesForUI({ lightweight = false } = {}) {
     registerAppMetadataHandlers({
         ipcMain,
         getAppMetadataManager: () => appMetadataManager,
-        getWindow: () => win
+        getAppsWorkerBridge: () => appsWorkerBridge,
+        resolveAppListDeviceContext
     });
     registerMaintenanceHandlers({
         ipcMain,
         getMaintenanceCleanupManager: () => maintenanceCleanupManager,
         notifyCleanupCompleted: (result) => {
+            if (result?.categories?.cache && global.appMetadataManager?.pruneStaleIconCacheEntries) {
+                void global.appMetadataManager.pruneStaleIconCacheEntries();
+            }
             if (result?.categories?.history) {
                 requestLaunchHistoryRefresh();
             }

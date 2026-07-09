@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
-const { pathToFileURL } = require("url");
+const { exec, spawn } = require("child_process");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
+const { toAppIconUrl } = require("../../shared/app-icon-url");
 const {
     MIN_ICON_FILE_BYTES,
     isValidIconFileSize
@@ -212,6 +212,91 @@ function findAdaptiveIconRaster(extractDir) {
     return foregroundFile || backgroundFile || null;
 }
 
+function findBestZipIconEntry(entryNames = []) {
+    if (!entryNames.length) return null;
+
+    const normalizedEntries = entryNames.map((name) => ({
+        name,
+        norm: String(name || "").replace(/\\/g, "/")
+    }));
+
+    for (const pattern of ICON_ENTRY_PRIORITY) {
+        const hit = normalizedEntries.find((entry) => pattern.test(entry.norm));
+        if (hit) return hit.name;
+    }
+
+    const fallback = normalizedEntries.find((entry) => (
+        /\/res\/(mipmap|drawable)/i.test(entry.norm)
+        && /launcher|icon/i.test(entry.norm)
+        && /\.(png|webp)$/i.test(entry.norm)
+    ));
+    return fallback?.name || null;
+}
+
+function parseUnzipListing(stdout) {
+    const entries = [];
+    for (const line of String(stdout || "").split(/\r?\n/)) {
+        const match = line.match(/^\s*\d+\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
+        if (match) {
+            entries.push(match[1].trim());
+        }
+    }
+    return entries;
+}
+
+function shellQuote(value) {
+    return `'${String(value || "").replace(/'/g, `'\\''`)}'`;
+}
+
+function streamExecOutToFile(adbPath, serial, shellCommand, outputPath, timeoutMs = 20000) {
+    return new Promise((resolve, reject) => {
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+        const proc = spawn(
+            adbPath,
+            ["-s", adbSerialArg(serial), "exec-out", "sh", "-c", shellCommand],
+            { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
+        );
+
+        const chunks = [];
+        let stderr = "";
+        const timer = setTimeout(() => {
+            proc.kill();
+            reject(new Error(`Timeout stream icone (${timeoutMs}ms)`));
+        }, timeoutMs);
+
+        proc.stdout.on("data", (chunk) => chunks.push(chunk));
+        proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+
+        proc.on("error", (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+
+        proc.on("close", (code) => {
+            clearTimeout(timer);
+            if (code !== 0) {
+                reject(new Error(stderr.trim() || `adb exec-out exit ${code}`));
+                return;
+            }
+
+            try {
+                fs.writeFileSync(outputPath, Buffer.concat(chunks));
+                if (isValidIconFileSize(outputPath)) {
+                    resolve(outputPath);
+                    return;
+                }
+                if (fs.existsSync(outputPath)) {
+                    fs.unlinkSync(outputPath);
+                }
+                reject(new Error("Icon stream invalide"));
+            } catch (err) {
+                reject(err);
+            }
+        });
+    });
+}
+
 function sanitizeFileSegment(value) {
     return String(value || "unknown")
         .replace(/[^a-zA-Z0-9._-]+/g, "_")
@@ -306,9 +391,40 @@ class AppIconExtractor {
 
     toIconUrl(iconPath) {
         if (!iconPath || !isValidIconFileSize(iconPath)) return null;
+        return toAppIconUrl(iconPath);
+    }
+
+    async listZipIconEntriesOnDevice(serial, remoteApkPath) {
         try {
-            return pathToFileURL(iconPath).href;
+            const stdout = await execWithTimeout(
+                `"${this.adbPath}" -s ${adbSerialArg(serial)} shell unzip -l ${shellQuote(remoteApkPath)} 2>/dev/null`,
+                12000
+            );
+            return parseUnzipListing(stdout).filter((entry) => (
+                /\/res\/(mipmap|drawable)/i.test(entry.replace(/\\/g, "/"))
+                && /\.(png|webp)$/i.test(entry)
+            ));
         } catch (_err) {
+            return [];
+        }
+    }
+
+    async tryExtractIconFromDeviceZip(serial, remoteApkPath, outputPath) {
+        const zipEntries = await this.listZipIconEntriesOnDevice(serial, remoteApkPath);
+        const bestEntry = findBestZipIconEntry(zipEntries);
+        if (!bestEntry) return null;
+
+        const shellCommand = `unzip -p ${shellQuote(remoteApkPath)} ${shellQuote(bestEntry)}`;
+        try {
+            return await streamExecOutToFile(
+                this.adbPath,
+                serial,
+                shellCommand,
+                outputPath,
+                15000
+            );
+        } catch (err) {
+            console.warn(`[AppIconExtractor] stream zip ${path.basename(remoteApkPath)}:`, err.message);
             return null;
         }
     }
@@ -320,6 +436,9 @@ class AppIconExtractor {
         const attemptCount = Math.min(remoteApkPaths.length, MAX_APK_PULL_ATTEMPTS);
         for (let index = 0; index < attemptCount; index += 1) {
             const remoteApkPath = remoteApkPaths[index];
+            const streamedPath = await this.tryExtractIconFromDeviceZip(serial, remoteApkPath, outputPath);
+            if (streamedPath) return streamedPath;
+
             const tempApkPath = `${outputPath}.apk${index}`;
             try {
                 await this.pullApk(serial, remoteApkPath, tempApkPath);
@@ -345,6 +464,7 @@ class AppIconExtractor {
 module.exports = {
     AppIconExtractor,
     findBestIconFile,
+    findBestZipIconEntry,
     findAdaptiveIconRaster,
     sortApkPaths,
     MIN_ICON_FILE_BYTES,

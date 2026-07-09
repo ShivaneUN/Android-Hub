@@ -24,10 +24,10 @@ const DELETE_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="2" aria-hidden="
 const newInstanceSessions = new Map();
 let activeNewInstanceSessionId = null;
 let historyAppList = null;
-let metadataPrefetchTimer = null;
-let metadataPrefetchDoneSerial = null;
-const METADATA_PREFETCH_MAX = 16;
-const METADATA_PREFETCH_DEBOUNCE_MS = 450;
+let launcherIconPrefetchObserver = null;
+const prefetchedAppKeys = new Set();
+const VISIBLE_PREFETCH_COUNT = 10;
+const SCROLL_PREFETCH_ROOT_MARGIN = "120px 0px";
 
 function isHubModalChildWindow() {
     return /hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"));
@@ -66,7 +66,7 @@ function getAppVariantClass(app = {}) {
 
 function buildAppKey(app = {}) {
     if (app.appKey) return String(app.appKey);
-    const pkg = String(app.package || "");
+    const pkg = String(app.package || app.packageName || "");
     const userId = app.userId === undefined || app.userId === null ? "0" : String(app.userId);
     return `${pkg}@@${userId}`;
 }
@@ -172,9 +172,78 @@ function resetLauncherApps() {
 }
 
 function resetMetadataPrefetchState() {
-    clearTimeout(metadataPrefetchTimer);
-    metadataPrefetchTimer = null;
-    metadataPrefetchDoneSerial = null;
+    disconnectLauncherIconPrefetchObserver();
+    prefetchedAppKeys.clear();
+}
+
+function disconnectLauncherIconPrefetchObserver() {
+    if (launcherIconPrefetchObserver) {
+        launcherIconPrefetchObserver.disconnect();
+        launcherIconPrefetchObserver = null;
+    }
+}
+
+function buildPrefetchAppsPayload(apps = []) {
+    return apps.map((app) => ({
+        package: app.package,
+        packageName: app.package,
+        userId: app.userId ?? null,
+        appName: app.appName || app.labelName || app.displayName || app.package
+    }));
+}
+
+function requestAppsMetadataPrefetch(apps = [], { priority = "high" } = {}) {
+    if (!selectedDevice?.serial || !window.electronAPI?.prefetchAppMetadata) return;
+
+    const toFetch = [];
+    for (const app of apps) {
+        const key = buildAppKey(app);
+        if (prefetchedAppKeys.has(key)) continue;
+        if (app.iconUrl || app.iconPath) continue;
+        prefetchedAppKeys.add(key);
+        toFetch.push(app);
+    }
+
+    if (!toFetch.length) return;
+
+    window.electronAPI.prefetchAppMetadata({
+        deviceId: selectedDevice.serial,
+        apps: buildPrefetchAppsPayload(toFetch),
+        maxCount: toFetch.length,
+        priority
+    }).catch((err) => {
+        console.warn("[NewSession] prefetch metadata:", err.message);
+    });
+}
+
+function setupLauncherIconPrefetch(container, orderedApps = []) {
+    disconnectLauncherIconPrefetchObserver();
+    if (!container || !orderedApps.length) return;
+
+    requestAppsMetadataPrefetch(orderedApps.slice(0, VISIBLE_PREFETCH_COUNT), { priority: "high" });
+
+    if (typeof IntersectionObserver !== "function") return;
+
+    launcherIconPrefetchObserver = new IntersectionObserver((entries) => {
+        const visibleApps = [];
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const appKey = entry.target.dataset.appKey;
+            const app = orderedApps.find((item) => buildAppKey(item) === appKey);
+            if (app) visibleApps.push(app);
+        }
+        if (visibleApps.length) {
+            requestAppsMetadataPrefetch(visibleApps, { priority: "high" });
+        }
+    }, {
+        root: container,
+        rootMargin: SCROLL_PREFETCH_ROOT_MARGIN,
+        threshold: 0.01
+    });
+
+    container.querySelectorAll(".new-instance-app-item").forEach((btn) => {
+        launcherIconPrefetchObserver.observe(btn);
+    });
 }
 
 function normalizeLauncherApps(apps = []) {
@@ -184,33 +253,6 @@ function normalizeLauncherApps(apps = []) {
         appName: app.appName || app.labelName || app.displayName || app.package,
         labelName: app.labelName || app.appName || app.displayName || app.package
     }));
-}
-
-function scheduleAppsMetadataPrefetchOnce(apps = []) {
-    if (!selectedDevice?.serial || !window.electronAPI?.prefetchAppMetadata) return;
-    if (metadataPrefetchDoneSerial === selectedDevice.serial) return;
-
-    metadataPrefetchDoneSerial = selectedDevice.serial;
-    clearTimeout(metadataPrefetchTimer);
-
-    metadataPrefetchTimer = setTimeout(() => {
-        const payloadApps = apps.slice(0, METADATA_PREFETCH_MAX).map((app) => ({
-            package: app.package,
-            packageName: app.package,
-            userId: app.userId ?? null,
-            appName: app.appName || app.labelName || app.displayName || app.package
-        }));
-
-        if (!payloadApps.length) return;
-
-        window.electronAPI.prefetchAppMetadata({
-            deviceId: selectedDevice.serial,
-            apps: payloadApps,
-            maxCount: METADATA_PREFETCH_MAX
-        }).catch((err) => {
-            console.warn("[NewSession] prefetch metadata:", err.message);
-        });
-    }, METADATA_PREFETCH_DEBOUNCE_MS);
 }
 
 function renderLauncherAppsList(apps) {
@@ -249,6 +291,8 @@ function renderLauncherAppsList(apps) {
             selectAppFromLauncher(app);
         });
     });
+
+    setupLauncherIconPrefetch(appResults, apps);
 }
 
 function selectAppFromLauncher(app) {
@@ -626,6 +670,8 @@ function renderDeviceList(devices) {
 async function loadAppsForSelectedDevice() {
     if (!selectedDevice) return;
 
+    resetMetadataPrefetchState();
+
     const { appResults } = getNewInstanceElements();
     if (!appResults) return;
 
@@ -655,7 +701,11 @@ async function loadAppsForSelectedDevice() {
             return;
         }
 
-        scheduleAppsMetadataPrefetchOnce(launcherApps);
+        const cachedIconUpdates = launcherApps.filter((app) => app.iconUrl || app.iconPath);
+        if (cachedIconUpdates.length) {
+            patchLauncherAppIcons(cachedIconUpdates);
+        }
+
         setStatus(`${launcherApps.length} application(s) chargee(s).`);
     } catch (err) {
         launcherApps = [];
@@ -704,7 +754,7 @@ async function fetchConnectedDevices({ force = false } = {}) {
 
 async function selectDevice(serial, name, deviceId) {
     const nextSerial = serial;
-    if (metadataPrefetchDoneSerial && metadataPrefetchDoneSerial !== nextSerial) {
+    if (selectedDevice?.serial && selectedDevice.serial !== nextSerial) {
         resetMetadataPrefetchState();
     }
 

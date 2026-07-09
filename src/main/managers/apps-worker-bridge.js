@@ -5,6 +5,7 @@ const { LaunchHistoryManager } = require("./launch-history-manager");
 const WORKER_PATH = path.join(__dirname, "../workers/apps-worker.js");
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const APP_LIST_REQUEST_TIMEOUT_MS = 90000;
+const PREFETCH_REQUEST_TIMEOUT_MS = 15000;
 const MAX_RESTART_ATTEMPTS = 3;
 
 class AppsWorkerBridge {
@@ -22,6 +23,10 @@ class AppsWorkerBridge {
         this.fallbackGetAppList = null;
         /** @type {((ctx: { transportSerial: string, cacheDeviceId: string }, apps: unknown[]) => Promise<unknown[]>)|null} */
         this.fallbackEnrichApps = null;
+        /** @type {((ctx: { transportSerial: string, cacheDeviceId: string, adbSerial: string }, apps: unknown[], options?: { maxCount?: number }) => Promise<void>)|null} */
+        this.fallbackPrefetchAppMetadata = null;
+        /** @type {((payload: { serial?: string, updates?: unknown[] }) => void)|null} */
+        this.metadataUpdatedRelay = null;
         /** @type {(() => Set<string>)|null} */
         this.getActiveTypeBKeys = null;
         /** @type {LaunchHistoryManager|null} */
@@ -73,6 +78,13 @@ class AppsWorkerBridge {
         if (!this.child) return;
 
         this.child.on("message", (message) => {
+            if (message?.type === "METADATA_UPDATED" && message.payload) {
+                if (typeof this.metadataUpdatedRelay === "function") {
+                    this.metadataUpdatedRelay(message.payload);
+                }
+                return;
+            }
+
             if (!message?.id) return;
             const entry = this.pending.get(message.id);
             if (!entry) return;
@@ -131,9 +143,16 @@ class AppsWorkerBridge {
         this.restartAttempts = 0;
     }
 
-    setAppListFallback({ getAppList, enrichApps } = {}) {
+    setAppListFallback({ getAppList, enrichApps, prefetchAppMetadata } = {}) {
         this.fallbackGetAppList = typeof getAppList === "function" ? getAppList : null;
         this.fallbackEnrichApps = typeof enrichApps === "function" ? enrichApps : null;
+        this.fallbackPrefetchAppMetadata = typeof prefetchAppMetadata === "function"
+            ? prefetchAppMetadata
+            : null;
+    }
+
+    setMetadataUpdatedRelay(handler) {
+        this.metadataUpdatedRelay = typeof handler === "function" ? handler : null;
     }
 
     async start({ userDataPath, adbPath, getActiveTypeBKeys }) {
@@ -148,7 +167,7 @@ class AppsWorkerBridge {
 
         try {
             await this.spawnWorker();
-            console.log("[AppsWorkerBridge] worker pret (P0 historique + P1 apps)");
+            console.log("[AppsWorkerBridge] worker pret (P0 historique + P1 apps + P2 prefetch)");
         } catch (err) {
             this.activateFallback(err.message);
         }
@@ -287,6 +306,30 @@ class AppsWorkerBridge {
             apps
         }, DEFAULT_REQUEST_TIMEOUT_MS);
         return result?.apps || apps;
+    }
+
+    async prefetchAppMetadata({ transportSerial, cacheDeviceId, adbSerial }, apps = [], options = {}) {
+        await this.ensureReady();
+        if (this.useFallback) {
+            if (this.fallbackPrefetchAppMetadata) {
+                await this.fallbackPrefetchAppMetadata(
+                    { transportSerial, cacheDeviceId, adbSerial },
+                    apps,
+                    options
+                );
+                return { ok: true };
+            }
+            throw new Error("Prefetch apps indisponible (fallback sans handler).");
+        }
+        const result = await this.request("PREFETCH_APP_METADATA", {
+            transportSerial,
+            cacheDeviceId,
+            adbSerial,
+            apps,
+            maxCount: options.maxCount,
+            priority: options.priority === "high" ? "high" : "normal"
+        }, PREFETCH_REQUEST_TIMEOUT_MS);
+        return result || { ok: true };
     }
 
     getFacade() {

@@ -280,6 +280,9 @@ class NewInstanceManager extends EventEmitter {
 
     async _sendKeyViaScrcpy(client, key, session) {
         if (key.length === 1) {
+            if (client?.controlSocket && typeof client.sendInjectText === "function") {
+                return client.sendInjectText(key);
+            }
             if (!session.inputController) {
                 session.inputController = new AdbInputController(this.adbPath, session.serial);
                 await session.inputController.init();

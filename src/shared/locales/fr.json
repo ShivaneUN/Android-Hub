@@ -663,6 +663,7 @@
         "Appareil déconnecté aléatoirement : branchez directement sur le PC, évitez les hubs USB.",
         "Mirroring ne démarre pas : fermez les autres outils ADB (Android Studio, scrcpy en CLI).",
         "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
+        "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
         "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
         "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
       ]
