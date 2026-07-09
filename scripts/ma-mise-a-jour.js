@@ -29,34 +29,86 @@ function killLockingProcesses() {
     }
 }
 
-console.log("\n=== Android Hub — build perso ===\n");
-
-killLockingProcesses();
-
-if (!noBump) {
-    console.log("Incrément version (patch)...");
-    run("npm version patch --no-git-tag-version");
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const releasesDir = path.join(ROOT, "releases");
-fs.mkdirSync(releasesDir, { recursive: true });
+function cleanDistUnpack() {
+    run("node scripts/clean-dist-unpack.js");
+}
 
-run("npm run build");
+function recoverPartialUnpack() {
+    const dist = path.join(ROOT, "dist");
+    const tmp = path.join(dist, "win-unpacked.tmp");
+    const out = path.join(dist, "win-unpacked");
+    if (!fs.existsSync(tmp) || fs.existsSync(out)) return;
+    try {
+        fs.renameSync(tmp, out);
+        console.log("Récupéré: dist\\win-unpacked.tmp -> dist\\win-unpacked");
+    } catch (_err) {
+        try {
+            fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+        } catch (_err2) {
+            // noop
+        }
+    }
+}
 
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-const setupName = `Android Hub-Setup-${pkg.version}.exe`;
-const setupPath = path.join(ROOT, "dist", setupName);
+async function runBuildWithRetry(maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            if (attempt > 1) {
+                killLockingProcesses();
+                recoverPartialUnpack();
+                cleanDistUnpack();
+                console.log(`Nouvelle tentative de build (${attempt}/${maxAttempts})...`);
+                await sleep(2000);
+            }
+            run("npm run build");
+            return;
+        } catch (err) {
+            if (attempt === maxAttempts) throw err;
+            console.warn(`\nBuild échoué (tentative ${attempt}/${maxAttempts}).`);
+        }
+    }
+}
 
-if (!fs.existsSync(setupPath)) {
-    console.error(`ERREUR: introuvable ${setupPath}`);
+async function main() {
+    console.log("\n=== Android Hub — build perso ===\n");
+
+    killLockingProcesses();
+    cleanDistUnpack();
+
+    if (!noBump) {
+        console.log("Incrément version (patch)...");
+        run("npm version patch --no-git-tag-version");
+    }
+
+    const releasesDir = path.join(ROOT, "releases");
+    fs.mkdirSync(releasesDir, { recursive: true });
+
+    await runBuildWithRetry();
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    const setupName = `Android Hub-Setup-${pkg.version}.exe`;
+    const setupPath = path.join(ROOT, "dist", setupName);
+
+    if (!fs.existsSync(setupPath)) {
+        console.error(`ERREUR: introuvable ${setupPath}`);
+        process.exit(1);
+    }
+
+    const destVersioned = path.join(releasesDir, setupName);
+    const destLatest = path.join(releasesDir, "Android Hub-Setup-dernier.exe");
+
+    fs.copyFileSync(setupPath, destVersioned);
+    fs.copyFileSync(setupPath, destLatest);
+
+    console.log(`\nOK — v${pkg.version}`);
+    console.log(`  releases\\Android Hub-Setup-dernier.exe\n`);
+}
+
+main().catch((err) => {
+    console.error(err.message || err);
     process.exit(1);
-}
-
-const destVersioned = path.join(releasesDir, setupName);
-const destLatest = path.join(releasesDir, "Android Hub-Setup-dernier.exe");
-
-fs.copyFileSync(setupPath, destVersioned);
-fs.copyFileSync(setupPath, destLatest);
-
-console.log(`\nOK — v${pkg.version}`);
-console.log(`  releases\\Android Hub-Setup-dernier.exe\n`);
+});
