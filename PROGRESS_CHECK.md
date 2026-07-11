@@ -4482,11 +4482,15 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 | Priorité 3 | Fallback in-process (rare mais sync total main) |
 | Debounce index | **Efficace** pour prefetch worker ; pas le goulot principal |
 
-**LOCK** : non concerné.
+- **LOCK** : non concerné.
 
 ---
 
-## Historique récent
+## FIX — Async cache lookup metadata (étape 1/3, 2026-07-12)
+
+`app-metadata-manager.js` : `isFresh`, `hasUsableIcon`, `lookupCacheEntry`, `getCachedEntry` → `fs.promises` via `isIconFileAccessible`. Appelants mis à jour (`enrichApps`, `queuePrefetch`, `resolveOne`, `enrichHistoryEntries`). `new-instance-ipc.js` : `await getCachedEntry`.
+
+---
 
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.

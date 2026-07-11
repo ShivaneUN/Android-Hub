@@ -8,7 +8,7 @@ const {
 } = require("../../shared/app-display");
 const { AppIconExtractor } = require("./app-icon-extractor");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
-const { isValidIconFileSize, MIN_ICON_FILE_BYTES } = require("../../shared/app-icon-placeholder");
+const { MIN_ICON_FILE_BYTES } = require("../../shared/app-icon-placeholder");
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DUMP_TIMEOUT_MS = 12000;
@@ -171,15 +171,11 @@ class AppMetadataManager {
         this.saveIndex();
     }
 
-    isFresh(entry) {
+    async isFresh(entry) {
         if (!entry?.fetchedAt) return false;
         if (Date.now() - entry.fetchedAt > CACHE_TTL_MS) return false;
         if (!entry.iconPath) return true;
-        if (!fs.existsSync(entry.iconPath)) {
-            this._verifiedIconPaths.delete(entry.iconPath);
-            return false;
-        }
-        if (!isValidIconFileSize(entry.iconPath)) {
+        if (!(await this.isIconFileAccessible(entry.iconPath))) {
             this._verifiedIconPaths.delete(entry.iconPath);
             return false;
         }
@@ -187,13 +183,13 @@ class AppMetadataManager {
         return true;
     }
 
-    hasUsableIcon(entry) {
-        return isValidIconFileSize(entry?.iconPath);
+    async hasUsableIcon(entry) {
+        return this.isIconFileAccessible(entry?.iconPath);
     }
 
-    shouldRetryIconExtract(entry) {
+    async shouldRetryIconExtract(entry) {
         if (!entry) return true;
-        if (this.hasUsableIcon(entry)) return false;
+        if (await this.hasUsableIcon(entry)) return false;
         const attempts = Number(entry.iconAttempts) || 0;
         return attempts < MAX_ICON_EXTRACT_ATTEMPTS;
     }
@@ -205,8 +201,8 @@ class AppMetadataManager {
         return humanizePackageName(fallbackPackage);
     }
 
-    formatCachedEntry(entry, packageName) {
-        const iconPath = this.hasUsableIcon(entry) ? entry.iconPath : null;
+    async formatCachedEntry(entry, packageName) {
+        const iconPath = (await this.hasUsableIcon(entry)) ? entry.iconPath : null;
         return {
             ...entry,
             iconPath,
@@ -215,7 +211,7 @@ class AppMetadataManager {
         };
     }
 
-    rejectFalsePositiveCacheEntry(found, cacheDeviceId, packageName, userId = null) {
+    async rejectFalsePositiveCacheEntry(found, cacheDeviceId, packageName, userId = null) {
         if (!found?.entry) return;
         const entry = found.entry;
         const previousAttempts = Number(entry.iconAttempts) || 0;
@@ -229,7 +225,7 @@ class AppMetadataManager {
             }
         }
 
-        this.setCachedEntry(cacheDeviceId, packageName, userId, {
+        await this.setCachedEntry(cacheDeviceId, packageName, userId, {
             appName: entry.appName,
             iconPath: null,
             iconAttempts: Math.min(previousAttempts + 1, MAX_ICON_EXTRACT_ATTEMPTS),
@@ -237,10 +233,34 @@ class AppMetadataManager {
         });
     }
 
-    lookupCacheEntry(cacheDeviceId, packageName, userId = null, transportSerial = null) {
+    async mergeAppMetadata(cacheDeviceId, app, transportSerial = null) {
+        const packageName = app.package || app.packageName;
+        const userId = app.userId ?? null;
+        const found = await this.lookupCacheEntry(cacheDeviceId, packageName, userId, transportSerial);
+        if (found) {
+            this.migrateCacheEntry(found, cacheDeviceId, packageName, userId);
+        }
+
+        const cached = await this.getCachedEntry(cacheDeviceId, packageName, userId, { transportSerial });
+        const appNameHint = app.labelName || app.displayName || app.appName || null;
+
+        const appName = cached?.appName
+            || (isUsableAppLabel(appNameHint) ? appNameHint.trim() : humanizePackageName(packageName));
+
+        return {
+            ...app,
+            appName,
+            labelName: app.labelName || appName,
+            displayName: app.displayName || appName,
+            iconPath: cached?.iconPath || app.iconPath || null,
+            iconUrl: cached?.iconUrl || app.iconUrl || null
+        };
+    }
+
+    async lookupCacheEntry(cacheDeviceId, packageName, userId = null, transportSerial = null) {
         for (const key of this.buildLookupKeys(cacheDeviceId, packageName, userId, transportSerial)) {
             const entry = this.index[key];
-            if (!entry || !this.isFresh(entry)) continue;
+            if (!entry || !(await this.isFresh(entry))) continue;
             return { entry, key };
         }
         return null;
@@ -286,18 +306,21 @@ class AppMetadataManager {
         return { cacheDeviceId, adbSerial, transportSerial };
     }
 
-    getCachedEntry(deviceId, packageName, userId = null, { transportSerial = null } = {}) {
-        const found = this.lookupCacheEntry(deviceId, packageName, userId, transportSerial || deviceId);
+    async getCachedEntry(deviceId, packageName, userId = null, { transportSerial = null } = {}) {
+        const found = await this.lookupCacheEntry(deviceId, packageName, userId, transportSerial || deviceId);
         if (!found) return null;
         return this.formatCachedEntry(found.entry, packageName);
     }
 
-    setCachedEntry(deviceId, packageName, userId, data) {
+    async setCachedEntry(deviceId, packageName, userId, data) {
         const key = this.buildKey(deviceId, packageName, userId);
         const previous = this.index[key] || {};
         const iconAttempts = data.iconAttempts !== undefined
             ? data.iconAttempts
             : (previous.iconAttempts || 0);
+        const hasUsableSavedIcon = data.iconPath
+            ? await this.hasUsableIcon({ iconPath: data.iconPath })
+            : false;
 
         this.index[key] = {
             deviceId,
@@ -305,7 +328,7 @@ class AppMetadataManager {
             userId: Number.isInteger(userId) ? userId : 0,
             appName: data.appName || previous.appName || humanizePackageName(packageName),
             iconPath: data.iconPath !== undefined ? data.iconPath : (previous.iconPath || null),
-            iconAttempts: this.hasUsableIcon({ iconPath: data.iconPath }) ? 0 : iconAttempts,
+            iconAttempts: hasUsableSavedIcon ? 0 : iconAttempts,
             versionCode: data.versionCode !== undefined ? data.versionCode : (previous.versionCode ?? null),
             fetchedAt: Date.now()
         };
@@ -393,10 +416,10 @@ class AppMetadataManager {
         }
     }
 
-    needsIconExtraction(cacheDeviceId, packageName, userId = null, transportSerial = null) {
-        const found = this.lookupCacheEntry(cacheDeviceId, packageName, userId, transportSerial);
+    async needsIconExtraction(cacheDeviceId, packageName, userId = null, transportSerial = null) {
+        const found = await this.lookupCacheEntry(cacheDeviceId, packageName, userId, transportSerial);
         if (!found) return true;
-        if (this.hasUsableIcon(found.entry)) return false;
+        if (await this.hasUsableIcon(found.entry)) return false;
         return this.shouldRetryIconExtract(found.entry);
     }
 
@@ -412,20 +435,20 @@ class AppMetadataManager {
         return this.resolveDeviceContext(deviceId);
     }
 
-    reopenBlockedPrefetchTargets(ctx, apps = []) {
+    async reopenBlockedPrefetchTargets(ctx, apps = []) {
         let changed = false;
 
         for (const app of apps) {
             const packageName = app.package || app.packageName;
             if (!packageName) continue;
 
-            const found = this.lookupCacheEntry(
+            const found = await this.lookupCacheEntry(
                 ctx.cacheDeviceId,
                 packageName,
                 app.userId ?? null,
                 ctx.transportSerial
             );
-            if (!found?.entry || this.hasUsableIcon(found.entry)) continue;
+            if (!found?.entry || await this.hasUsableIcon(found.entry)) continue;
 
             const attempts = Number(found.entry.iconAttempts) || 0;
             if (!found.entry.iconPath && attempts >= MAX_ICON_EXTRACT_ATTEMPTS) {
@@ -451,7 +474,7 @@ class AppMetadataManager {
             transportSerial,
             adbSerial
         });
-        const found = this.lookupCacheEntry(
+        const found = await this.lookupCacheEntry(
             ctx.cacheDeviceId,
             packageName,
             userId,
@@ -460,12 +483,12 @@ class AppMetadataManager {
 
         if (found) {
             this.migrateCacheEntry(found, ctx.cacheDeviceId, packageName, userId);
-            const cached = this.formatCachedEntry(
+            const cached = await this.formatCachedEntry(
                 this.index[this.buildKey(ctx.cacheDeviceId, packageName, userId)] || found.entry,
                 packageName
             );
 
-            if (this.hasUsableIcon(cached)) {
+            if (await this.hasUsableIcon(cached)) {
                 return {
                     appName: cached.appName,
                     iconPath: cached.iconPath,
@@ -473,7 +496,7 @@ class AppMetadataManager {
                 };
             }
 
-            if (!this.shouldRetryIconExtract(cached)) {
+            if (!(await this.shouldRetryIconExtract(cached))) {
                 return {
                     appName: cached.appName,
                     iconPath: null,
@@ -481,10 +504,10 @@ class AppMetadataManager {
                 };
             }
 
-            this.rejectFalsePositiveCacheEntry(found, ctx.cacheDeviceId, packageName, userId);
+            await this.rejectFalsePositiveCacheEntry(found, ctx.cacheDeviceId, packageName, userId);
         }
 
-        const refreshedFound = this.lookupCacheEntry(
+        const refreshedFound = await this.lookupCacheEntry(
             ctx.cacheDeviceId,
             packageName,
             userId,
@@ -538,7 +561,7 @@ class AppMetadataManager {
             : await this.fetchVersionCode(ctx.adbSerial, packageName, userId);
         const nextAttempts = savedIconPath ? 0 : previousAttempts + 1;
 
-        this.setCachedEntry(ctx.cacheDeviceId, packageName, userId, {
+        await this.setCachedEntry(ctx.cacheDeviceId, packageName, userId, {
             appName,
             iconPath: savedIconPath,
             iconAttempts: nextAttempts,
@@ -552,30 +575,6 @@ class AppMetadataManager {
         };
     }
 
-    mergeAppMetadata(cacheDeviceId, app, transportSerial = null) {
-        const packageName = app.package || app.packageName;
-        const userId = app.userId ?? null;
-        const found = this.lookupCacheEntry(cacheDeviceId, packageName, userId, transportSerial);
-        if (found) {
-            this.migrateCacheEntry(found, cacheDeviceId, packageName, userId);
-        }
-
-        const cached = this.getCachedEntry(cacheDeviceId, packageName, userId, { transportSerial });
-        const appNameHint = app.labelName || app.displayName || app.appName || null;
-
-        const appName = cached?.appName
-            || (isUsableAppLabel(appNameHint) ? appNameHint.trim() : humanizePackageName(packageName));
-
-        return {
-            ...app,
-            appName,
-            labelName: app.labelName || appName,
-            displayName: app.displayName || appName,
-            iconPath: cached?.iconPath || app.iconPath || null,
-            iconUrl: cached?.iconUrl || app.iconUrl || null
-        };
-    }
-
     async enrichApps(serial, apps = [], options = {}) {
         await this.pruneStaleIconCacheEntries();
 
@@ -585,11 +584,11 @@ class AppMetadataManager {
             : null;
 
         if (cacheDeviceId) {
-            return apps.map((app) => this.mergeAppMetadata(cacheDeviceId, app, transportSerial));
+            return Promise.all(apps.map((app) => this.mergeAppMetadata(cacheDeviceId, app, transportSerial)));
         }
 
         const ctx = await this.resolveDeviceContext(serial);
-        return apps.map((app) => this.mergeAppMetadata(ctx.cacheDeviceId, app, ctx.transportSerial));
+        return Promise.all(apps.map((app) => this.mergeAppMetadata(ctx.cacheDeviceId, app, ctx.transportSerial)));
     }
 
     async queuePrefetch(deviceId, apps = [], options = {}) {
@@ -612,17 +611,21 @@ class AppMetadataManager {
             adbSerial: options.adbSerial
         });
 
-        this.reopenBlockedPrefetchTargets(ctx, apps);
+        await this.reopenBlockedPrefetchTargets(ctx, apps);
 
-        const pending = apps.filter((app) => {
+        const pending = [];
+        for (const app of apps) {
             const packageName = app.package || app.packageName;
-            return packageName && this.needsIconExtraction(
+            if (!packageName) continue;
+            if (await this.needsIconExtraction(
                 ctx.cacheDeviceId,
                 packageName,
                 app.userId ?? null,
                 ctx.transportSerial
-            );
-        });
+            )) {
+                pending.push(app);
+            }
+        }
 
         if (!pending.length) return;
 
@@ -719,7 +722,7 @@ class AppMetadataManager {
             const ctx = await getCtx(entry.deviceId);
 
             if (ctx) {
-                const cached = this.getCachedEntry(
+                const cached = await this.getCachedEntry(
                     ctx.cacheDeviceId,
                     entry.packageName,
                     entry.userId ?? null,
@@ -736,7 +739,7 @@ class AppMetadataManager {
                         : humanizePackageName(entry.packageName);
                 }
 
-                if (entry.packageName && this.needsIconExtraction(
+                if (entry.packageName && await this.needsIconExtraction(
                     ctx.cacheDeviceId,
                     entry.packageName,
                     entry.userId ?? null,
