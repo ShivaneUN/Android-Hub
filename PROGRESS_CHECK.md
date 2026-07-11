@@ -4642,6 +4642,14 @@ Référence initiale : rapport optimisation § 6.1 (`ipcRenderer.on` dans preloa
 
 ---
 
+## FIX — Cleanup listener stream-restarting Type B (étape 3/3, 2026-07-12)
+
+`new-instance-pipeline.js` : `dispose()` sur unsubscribe. `new-session.js` : `closeNewInstanceSession` appelle `pipeline.dispose()` après `stop()`.
+
+**Appelants non modifiés (hors scope) :** `session-audio-hub.js`, `session-stream-bridge.js`, BrowserView `session.js` (sessionPreload) — listeners singleton / par vue.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

@@ -158,8 +158,9 @@ function createNewInstanceVideoPipeline(sessionId, canvasElement) {
         }
     }
 
+    let unsubscribeStreamRestarting = null;
     if (window.sessionAPI?.onStreamRestarting) {
-        window.sessionAPI.onStreamRestarting((data) => {
+        unsubscribeStreamRestarting = window.sessionAPI.onStreamRestarting((data) => {
             if (data?.sessionId !== sessionId) return;
             resetDecoder();
             state.started = true;
@@ -180,6 +181,13 @@ function createNewInstanceVideoPipeline(sessionId, canvasElement) {
         },
         getFrameCount() {
             return state.frameCount;
+        },
+
+        dispose() {
+            if (typeof unsubscribeStreamRestarting === "function") {
+                unsubscribeStreamRestarting();
+                unsubscribeStreamRestarting = null;
+            }
         }
     };
 }

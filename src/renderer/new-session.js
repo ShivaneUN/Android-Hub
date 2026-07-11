@@ -870,6 +870,7 @@ async function closeNewInstanceSession(sessionId) {
 
             if (entry.pipeline) {
                 await entry.pipeline.stop();
+                entry.pipeline.dispose?.();
             } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
                 await window.electronAPI.newInstanceStop({ sessionId });
             }
