@@ -4210,6 +4210,7 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Diagnostic** — chronométrage lancement USB/WiFi post-cache/forceFresh ; dominant : `wm size` (USB 78 %), `attachStableIds` WiFi estimé, mutex+poll, dims Type B répétées.
 - **2026-07-12** — **Perf ADB** — `forceFresh: true` sur `resolveAdbSerialForDims` (lancement session). Commits `9a5d05d` + main.js.
 - **2026-07-12** — **Perf ADB** — cache TTL 10 s + mutex `listUnifiedDevices` (`device-registry.js`). LOCK / vidéo : non concernés.
 - **2026-07-12** — **Diagnostic** — cache `listUnifiedDevices` (étape 1, docs seulement).

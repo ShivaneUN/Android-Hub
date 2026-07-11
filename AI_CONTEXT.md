@@ -290,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-12 — **Diagnostic lancement USB/WiFi** — Mesure USB : dims path 226 ms (`wm size` 78 %, `forceFresh` listUnified 22 %). WiFi non mesuré (hors ligne). Causes : `forceFresh` systématique si `stableDeviceId`, mutex vs poll, dims Type B 2–3×, post-dims scrcpy LOCK dominant total. Script temp supprimé.
 - 2026-07-12 — **Perf ADB — forceFresh lancement** — `listUnifiedDevices({ forceFresh })` + `resolveAdbSerialForDims` → `forceFresh: true` uniquement au lancement session. Autres appelants cache inchangés. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
