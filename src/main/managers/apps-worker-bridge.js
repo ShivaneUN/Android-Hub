@@ -345,23 +345,6 @@ class AppsWorkerBridge {
     bootstrapReady(readyPromise) {
         this.readyPromise = readyPromise;
     }
-
-    // TEMP DEBUG - à retirer avant release
-    async debugCrashWorker() {
-        await this.ensureReady();
-        if (this.useFallback) {
-            return { success: false, error: "AppsWorker en fallback in-process." };
-        }
-        if (!this.child || this.child.killed) {
-            return { success: false, error: "AppsWorker non demarre." };
-        }
-        try {
-            this.child.send({ id: "debug-crash", type: "DEBUG_CRASH", payload: {} });
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err?.message || String(err) };
-        }
-    }
 }
 
 module.exports = { AppsWorkerBridge };
