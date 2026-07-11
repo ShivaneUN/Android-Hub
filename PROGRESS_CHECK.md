@@ -4298,6 +4298,20 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ---
 
+## LOCALISATION — Switch USB/WiFi (2026-07-12)
+
+**Statut : étape 1 diagnostic — avant overlay.**
+
+| Élément | Détail |
+|---------|--------|
+| **UI** | Toggle checkbox `.sidebar-wifi-toggle-input` dans `src/renderer/sidebar/DevicePanel.js` (sidebar « Appareils connectés »), **pas** `devices-panel/DevicesPanel.js` |
+| **Handler clic** | `change` sur l'input → `handleWifiToggle(device, toggleInput.checked, toggleInput)` (~L177-181) |
+| **IPC** | `window.wifiAPI.toggle({ deviceId, enabled, usbSerial, name })` → preload `wifi:toggle` → `src/main/ipc/wifiHandlers.js` (~L129) |
+| **Fin du switch (renderer)** | Réponse directe de `ipcRenderer.invoke` : `result.success` / `result.error` ; pas d'event séparé ni poll. Succès → toasts + `window.refreshDevices()`. Échec → toast erreur + reset checkbox |
+| **LOCK** | Aucun fichier LOCK concerné |
+
+---
+
 ## Historique récent
 
 - **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.
