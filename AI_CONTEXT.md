@@ -290,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf UI — debounce recherche apps** — `AppLauncherSearch.js` + `AppList.js` : 100 ms (`clearTimeout`/`setTimeout`) sur handler `input` uniquement ; filtre/tri/render inchangés ; timer nettoyé dans `destroy()`. Commits `aad55b3`, `28344f4`. LOCK intact.
 - 2026-07-09 — **Presets affichage — étape C** — bouton « Appliquer à toutes » → `updateDefaultFromParams` (prochains lancements, pas restart).

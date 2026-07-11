@@ -1,5 +1,7 @@
 const { DEFAULT_WIFI_PORT } = require("./wifi-devices-manager");
 
+const LIST_UNIFIED_DEVICES_CACHE_TTL_MS = 10000;
+
 class DeviceRegistry {
     constructor({
         deviceManager,
@@ -13,6 +15,50 @@ class DeviceRegistry {
         this.wifiAdbService = wifiAdbService;
         this.getConnectedDevicesFallback = getConnectedDevicesFallback;
         this.getConnectedDevicesSimpleFallback = getConnectedDevicesSimpleFallback;
+
+        /** @type {{ result: object[]|null, fetchedAt: number, rawFingerprint: string|null }} */
+        this._listUnifiedCache = {
+            result: null,
+            fetchedAt: 0,
+            rawFingerprint: null
+        };
+        /** @type {Promise<object[]>|null} */
+        this._listUnifiedScanInProgress = null;
+    }
+
+    _cloneUnifiedDevices(devices) {
+        if (!Array.isArray(devices)) return [];
+        return devices.map((device) => ({ ...device }));
+    }
+
+    _buildRawDevicesFingerprint(rawDevices) {
+        if (!Array.isArray(rawDevices) || !rawDevices.length) return "";
+        return rawDevices
+            .map((device) => {
+                const serial = String(device?.serial || "");
+                const status = String(device?.status || "");
+                const online = device?.connected !== false && status === "green" ? "1" : "0";
+                const transport = this.wifiAdbService?.isWifiSerial?.(serial) ? "w" : "u";
+                return `${serial}:${status}:${online}:${transport}`;
+            })
+            .sort()
+            .join("|");
+    }
+
+    _invalidateListUnifiedCache(reason = "unknown") {
+        this._listUnifiedCache = {
+            result: null,
+            fetchedAt: 0,
+            rawFingerprint: null
+        };
+        console.log(`[DeviceRegistry] listUnified cache invalidated (${reason})`);
+    }
+
+    _hasRawTopologyChange(previousFingerprint, nextFingerprint) {
+        if (previousFingerprint === null || previousFingerprint === undefined) {
+            return false;
+        }
+        return previousFingerprint !== nextFingerprint;
     }
 
     async getRawAdbDevices() {
@@ -203,7 +249,39 @@ class DeviceRegistry {
     }
 
     async listUnifiedDevices() {
+        const now = Date.now();
+        const cache = this._listUnifiedCache;
+
+        if (this._listUnifiedScanInProgress) {
+            if (cache.result) {
+                return this._cloneUnifiedDevices(cache.result);
+            }
+            return this._listUnifiedScanInProgress;
+        }
+
+        const cacheAge = now - cache.fetchedAt;
+        if (cache.result && cacheAge < LIST_UNIFIED_DEVICES_CACHE_TTL_MS) {
+            return this._cloneUnifiedDevices(cache.result);
+        }
+
+        this._listUnifiedScanInProgress = this._executeListUnifiedDevices()
+            .finally(() => {
+                this._listUnifiedScanInProgress = null;
+            });
+
+        return this._listUnifiedScanInProgress;
+    }
+
+    async _executeListUnifiedDevices() {
+        const previousFingerprint = this._listUnifiedCache.rawFingerprint;
+
         const raw = await this.getRawAdbDevices();
+        const rawFingerprint = this._buildRawDevicesFingerprint(raw);
+
+        if (this._hasRawTopologyChange(previousFingerprint, rawFingerprint)) {
+            this._invalidateListUnifiedCache("usb/wifi topology change");
+        }
+
         await this.importDiscoveredWifiDevices(raw);
         const withIds = await this.attachStableIds(raw.filter((d) => d?.connected !== false));
         const groups = this.mergeByDeviceId(withIds);
@@ -253,7 +331,13 @@ class DeviceRegistry {
             });
         }
 
-        return unified;
+        this._listUnifiedCache = {
+            result: this._cloneUnifiedDevices(unified),
+            fetchedAt: Date.now(),
+            rawFingerprint
+        };
+
+        return this._cloneUnifiedDevices(unified);
     }
 
     /**

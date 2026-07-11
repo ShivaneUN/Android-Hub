@@ -46,6 +46,34 @@ Pipeline actuel (sans paramètres) :
 
 ---
 
+## Perf ADB — cache TTL + mutex listUnifiedDevices (2026-07-12, étape 2)
+
+**Statut : livré — 1 commit, fichier unique `device-registry.js`.**
+
+| Changement | Détail |
+|------------|--------|
+| TTL 10 s | `LIST_UNIFIED_DEVICES_CACHE_TTL_MS` — retour cache si âge < 10 s |
+| Mutex | `_listUnifiedScanInProgress` — scan parallèle évité ; retourne cache existant (même expiré) ou attend la promesse en cours |
+| Invalidation | Fingerprint raw ADB (`serial:status:online:transport`) — log + reset cache si topologie USB/WiFi change au début d'un scan |
+| Corps scan | Déplacé dans `_executeListUnifiedDevices()` ; `listUnifiedDevices()` inchangée en signature/contrat |
+
+### Vérification appelants (étape 3 — sans modification)
+
+| Appelant | Comportement avec cache | Risque signalé |
+|----------|-------------------------|----------------|
+| `listDevicesForUI` / `get-devices` | Bénéfice direct (poll ~12 s > TTL 10 s) | Aucun |
+| `discoverNewDevices` | Peut voir liste unifiée jusqu'à 10 s stale si aucun scan concurrent | **Acceptable** — double `getRawAdbDevices` reste frais ; nouveaux devices détectés au prochain scan TTL ou si topologie change |
+| `buildDevicesPanelData` | `getRawAdbDevices` toujours frais pour statut USB ligne ; unified peut être cache 10 s | Faible — libellés WiFi config hors ADB peuvent lag 10 s max |
+| `resolveEffectiveAdbSerial` / `resolveAdbSerialForDims` | Cache 10 s sur serial effectif | **À surveiller** au clic lancement WiFi juste après bascule transport — pas de bypass ajouté (contrainte signature unique) |
+| `resolveStableDeviceIdFromTransport` | Idem | Faible |
+| `buildAdbSerialToDeviceIdMap` | Idem | Faible |
+
+**Pas de bypass cache ajouté** — aucun appelant ne requiert de modification dans ce prompt.
+
+**LOCK / vidéo :** non touchés.
+
+---
+
 ## Perf UI — debounce recherche apps (2026-07-12)
 
 **Statut : livré — 2 commits, 1 fichier par patch.**
@@ -4159,6 +4187,8 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Perf ADB** — cache TTL 10 s + mutex `listUnifiedDevices` (`device-registry.js`). LOCK / vidéo : non concernés.
+- **2026-07-12** — **Diagnostic** — cache `listUnifiedDevices` (étape 1, docs seulement).
 - **2026-07-12** — **Perf UI** — debounce 100 ms recherche apps : `AppLauncherSearch.js` (`aad55b3`), `AppList.js` (`28344f4`). LOCK intact.
 - **2026-07-08** — **LOCK validé** — Clic long Type B : `adb-input-controller.js`, `new-instance-manager.js`, `main.js` (synthèse swipe, ADB display virtuel, contrôleur unifié).
 - **2026-07-08** — Implémentation icônes apps : multi-APK, adaptive XML, cache fallback stableDeviceId, retry max 3 (`iconAttempts`), placeholder stylé, prefetch once + auto-refresh Nouvelle instance.
