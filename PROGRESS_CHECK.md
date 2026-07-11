@@ -4650,6 +4650,106 @@ Référence initiale : rapport optimisation § 6.1 (`ipcRenderer.on` dans preloa
 
 ---
 
+## DIAGNOSTIC — Audit nettoyage 7.2 / 7.3 / 7.5 / 7.6 (2026-07-12)
+
+**Statut : diagnostic uniquement — aucune suppression ni modification de code.**
+
+### 7.2 — Double preload Electron
+
+**Preload actif :** `src/preload/preload.js` uniquement.
+
+| Référence | Chemin résolu |
+|-----------|---------------|
+| `src/main/main.js` L270 | `path.join(__dirname, "..", "preload", "preload.js")` → `src/preload/preload.js` |
+| `hub-modal-overlay-manager.js` L45 | `../../preload/preload.js` → idem |
+| `package.json` | `"main": "src/main/main.js"` — pas de preload racine |
+
+**Preload racine `preload.js` (racine repo) : INACTIF** — aucune référence runtime ni dans `electron-builder` (`files`: `src/**/*` + `package.json` seulement → **non packagé**).
+
+**Contenu unique du preload racine (absent de `src/preload/preload.js` ou sans handler IPC main) :**
+
+| API racine | Canal IPC | Handler main existant ? |
+|------------|-----------|-------------------------|
+| `startVirtualDisplay` / `stopVirtualDisplay` | `start-virtual-display` / `stop-virtual-display` | **Non** (`src/main/` — 0 match) |
+| `sessionsList` / `sessionsCreate` / `sessionsUpdate` / `sessionsRemove` | `sessions-*` | **Non** (remplacé par `session:*`) |
+| `bringAppToForeground` | `bring-app-to-foreground` | **Non** |
+
+APIs partagées (sous-ensemble obsolète) : `getDevices`, `getApps`, `startVideoStream`, `stopVideoStream`, `sendInput`, `onVideoCodecMeta/Packet/Error`, contrôles fenêtre.
+
+**Verdict 7.2 :** **Sûr à supprimer** — fichier legacy non chargé, non packagé, APIs uniques sans implémentation main.
+
+**Fichiers/lignes si suppression future :** `preload.js` (racine, entier, 33 lignes).
+
+---
+
+## CLEANUP — Suppression preload.js racine (2026-07-12)
+
+Fichier `preload.js` (racine) supprimé. Preload actif inchangé : `src/preload/preload.js` (`main.js` L270, `hub-modal-overlay-manager.js` L45). Recherche globale : aucune référence runtime au fichier racine.
+
+---
+
+### 7.3 — Handlers IPC `get-apps` vs `device:apps`
+
+| Handler | Fichier | Lignes | Comportement |
+|---------|---------|--------|--------------|
+| `get-apps` | `src/main/main.js` | L1428–L1436 | `deviceManager.getInstalledApps(serial)` → **tableau de strings** (packages) |
+| `device:apps` | `src/main/main.js` | L1438–L1463 | Worker / `getInstalledAppsWithDetails` → `{ success, apps[] }` enrichi |
+
+**Exposition preload :** `src/preload/preload.js` L8 et L49 — `getApps` dupliqué (même clé 2×) ; L50 `getAppsWithDetails` → `device:apps`.
+
+**Appelants renderer :**
+
+| API | Fichier | Scénario |
+|-----|---------|----------|
+| `getAppsWithDetails` | `new-session.js` L725, `AppLauncherSearch.js` L163 | Chemin nominal liste apps |
+| `getApps` → `get-apps` | **Aucun** dans `src/renderer/` | — |
+
+**Verdict 7.3 :** **Sûr à déprécier** côté handler + preload `getApps` — aucun appelant renderer. Migration requise **uniquement** sur `src/preload/preload.js` (retirer les 2 entrées `getApps` L8/L49) avant suppression handler `get-apps` L1428–L1436. Pas de migration renderer.
+
+---
+
+### 7.5 — `test.js` racine
+
+| Vérification | Résultat |
+|--------------|----------|
+| `package.json` scripts | **Aucune** référence à `test.js` |
+| Imports / requires repo | **Aucun** (`grep test.js` → 0) |
+| Packaging `package.json` `build.files` | `src/**/*` + `package.json` — **`test.js` exclu** |
+| `electron-builder.config.js` | Spread `pkg.build` — même exclusion |
+
+Contenu : snippet Electron minimal **syntaxiquement invalide** (parenthèses/arrow cassées) — script de test manuel abandonné.
+
+**Verdict 7.5 :** **Sûr à supprimer** — non référencé, non packagé, non exécutable.
+
+**Fichiers/lignes si suppression future :** `test.js` (racine, entier, 1 ligne).
+
+---
+
+### 7.6 — `getConnectedDevices` dupliqué
+
+| Implémentation | Fichier | Lignes | Rôle |
+|----------------|---------|--------|------|
+| `DeviceManager.getConnectedDevices()` | `device-manager.js` | L187–L208 | **Chemin primaire** via `DeviceRegistry.getRawAdbDevices()` L67 |
+| `getConnectedDevices()` | `main.js` | L724–L743 | **Fallback 1** injecté L1189 `getConnectedDevicesFallback` — si primaire vide/échec |
+| `getConnectedDevicesSimple()` | `main.js` | L745+ | **Fallback 2** `getConnectedDevicesSimpleFallback` — si fallback 1 vide |
+
+**Comparaison parsing — pas identique :**
+
+| Aspect | `device-manager.js` | `main.js` fallback |
+|--------|---------------------|-------------------|
+| Exécution ADB | `execWithTimeout` (async) | `exec` callback |
+| Split lignes | `\n` seul | `\r?\n` |
+| Champ `connected` | **`true` pour toutes les lignes** | **`state === "device"`** |
+| `status` / `name` / `model:` | Identique | Identique |
+
+**Impact :** le primaire (`device-manager`) marque `connected: true` même pour `offline`/`unauthorized` ; le fallback main est plus correct sur `connected`. `DeviceRegistry.attachStableIds` (L96) filtre `device.connected === false` — comportement divergent selon le chemin emprunté.
+
+**Verdict 7.6 :** **À garder (justifié)** — chaîne fallback intentionnelle dans `device-registry.js`. **Pas sûr à supprimer** `main.js` L724–L758 sans d'abord aligner `device-manager.js` L202 (`connected: state === "device"`) et unifier le parsing (split `\r?\n`). **Source de vérité cible :** `device-manager.js` (primaire, timeout, classe dédiée) ; fallbacks main à retirer une fois primaire fiable.
+
+**Fichiers/lignes pour fusion future (pas suppression immédiate) :** `device-manager.js` L187–L208 (corriger `connected`) ; puis `main.js` L724–L758 + injection L1189–L1190.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
