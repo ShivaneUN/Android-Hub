@@ -43,6 +43,59 @@ function wifiProgressMessage(step) {
     return null;
 }
 
+const TRANSPORT_SWITCH_POLL_INTERVAL_MS = 600;
+const TRANSPORT_SWITCH_TIMEOUT_MS = 18000;
+
+function normalizeDeviceListResponse(response) {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.devices)) return response.devices;
+    return [];
+}
+
+function findDeviceEntry(devices, deviceId) {
+    if (!deviceId) return null;
+    return devices.find((entry) => entry?.deviceId === deviceId || entry?.serial === deviceId) || null;
+}
+
+function isTransportSwitchConfirmed(entry, enabled) {
+    if (!entry) return false;
+    if (enabled) {
+        return entry.transport === "wifi" && entry.wifiActive === true;
+    }
+    return entry.transport === "usb";
+}
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForTransportSwitch(deviceId, enabled, options = {}) {
+    const intervalMs = options.intervalMs ?? TRANSPORT_SWITCH_POLL_INTERVAL_MS;
+    const timeoutMs = options.timeoutMs ?? TRANSPORT_SWITCH_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        if (window.electronAPI?.getDevices) {
+            try {
+                const response = await window.electronAPI.getDevices({ forceFresh: true });
+                const devices = normalizeDeviceListResponse(response);
+                const entry = findDeviceEntry(devices, deviceId);
+                if (isTransportSwitchConfirmed(entry, enabled)) {
+                    return { confirmed: true, device: entry };
+                }
+            } catch (_err) {
+                // noop — retry until timeout
+            }
+        }
+
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await delay(Math.min(intervalMs, remaining));
+    }
+
+    return { confirmed: false, device: null };
+}
+
 async function handleWifiToggle(device, enabled, toggleInput) {
     if (!window.wifiAPI?.toggle) return;
 
@@ -73,20 +126,31 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         }
 
         if (result?.success) {
-            window.hideHubLoadingOverlay?.();
-            window.showHubToast?.(
-                result.message || (enabled ? dt("devicePanel.wifiEnabled") : dt("devicePanel.wifiDisconnected")),
-                "success"
-            );
+            const targetDeviceId = result.deviceId || device.deviceId;
+            const transportResult = await waitForTransportSwitch(targetDeviceId, enabled);
 
-            if (result.firstSetup && window.namesAPI?.openRenameDialog) {
-                await window.namesAPI.openRenameDialog({
-                    kind: "device",
-                    serial: result.deviceId,
-                    name: device.name,
-                    originalName: device.originalName || device.name
-                });
+            if (transportResult.confirmed) {
+                window.hideHubLoadingOverlay?.();
+                window.showHubToast?.(
+                    result.message || (enabled ? dt("devicePanel.wifiEnabled") : dt("devicePanel.wifiDisconnected")),
+                    "success"
+                );
+
+                if (result.firstSetup && window.namesAPI?.openRenameDialog) {
+                    await window.namesAPI.openRenameDialog({
+                        kind: "device",
+                        serial: result.deviceId,
+                        name: device.name,
+                        originalName: device.originalName || device.name
+                    });
+                }
+                await window.refreshDevices?.();
+                return;
             }
+
+            window.showHubLoadingOverlayError?.(switchFailedMessage, 2800);
+            window.showHubToast?.(switchFailedMessage, "error", 5500);
+            if (toggleInput) toggleInput.checked = !enabled;
             await window.refreshDevices?.();
             return;
         }

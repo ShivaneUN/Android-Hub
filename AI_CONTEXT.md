@@ -290,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- **2026-07-12** — **Overlay switch poll transport** — overlay fermé après confirmation `transport`/`wifiActive` (poll 600 ms, 18 s max). LOCK intact.
 - **2026-07-12** — **get-devices forceFresh** — option `forceFresh` pour bypass cache registry 10 s ; poll 12 s inchangé. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle success** — `success` WiFi ON = `adb get-state device` sur serial WiFi ; WiFi OFF = disconnect sans vérif ; UI `transport` via `listUnifiedDevices` (cache 10 s). Overlay actuel peut se fermer trop tôt. LOCK intact.
 - **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré au toggle sidebar ; masqué à la réponse IPC. LOCK intact.

@@ -4396,8 +4396,19 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## FIX — Overlay switch : poll transport réel (2026-07-12)
+
+**Commit étape 2** — `DevicePanel.js`.
+
+- Après `result.success` IPC : overlay maintenu ; `waitForTransportSwitch` poll `getDevices({ forceFresh: true })` toutes les 600 ms (max 18 s).
+- Succès : WiFi ON → `transport==='wifi' && wifiActive` ; USB → `transport==='usb'`.
+- Timeout : `showHubLoadingOverlayError` + reset toggle ; boucle `while` + `await` (pas d'intervalle résiduel).
+
+---
+
 ## Historique récent
 
+- **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
 - **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré sidebar toggle. LOCK intact.
 - **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.
