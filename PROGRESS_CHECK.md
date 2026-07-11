@@ -4708,6 +4708,12 @@ Fichier `preload.js` (racine) supprimé. Preload actif inchangé : `src/preload/
 
 ---
 
+## DEPRECATION — get-apps étape 1/2 (2026-07-12)
+
+`src/preload/preload.js` : retrait `electronAPI.getApps` (doublon L8 + L49). `getAppsWithDetails` → `device:apps` inchangé.
+
+---
+
 ### 7.5 — `test.js` racine
 
 | Vérification | Résultat |

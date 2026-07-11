@@ -5,7 +5,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getDevices: (options) => ipcRenderer.invoke("get-devices", options || {}),
     onDevicesRefreshRequest: (callback) =>
         ipcRenderer.on("devices:refresh-request", () => callback()),
-    getApps: (serial) => ipcRenderer.invoke("get-apps", serial),
     getDeviceInfo: (serial) => ipcRenderer.invoke("device:info", serial),
 
     // --- Sessions ---
@@ -46,7 +45,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     debugCrashWorker: () => ipcRenderer.invoke("apps-worker:debug-crash"),
 
     // --- Nouvelle session ---
-    getApps: (serial) => ipcRenderer.invoke("get-apps", serial),
     getAppsWithDetails: (serial) => ipcRenderer.invoke("device:apps", serial),
     launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null, stableDeviceId = null) =>
         ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId, latencyTraceId, stableDeviceId }),

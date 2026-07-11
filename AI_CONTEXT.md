@@ -267,7 +267,7 @@ Aucune API `on*` dans `src/preload/*.js` ne retourne de fonction de désinscript
 | Point | Verdict |
 |-------|---------|
 | 7.2 preload racine | **Supprimé** (2026-07-12) — `src/preload/preload.js` seul actif |
-| 7.3 `get-apps` | **Sûr à déprécier** — mort renderer ; retirer preload `getApps` d'abord |
+| 7.3 `get-apps` | **En cours** — preload `getApps` retiré (étape 1/2) |
 | 7.5 `test.js` | **Supprimé** (2026-07-12) — non référencé, exclu du build |
 | 7.6 `getConnectedDevices` | **À garder** — fallback chain ; fusion après fix `connected` device-manager |
 
