@@ -4312,6 +4312,15 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ---
 
+## FIX — Composant overlay chargement hub (2026-07-12)
+
+**Commit étape 2** — `src/renderer/hub-loading-overlay.js` + styles `style.css` + script `index.html`.
+
+- API : `showHubLoadingOverlay`, `hideHubLoadingOverlay`, `showHubLoadingOverlayError`.
+- Centré, `pointer-events: none`, spinner CSS, état erreur auto-fermeture.
+
+---
+
 ## Historique récent
 
 - **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.

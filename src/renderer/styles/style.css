@@ -1985,6 +1985,61 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .sidebar-device-stat.transport-wifi-connected { color: #4f8cff; font-size: 11px; font-weight: 600; }
 .sidebar-device-stat.transport-unknown { color: #5b6373; font-size: 11px; }
 
+/* --- Overlay chargement centré (non bloquant) --- */
+.hub-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.hub-loading-overlay.visible {
+  opacity: 1;
+}
+
+.hub-loading-overlay.hidden {
+  display: none;
+}
+
+.hub-loading-overlay-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(18, 22, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: #e8ecf4;
+  font-size: 13px;
+  line-height: 1.35;
+  max-width: min(90vw, 360px);
+}
+
+.hub-loading-overlay--error .hub-loading-overlay-card {
+  border-color: rgba(229, 72, 77, 0.45);
+  color: #ffd5d7;
+}
+
+.hub-loading-spinner {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(106, 157, 255, 0.25);
+  border-top-color: var(--accent-blue, #4f8cff);
+  border-radius: 50%;
+  animation: hub-loading-spin 0.7s linear infinite;
+}
+
+@keyframes hub-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* --- Toasts --- */
 .hub-toast-container {
   position: fixed;
