@@ -248,20 +248,22 @@ class DeviceRegistry {
         };
     }
 
-    async listUnifiedDevices() {
+    async listUnifiedDevices({ forceFresh = false } = {}) {
         const now = Date.now();
         const cache = this._listUnifiedCache;
 
         if (this._listUnifiedScanInProgress) {
-            if (cache.result) {
+            if (!forceFresh && cache.result) {
                 return this._cloneUnifiedDevices(cache.result);
             }
             return this._listUnifiedScanInProgress;
         }
 
-        const cacheAge = now - cache.fetchedAt;
-        if (cache.result && cacheAge < LIST_UNIFIED_DEVICES_CACHE_TTL_MS) {
-            return this._cloneUnifiedDevices(cache.result);
+        if (!forceFresh) {
+            const cacheAge = now - cache.fetchedAt;
+            if (cache.result && cacheAge < LIST_UNIFIED_DEVICES_CACHE_TTL_MS) {
+                return this._cloneUnifiedDevices(cache.result);
+            }
         }
 
         this._listUnifiedScanInProgress = this._executeListUnifiedDevices()
@@ -512,8 +514,8 @@ class DeviceRegistry {
     /**
      * Résout un identifiant transport (USB / ip:port) ou stable → serial ADB effectif actuel.
      */
-    async resolveEffectiveAdbSerial({ deviceId, serial } = {}) {
-        const unified = await this.listUnifiedDevices();
+    async resolveEffectiveAdbSerial({ deviceId, serial, forceFresh = false } = {}) {
+        const unified = await this.listUnifiedDevices({ forceFresh });
         const pickLiveSerial = (device) => {
             if (!device || device.connected === false) return null;
             return device.serial || device.wifiSerial || device.usbSerial || null;
