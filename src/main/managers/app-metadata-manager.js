@@ -102,6 +102,17 @@ class AppMetadataManager {
         }
     }
 
+    async removeIconFileIfExists(iconPath) {
+        if (!iconPath) return;
+        this._verifiedIconPaths.delete(iconPath);
+        try {
+            await fs.promises.access(iconPath);
+            await fs.promises.unlink(iconPath);
+        } catch (_err) {
+            // noop — missing or already removed
+        }
+    }
+
     async pruneStaleIconCacheEntries() {
         if (this._stalePrunePromise) {
             return this._stalePrunePromise;
@@ -216,13 +227,8 @@ class AppMetadataManager {
         const entry = found.entry;
         const previousAttempts = Number(entry.iconAttempts) || 0;
 
-        if (entry.iconPath && fs.existsSync(entry.iconPath)) {
-            this._verifiedIconPaths.delete(entry.iconPath);
-            try {
-                fs.unlinkSync(entry.iconPath);
-            } catch (_err) {
-                // noop
-            }
+        if (entry.iconPath) {
+            await this.removeIconFileIfExists(entry.iconPath);
         }
 
         await this.setCachedEntry(cacheDeviceId, packageName, userId, {
@@ -336,20 +342,15 @@ class AppMetadataManager {
         return this.index[key];
     }
 
-    invalidate(deviceId, packageName, userId = null, { transportSerial = null } = {}) {
+    async invalidate(deviceId, packageName, userId = null, { transportSerial = null } = {}) {
         const keys = this.buildLookupKeys(deviceId, packageName, userId, transportSerial || deviceId);
         let changed = false;
 
         for (const key of keys) {
             const entry = this.index[key];
             if (!entry) continue;
-            if (entry.iconPath && fs.existsSync(entry.iconPath)) {
-                this._verifiedIconPaths.delete(entry.iconPath);
-                try {
-                    fs.unlinkSync(entry.iconPath);
-                } catch (_err) {
-                    // noop
-                }
+            if (entry.iconPath) {
+                await this.removeIconFileIfExists(entry.iconPath);
             }
             delete this.index[key];
             changed = true;
@@ -546,7 +547,7 @@ class AppMetadataManager {
             );
         } catch (err) {
             console.warn(`[AppMetadataManager] icone ${packageName}:`, err.message);
-            this.invalidate(ctx.cacheDeviceId, packageName, userId, {
+            await this.invalidate(ctx.cacheDeviceId, packageName, userId, {
                 transportSerial: ctx.transportSerial
             });
         }
@@ -704,6 +705,16 @@ class AppMetadataManager {
         });
     }
 
+    async prefetchHistoryApps(byDevice) {
+        for (const [historyDeviceId, apps] of byDevice.entries()) {
+            try {
+                await this.queuePrefetch(historyDeviceId, apps, { maxCount: DEFAULT_PREFETCH_MAX });
+            } catch (err) {
+                console.warn(`[AppMetadataManager] history prefetch ${historyDeviceId}:`, err.message);
+            }
+        }
+    }
+
     async enrichHistoryEntries(entries = []) {
         const contextCache = new Map();
         const getCtx = async (deviceId) => {
@@ -768,11 +779,7 @@ class AppMetadataManager {
                 if (!byDevice.has(app.deviceId)) byDevice.set(app.deviceId, []);
                 byDevice.get(app.deviceId).push(app);
             }
-            setImmediate(() => {
-                for (const [historyDeviceId, apps] of byDevice.entries()) {
-                    this.queuePrefetch(historyDeviceId, apps, { maxCount: DEFAULT_PREFETCH_MAX });
-                }
-            });
+            void this.prefetchHistoryApps(byDevice);
         }
 
         return enriched;

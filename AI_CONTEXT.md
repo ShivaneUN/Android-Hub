@@ -247,6 +247,16 @@ Référence aide : `help.shortcuts` § Mode Stream Deck (locales `scripts/locale
 
 Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork) 2026-07-09.
 
+### Async I/O metadata — main thread (2026-07-12, 3 étapes)
+
+| Étape | Fichier | Changement |
+|-------|---------|------------|
+| 1 | `app-metadata-manager.js` | `getCachedEntry` / `isFresh` → `fs.promises` via `isIconFileAccessible` |
+| 2 | `app-icon-extractor.js` + metadata | Extraction icône `resolveOne` → async (`walkFiles`, `pullApk`, `toIconUrl`) |
+| 3 | `app-metadata-manager.js` | `enrichHistoryEntries` : `prefetchHistoryApps` async remplace `setImmediate` ; `invalidate` async |
+
+**LOCK / worker :** `apps-worker.js`, `scrcpy-socket.js`, `new-instance-manager.js` — non touchés.
+
 ---
 
 ## Presets d'affichage session (en cours — 2026-07-09)
@@ -297,6 +307,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré au toggle sidebar ; masqué à la réponse IPC. LOCK intact.
 - **2026-07-12** — **Overlay chargement hub** — composant `hub-loading-overlay.js` (spinner centré, non bloquant). LOCK intact.
 - **2026-07-12** — **Localisation switch USB/WiFi** — toggle sidebar `DevicePanel.js` → `wifiAPI.toggle` / `wifi:toggle` ; fin = réponse IPC invoke. LOCK intact.
+- **2026-07-12** — **Async I/O metadata main (3 étapes)** — (1) cache lookup `fs.promises` ; (2) `app-icon-extractor` async pour `resolveOne` ; (3) `enrichHistoryEntries` → `prefetchHistoryApps` (remplace `setImmediate`). Worker / LOCK inchangés.
 - **2026-07-12** — **Fix Type B launchDims propagation** — `launchDims` stockées dans `externalLaunches`, copiées sur session au `create`, réutilisées au `start` via `preresolvedDims`. LOCK intact.
 - **2026-07-12** — **Fix Type B fallback dims cache** — `resolveLaunchDims` écrit `deviceDimensionsCache` après succès fallback ; helper `writeDeviceDimensionsCache` dans `main.js`. LOCK intact.
 - **2026-07-12** — **Diagnostic cache wm size / dims Type B** — TTL 60 s existe ; happy path Type B = 1× wm réel ; redondance = appels fonction + fallback sans cache. LOCK : non touchés.

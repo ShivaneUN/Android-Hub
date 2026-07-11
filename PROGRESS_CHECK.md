@@ -4498,6 +4498,14 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## FIX — Async launch-history prefetch (étape 3/3, 2026-07-12)
+
+`app-metadata-manager.js` : `enrichHistoryEntries` — `setImmediate` + `queuePrefetch` sync remplacés par `void prefetchHistoryApps(byDevice)` (async, fire-and-forget). `invalidate` / `rejectFalsePositiveCacheEntry` → `removeIconFileIfExists` (`fs.promises`). Handler `launch-history:list` inchangé (déjà `await enrichHistoryEntries`).
+
+**Appelants vérifiés :** `launchHistoryHandlers.js` — contrat renderer intact (liste enrichie retournée avant fin prefetch). `apps-worker.js` — non modifié.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
