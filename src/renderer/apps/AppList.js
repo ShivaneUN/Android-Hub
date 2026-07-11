@@ -3,6 +3,7 @@
  * Affiche icone + nom lisible, filtrage live optionnel, tri alphabetique.
  */
 (function initAppList(global) {
+    const SEARCH_DEBOUNCE_MS = 100;
     const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
 
     const DEFAULT_ICON_SVG = globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
@@ -71,6 +72,7 @@
             this.filteredItems = [];
             this.searchQuery = "";
             this.isLoading = false;
+            this._searchDebounceTimer = null;
             this._clickHandler = this._handleClick.bind(this);
             this._searchInputHandler = this._handleSearchInput.bind(this);
             this.container.addEventListener("click", this._clickHandler);
@@ -81,6 +83,10 @@
         }
 
         destroy() {
+            if (this._searchDebounceTimer !== null) {
+                clearTimeout(this._searchDebounceTimer);
+                this._searchDebounceTimer = null;
+            }
             this.container.removeEventListener("click", this._clickHandler);
             if (this.options.searchInput) {
                 this.options.searchInput.removeEventListener("input", this._searchInputHandler);
@@ -88,7 +94,14 @@
         }
 
         _handleSearchInput(event) {
-            this.setSearchQuery(event.target.value || "");
+            const query = event.target.value || "";
+            if (this._searchDebounceTimer !== null) {
+                clearTimeout(this._searchDebounceTimer);
+            }
+            this._searchDebounceTimer = setTimeout(() => {
+                this._searchDebounceTimer = null;
+                this.setSearchQuery(query);
+            }, SEARCH_DEBOUNCE_MS);
         }
 
         resetSearch() {
