@@ -4,6 +4,48 @@ Dernière mise à jour : 2026-07-12
 
 ---
 
+## DIAGNOSTIC — Cache listUnifiedDevices (2026-07-12, étape 1)
+
+**Statut : diagnostic validé — aucun patch code à cette étape.**
+
+### Signature `listUnifiedDevices` (`device-registry.js` ~L205-257)
+
+```javascript
+async listUnifiedDevices()  // → Promise<object[]>
+```
+
+Pipeline actuel (sans paramètres) :
+1. `getRawAdbDevices()` — `adb devices` (+ fallbacks)
+2. `importDiscoveredWifiDevices(raw)` — upsert WiFi manuels
+3. `attachStableIds(...)` — `getStableDeviceId` par appareil connecté
+4. `mergeByDeviceId` → boucle `buildUnifiedEntry` + entrées WiFi hors ligne depuis `wifiDevicesManager`
+
+### Appelants internes (`device-registry.js`)
+
+| Ligne | Méthode | Usage |
+|-------|---------|-------|
+| ~L342 | `discoverNewDevices` | Après double `getRawAdbDevices` + import WiFi |
+| ~L432 | `resolveEffectiveAdbSerial` | Résolution serial effectif (transport → live) |
+| ~L480 | `resolveStableDeviceIdFromTransport` | Clé transport → `deviceId` stable |
+| ~L526 | `buildDevicesPanelData` | Panneau Appareils (avec `getRawAdbDevices` séparé pour statut USB) |
+| ~L619 | `buildAdbSerialToDeviceIdMap` | Map serial → deviceId (couleurs / noms) |
+
+### Appelant externe
+
+| Fichier | Ligne | Contexte |
+|---------|-------|----------|
+| `src/main/main.js` | ~L1335 | `listDevicesForUI` → IPC `get-devices` (poll renderer ~12 s) |
+
+### `global.getDevicesPollState` (`main.js` ~L356-360, ~L1380-1397)
+
+- Objet global : `{ inProgress, startedAt, lastEndedAt }`
+- Mis à jour uniquement autour du handler IPC `get-devices` (instrumentation latence / overlap poll UI)
+- **Recommandation : rester séparé** — couvre `listDevicesForUI` entier (registry + enrich battery/wifi + historique), pas seulement `listUnifiedDevices` ; mutex/cache registry ne doit pas remplacer ce flag
+
+**LOCK / vidéo :** aucun lien — `listUnifiedDevices` = découverte/registry ADB uniquement.
+
+---
+
 ## Perf UI — debounce recherche apps (2026-07-12)
 
 **Statut : livré — 2 commits, 1 fichier par patch.**
