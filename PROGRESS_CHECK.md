@@ -4780,6 +4780,21 @@ Fichier `test.js` (racine) supprimé. Non référencé (`package.json`, scripts,
 
 ---
 
+## VERIFICATION — fallbacks getConnectedDevices main.js (étape 2/2, 2026-07-12)
+
+**Pourquoi les fallbacks existent :** filet de sécurité dans `DeviceRegistry.getRawAdbDevices` — pas un chemin normal parallèle.
+
+| Déclencheur | Comportement |
+|-------------|--------------|
+| `deviceManager.getConnectedDevices()` throw | Fallback 1 (`main.js` exec `devices -l`) |
+| Résultat primaire vide `[]` | Idem puis fallback 2 (`adb devices` simple) |
+
+**Après fix `connected` :** le chemin normal = primaire uniquement quand ADB répond. Les fallbacks compensaient surtout timeout/`execWithTimeout` ou échec exec — **pas** le bug `connected`.
+
+**Décision :** retirer la duplication `main.js` **en relocalisant** la chaîne fallback dans `device-manager.js` (erreur/vide uniquement). **Ne pas supprimer** la robustesse sans remplacement.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
