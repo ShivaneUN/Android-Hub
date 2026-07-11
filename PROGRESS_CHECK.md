@@ -74,6 +74,29 @@ Pipeline actuel (sans paramètres) :
 
 ---
 
+## Perf ADB — bypass cache lancement (`forceFresh`) (2026-07-12)
+
+**Statut : livré — 2 commits (`device-registry.js`, `main.js`).**
+
+| Commit | Fichier | Changement |
+|--------|---------|------------|
+| `9a5d05d` | `device-registry.js` | `listUnifiedDevices({ forceFresh = false })` — ignore TTL si `true`, mutex inchangé ; `resolveEffectiveAdbSerial` propage `forceFresh` |
+| *(main)* | `main.js` | `resolveAdbSerialForDims` passe `forceFresh: true` aux deux branches `resolveEffectiveAdbSerial` |
+
+### Vérification appelants `resolveAdbSerialForDims`
+
+| Appelant | Contexte | Poll ? |
+|----------|----------|--------|
+| `resolveDeviceDimensionsForSerial` | Dimensions au lancement Type A/B | Non |
+| `new-instance-ipc.js` | Fallback dims Type B | Non (lancement) |
+| `main.js` ~L1847, L2005 | Start stream / virtual display | Non (lancement) |
+
+**Autres appelants `resolveEffectiveAdbSerial`** (sessionHandlers, stream-params, app-metadata, audio) : **inchangés** — conservent le cache TTL.
+
+**LOCK / vidéo :** non touchés.
+
+---
+
 ## Perf UI — debounce recherche apps (2026-07-12)
 
 **Statut : livré — 2 commits, 1 fichier par patch.**
@@ -4187,6 +4210,7 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Perf ADB** — `forceFresh: true` sur `resolveAdbSerialForDims` (lancement session). Commits `9a5d05d` + main.js.
 - **2026-07-12** — **Perf ADB** — cache TTL 10 s + mutex `listUnifiedDevices` (`device-registry.js`). LOCK / vidéo : non concernés.
 - **2026-07-12** — **Diagnostic** — cache `listUnifiedDevices` (étape 1, docs seulement).
 - **2026-07-12** — **Perf UI** — debounce 100 ms recherche apps : `AppLauncherSearch.js` (`aad55b3`), `AppList.js` (`28344f4`). LOCK intact.

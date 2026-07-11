@@ -380,7 +380,8 @@ async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut 
         const listT0 = Date.now();
         const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
             deviceId: stableDeviceId,
-            serial
+            serial,
+            forceFresh: true
         });
         recordListUnified(Date.now() - listT0);
         return resolved || serial;
@@ -393,7 +394,10 @@ async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut 
 
     if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
         const listT0 = Date.now();
-        const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({ serial });
+        const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+            serial,
+            forceFresh: true
+        });
         recordListUnified(Date.now() - listT0);
         return resolved || serial;
     }
