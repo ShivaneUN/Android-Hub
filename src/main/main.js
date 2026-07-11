@@ -1425,16 +1425,6 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
     ipcMain.handle("device:list", async () => listDevicesForUI());
 
-    ipcMain.handle("get-apps", async (event, serial) => {
-        try {
-            const apps = await deviceManager.getInstalledApps(serial);
-            return apps; // Retourne le tableau simple de strings
-        } catch (err) {
-            console.error("Erreur get-apps:", err.message);
-            return []; // Retourne un tableau vide en cas d'erreur
-        }
-    });
-
     ipcMain.handle("device:apps", async (event, serial) => {
         try {
             if (!serial) {

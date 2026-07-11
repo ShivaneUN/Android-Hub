@@ -4714,6 +4714,14 @@ Fichier `preload.js` (racine) supprimé. Preload actif inchangé : `src/preload/
 
 ---
 
+## DEPRECATION — get-apps étape 2/2 (2026-07-12)
+
+`src/main/main.js` : suppression handler IPC `get-apps` (L1428–L1436). Canal nominal : `device:apps` uniquement. `DeviceManager.getInstalledApps()` reste (usage interne possible) — seul l'IPC legacy retiré.
+
+**Vérification interne :** aucun `invoke("get-apps")` restant dans le repo.
+
+---
+
 ### 7.5 — `test.js` racine
 
 | Vérification | Résultat |
