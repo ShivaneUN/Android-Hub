@@ -258,6 +258,10 @@ Référence diagnostic : `PROGRESS_CHECK.md` § DIAGNOSTIC — Worker apps (fork
 
 **LOCK / worker :** `apps-worker.js`, `scrcpy-socket.js`, `new-instance-manager.js` — non touchés.
 
+### Diagnostic IPC listeners sans désabonnement (2026-07-12)
+
+Aucune API `on*` dans `src/preload/*.js` ne retourne de fonction de désinscription. **Risque réel identifié :** factories `createVideoPlayer` / `createNewInstanceVideoPipeline` ajoutent un handler `stream-restarting` par session sans cleanup à la fermeture. **Correctif en cours (2026-07-12) :** étape 1 — `sessionAPI.onStreamRestarting` retourne unsubscribe. Détail : `PROGRESS_CHECK.md` § DIAGNOSTIC — Listeners IPC.
+
 ---
 
 ## Presets d'affichage session (en cours — 2026-07-09)
@@ -309,6 +313,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - **2026-07-12** — **Overlay chargement hub** — composant `hub-loading-overlay.js` (spinner centré, non bloquant). LOCK intact.
 - **2026-07-12** — **Localisation switch USB/WiFi** — toggle sidebar `DevicePanel.js` → `wifiAPI.toggle` / `wifi:toggle` ; fin = réponse IPC invoke. LOCK intact.
 - **2026-07-12** — **Async I/O metadata main (3 étapes)** — (1) cache lookup `fs.promises` ; (2) `app-icon-extractor` async pour `resolveOne` ; (3) `enrichHistoryEntries` → `prefetchHistoryApps` (remplace `setImmediate`). Worker / LOCK inchangés.
+- **2026-07-12** — **Diagnostic IPC listeners preload** — inventaire 40+ `on*` sans `removeListener` ; risque réel = factories `video-player` / `new-instance-pipeline` (`stream-restarting`). LOCK intact.
 - **2026-07-12** — **Async pruneForDevice** — `removeIconFileIfExists` ; aucun appelant dans le repo. LOCK / worker inchangés.
 - **2026-07-12** — **Fix Type B launchDims propagation** — `launchDims` stockées dans `externalLaunches`, copiées sur session au `create`, réutilisées au `start` via `preresolvedDims`. LOCK intact.
 - **2026-07-12** — **Fix Type B fallback dims cache** — `resolveLaunchDims` écrit `deviceDimensionsCache` après succès fallback ; helper `writeDeviceDimensionsCache` dans `main.js`. LOCK intact.

@@ -121,8 +121,11 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     getPreviewFrame: (sessionId) => ipcRenderer.invoke("session:getPreviewFrame", sessionId),
     onSessionListChanged: (callback) =>
         ipcRenderer.on("session:list-changed", () => callback()),
-    onStreamRestarting: (callback) =>
-        ipcRenderer.on("stream-restarting", (_event, data) => callback(data)),
+    onStreamRestarting: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("stream-restarting", handler);
+        return () => ipcRenderer.removeListener("stream-restarting", handler);
+    },
     onOrientationChanged: (callback) =>
         ipcRenderer.on("session:orientation-changed", (_event, data) => callback(data)),
     onRestartStreamRequest: (callback) =>

@@ -4514,6 +4514,128 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## DIAGNOSTIC — Listeners IPC sans désabonnement (2026-07-12)
+
+**Statut : diagnostic uniquement — aucun patch code.**
+
+Référence initiale : rapport optimisation § 6.1 (`ipcRenderer.on` dans preloads sans `removeListener`).
+
+### Partie 1 — Inventaire preload (aucune API ne retourne de fonction de désinscription)
+
+**Règle commune :** toutes les APIs `on*` font `ipcRenderer.on(channel, wrapper)` et **ne retournent rien** (pas de `() => ipcRenderer.removeListener(...)`).
+
+| Preload | API exposée | Canal IPC |
+|---------|-------------|-----------|
+| `preload.js` | `electronAPI.onDevicesRefreshRequest` | `devices:refresh-request` |
+| `preload.js` | `electronAPI.onSessionUpdate` | `session:update` |
+| `preload.js` | `electronAPI.onVideoCodecMeta` | `video-codec-meta` |
+| `preload.js` | `electronAPI.onVideoPacket` | `video-packet` |
+| `preload.js` | `electronAPI.onVideoError` | `video-error` |
+| `preload.js` | `electronAPI.onVideoStreamState` | `video-stream-state` |
+| `preload.js` | `electronAPI.onNewInstanceDisplayReady` | `new-instance:display-ready` |
+| `preload.js` | `electronAPI.onAppMetadataUpdated` | `app-metadata:updated` |
+| `preload.js` | `electronAPI.onNewInstanceVideoCodecMeta` | `new-instance:video-codec-meta` |
+| `preload.js` | `electronAPI.onNewInstanceVideoPacket` | `new-instance:video-packet` |
+| `preload.js` | `electronAPI.onNewInstanceVideoError` | `new-instance:video-error` |
+| `preload.js` | `electronAPI.onNewInstanceState` | `new-instance:state` |
+| `preload.js` | `electronAPI.onNewInstanceScrcpyClosed` | `new-instance:scrcpy-closed` |
+| `preload.js` | `electronAPI.onAudioCodecMeta` | `audio-codec-meta` |
+| `preload.js` | `electronAPI.onAudioPacket` | `audio-packet` |
+| `preload.js` | `electronAPI.onNewInstanceAudioCodecMeta` | `new-instance:audio-codec-meta` |
+| `preload.js` | `electronAPI.onNewInstanceAudioPacket` | `new-instance:audio-packet` |
+| `preload.js` | `electronAPI.onUpdateStatus` | `update:status` |
+| `preload.js` | `audioAPI.onGlobalStateChanged` | `audio:global-state-changed` |
+| `preload.js` | `sessionAPI.onSessionActivated` | `session:activated` |
+| `preload.js` | `sessionAPI.onSessionListChanged` | `session:list-changed` |
+| `preload.js` | `sessionAPI.onStreamRestarting` | `stream-restarting` |
+| `preload.js` | `sessionAPI.onOrientationChanged` | `session:orientation-changed` |
+| `preload.js` | `sessionAPI.onRestartStreamRequest` | `session:restart-stream-request` |
+| `preload.js` | `namesAPI.onContextMenuAction` | `context-menu:action` |
+| `preload.js` | `namesAPI.onUpdated` | `names:updated` |
+| `preload.js` | `launchHistoryAPI.onUpdated` | `launch-history:updated` |
+| `preload.js` | `deviceColorsAPI.onUpdated` | `device-colors:updated` |
+| `preload.js` | `displayPresetsAPI.onUpdated` | `display-presets:updated` |
+| `preload.js` | `uiPreferencesAPI.onLocaleChanged` | `ui:locale-changed` |
+| `preload.js` | `duoPopupAPI.onSlotsChanged` | `duo-popup:slots-changed` |
+| `preload.js` | `duoPopupAPI.onClosed` | `duo-popup:closed` |
+| `preload.js` | `hubModalAPI.onClosed` | `hub-modal:closed` |
+| `preload.js` | `hubModalWindowAPI.onOpen` | `hub-modal:open` |
+| `sessionPreload.js` | `videoAPI.on*` (11 méthodes) | `video-*`, `new-instance:*`, `stream-restarting`, `session:orientation-changed`, `session:capture-rotation-changed`, `session:input-active`, `audio-*` |
+| `sessionPreload.js` | `audioAPI.onGlobalStateChanged` | `audio:global-state-changed` |
+| `duoPopupPreload.js` | `duoPopupOverlayAPI.onOpen` | `duo-popup:open` |
+| `duoPopupPreload.js` | `uiPreferencesAPI.onLocaleChanged` | `ui:locale-changed` |
+| `renameDialogPreload.js` | `renameDialogAPI.onOpen` | `rename-dialog:open` |
+| `renameDialogPreload.js` | `uiPreferencesAPI.onLocaleChanged` | `ui:locale-changed` |
+| `tooltipPreload.js` | `tooltipOverlayAPI.onUpdate` | `video-preview:update` |
+
+**Note :** `preload.js` racine (legacy) expose aussi `onVideoCodecMeta` / `onVideoPacket` / `onVideoError` — hors chemin runtime actuel (`src/preload/preload.js` utilisé par la fenêtre principale et hub-modal).
+
+**APIs exposées sans consommateur renderer :** `electronAPI.onSessionUpdate`, `videoAPI.onCaptureRotationChanged` (sessionPreload).
+
+### Partie 2–3 — Consommateurs, cleanup, risque
+
+| Canal IPC | Preload | Consommateur(s) | Cleanup existant ? | Risque |
+|-----------|---------|-----------------|-------------------|--------|
+| `devices:refresh-request` | `preload.js` | `devices.js` (module, 1×) | Non | **Théorique** — singleton chargement page |
+| `devices:refresh-request` | `preload.js` | `DevicesPanel.js` `bindPanelRefreshListeners` | Garde `panelListenersBound` ; pas de `removeListener` à la fermeture | **Théorique** — bind 1× par contexte ; hub-modal réutilise la même overlay window |
+| `session:list-changed` | `preload.js` | `Sidebar.js`, `FpsMonitor.js`, `StreamDeckBar.js`, `StreamDeckZone.js`, `ControlPanel.js` | `ControlPanel` : `__controlPanelEventsBound` ; autres : init DOMContentLoaded 1× | **Théorique** — fan-out fixe au boot (5 handlers/canal) |
+| `session:activated` | `preload.js` | `Sidebar.js`, `OrientationToggle.js`, `StreamDeckZone.js`, `ControlPanel.js`, `session-audio-hub.js` | Idem guards init / flag global | **Théorique** — fan-out fixe au boot (5 handlers) |
+| `stream-restarting` | `preload.js` / `sessionPreload` | `session-audio-hub.js`, `video-player.js` **factory**, `new-instance-pipeline.js` **factory**, `new-instance-pipeline` path, `Sidebar` N/A | **Aucun** sur fermeture session | **Réel** — +1 listener par `createVideoPlayer()` / `createNewInstanceVideoPipeline()` ; `closeInstance` / `closeNewInstanceSession` ne désinscrivent pas |
+| `stream-restarting` | `sessionPreload` | `session/session.js` (Type A + Type B pipelines) | Contexte BrowserView détruit avec la vue | **Théorique** — 1× par BrowserView (pas cumul cross-sessions dans le même contexte) |
+| `session:orientation-changed` | `preload.js` | `layout-metrics.js` | Init DOMContentLoaded 1× | **Théorique** |
+| `session:orientation-changed` | `sessionPreload` | `session.js` `initSessionDisplayOrientation` + `initTypeAInputHandlers` | BrowserView lifecycle | **Théorique** — 2 handlers fixes par vue (pas remontage) |
+| `session:restart-stream-request` | `preload.js` | `session-stream-bridge.js` | IIFE 1× | **Théorique** |
+| `session:input-active` | `sessionPreload` | `session.js` `attachSessionInputActivation` | 1× par handlers input | **Théorique** (par BrowserView) |
+| `video-codec-meta` / `video-packet` / `video-error` | `sessionPreload` | `session.js` Type A pipeline | BrowserView lifecycle | **Théorique** |
+| `new-instance:video-*` / `new-instance:state` | `preload.js` + `sessionPreload` | `new-session.js` (DOMContentLoaded 1×), `session.js` Type B | Main : singleton ; BrowserView : 1× | **Théorique** sur main ; **théorique** par vue |
+| `new-instance:display-ready` | `preload.js` | `new-session.js` | DOMContentLoaded 1× | **Théorique** |
+| `new-instance:scrcpy-closed` | `preload.js` | `new-session.js` | DOMContentLoaded 1× | **Théorique** |
+| `video-stream-state` | `preload.js` | `new-session.js` (launch pipeline debug) | DOMContentLoaded 1× | **Théorique** |
+| `app-metadata:updated` | `preload.js` | `new-session.js`, `Sidebar.js` | Module / DOMContentLoaded 1× | **Théorique** — 2 abonnés intentionnels |
+| `audio-codec-meta` / `audio-packet` (+ new-instance) | `preload.js` | `session-audio-hub.js` | IIFE 1× (4 handlers) | **Théorique** |
+| `audio:global-state-changed` | `preload.js` | `GlobalAudioToggle.js`, `session-audio-hub.js` | Init DOMContentLoaded / IIFE 1× | **Théorique** |
+| `names:updated` | `preload.js` | `rename-actions.js`, `DevicesPanel.js` (si panel ouvert) | `DevicesPanel` : garde `panelListenersBound` | **Théorique** — 2× max sur hub-modal |
+| `device-colors:updated` | `preload.js` | `rename-actions.js`, `Sidebar.js`, `DevicesPanel.js` | Guards idem | **Théorique** — fan-out fixe |
+| `launch-history:updated` | `preload.js` | `new-session.js` | DOMContentLoaded 1× | **Théorique** |
+| `display-presets:updated` | `preload.js` | `ControlPanel.js` | `__controlPanelEventsBound` | **Théorique** |
+| `context-menu:action` | `preload.js` | `rename/ContextMenu.js` | IIFE 1× | **Théorique** |
+| `update:status` | `preload.js` | `update-notifier.js` | IIFE 1× | **Théorique** |
+| `ui:locale-changed` | `preload.js` / satellites | `i18n/i18n.js` (`HubI18n.init`) | `ready` / `readyPromise` dedupe | **Théorique** |
+| `hub-modal:closed` | `preload.js` | `app.js` | Module 1× | **Théorique** |
+| `hub-modal:open` | `preload.js` | `hub-modal/hub-modal-window.js` | Overlay window créée 1× puis réutilisée (`HubModalOverlayManager._ensureWindow`) | **Théorique** |
+| `duo-popup:slots-changed` / `duo-popup:closed` | `preload.js` | `StreamDeckDuoCollapse.js` | `init()` DOMContentLoaded 1× | **Théorique** |
+| `duo-popup:open` | `duoPopupPreload.js` | `stream-deck/duo-popup-overlay.js` | Popup overlay window 1× | **Théorique** |
+| `rename-dialog:open` | `renameDialogPreload.js` | `rename/rename-dialog-overlay.js` | Dialog overlay 1× | **Théorique** |
+| `video-preview:update` | `tooltipPreload.js` | (overlay tooltip — chargement unique) | Fenêtre tooltip 1× | **Théorique** |
+| `session:update` | `preload.js` | *(aucun)* | — | **N/A** — API morte |
+
+### Cas signalés dans le rapport initial
+
+| Composant | Verdict |
+|-----------|---------|
+| `DevicesPanel.bindPanelRefreshListeners` | **Pas de fuite pratique** : `panelListenersBound` empêche la réinscription ; `stopDevicesPanelLiveRefresh` ne reset pas le flag (donc pas de re-bind au reopen). Manque de `removeListener` seulement si le flag était un jour reset sans cleanup. |
+| `FpsMonitor` | **Pas de fuite pratique** : `initFpsMonitor` 1× au boot ; `startFpsMonitor` idempotent. Pas de désinscription `onSessionListChanged` au `stopFpsMonitor` (interval seulement). |
+
+### Conclusion — priorité de patch (diagnostic, non implémenté)
+
+| Priorité | Fichier(s) | Raison |
+|----------|------------|--------|
+| **P0** | `src/preload/preload.js`, `src/preload/sessionPreload.js`, preloads satellites | Point unique : faire retourner `() => ipcRenderer.removeListener(channel, handler)` depuis chaque `on*` |
+| **P1** | `src/renderer/video-player.js`, `src/renderer/new-instance/new-instance-pipeline.js` | **Risque réel** : factory appelée à chaque ouverture session Type A (`instance-manager`) / Type B (`new-session`) sans cleanup à la fermeture |
+| **P2** | `src/renderer/instance-manager.js`, `src/renderer/new-session.js` | Appeler le futur `unsubscribe` dans `closeInstance` / `closeNewInstanceSession` |
+| **P3** | Fan-out boot (`Sidebar.js`, `StreamDeck*.js`, `session-audio-hub.js`, etc.) | Dette architecturale (N handlers/canal) — pas d'accumulation au runtime sauf si guards retirés |
+| **Hors scope** | `scrcpy-socket.js`, `new-instance-manager.js`, inputs, sessions Type A/B core | LOCK — ne pas toucher dans un futur fix |
+
+**LOCK / worker :** non concernés par ce diagnostic.
+
+---
+
+## FIX — Cleanup listener stream-restarting (étape 1/3, 2026-07-12)
+
+`preload.js` : `sessionAPI.onStreamRestarting` retourne `() => ipcRenderer.removeListener(...)`. Autres `on*` inchangés.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
