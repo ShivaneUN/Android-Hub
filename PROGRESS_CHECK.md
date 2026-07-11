@@ -91,13 +91,39 @@ Pipeline actuel (sans paramètres) :
 | `new-instance-ipc.js` | Fallback dims Type B | Non (lancement) |
 | `main.js` ~L1847, L2005 | Start stream / virtual display | Non (lancement) |
 
-**Autres appelants `resolveEffectiveAdbSerial`** (sessionHandlers, stream-params, app-metadata, audio) : **inchangés** — conservent le cache TTL.
-
 **LOCK / vidéo :** non touchés.
 
 ---
 
-## Perf UI — debounce recherche apps (2026-07-12)
+## DIAGNOSTIC — Chronométrage passage USB/WiFi au lancement (2026-07-12)
+
+**Statut : diagnostic uniquement — aucune modification du code applicatif.**
+
+**Instrumentation :** script temporaire `scripts/_temp-diag-launch-timing.js` (supprimé après mesure). Aucun `console.time` dans `src/`.
+
+### Mesures USB réelles (`e176518f`, cache dims vide)
+
+| Étape | Durée | % dims (~226 ms) |
+|-------|-------|------------------|
+| `resolveEffectiveAdbSerial(forceFresh)` | 50 ms | 22 % |
+| ↳ `getRawAdbDevices` | 48 ms | 21 % |
+| ↳ `attachStableIds` (cache hit) | 0 ms | 0 % |
+| `wm size` | 176 ms | **78 %** |
+
+WiFi : **non mesuré** (appareil hors ligne ADB) — estimé 0,5–2,5 s froid (`attachStableIds` + `wm size`).
+
+### Causes principales
+
+1. **`wm size` domine le chemin dims sur USB** (78 %).
+2. **`forceFresh` annule le bénéfice cache** (~50 ms scan USB à chaque lancement avec `stableDeviceId`).
+3. **Raccourci USB contourné** : branche `stableDeviceId` avant `isLikelyUsbTransportSerial` dans `resolveAdbSerialForDims`.
+4. **Mutex + poll `get-devices`** : attente scan concurrent + contention ADB (`enrichDevicesWithStatus`).
+5. **Type B** : dims résolues 2–3× (`launch` + `start`).
+6. **Post-dims** : scrcpy start / display virtuel (LOCK) — dominant du clic→frame total.
+
+**LOCK / vidéo :** causes registry hors flux stream ; goulet global post-dims dans zones LOCK non modifiées.
+
+---
 
 **Statut : livré — 2 commits, 1 fichier par patch.**
 
