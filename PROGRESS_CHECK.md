@@ -4822,6 +4822,80 @@ Chaîne fallback relocalisée dans `device-manager.js` (`_fetchConnectedDevicesL
 
 ---
 
+## DIAGNOSTIC — execPromise / execWithTimeout dupliqués (7.1, 2026-07-12)
+
+**Statut : diagnostic uniquement — aucune modification de code.**
+
+### Tableau des copies
+
+| Fichier | Ligne(s) | Signature | `execWithTimeout` ? | Identique au noyau ? |
+|---------|----------|-----------|---------------------|----------------------|
+| `device-manager.js` | L12, L24 | `execPromise(cmd)` / `execWithTimeout(cmd, timeoutMs=12000)` | Oui | **Référence** — `maxBuffer` 10 Mo, `stdout.trim()`, msg `Timeout ADB` |
+| `app-metadata-manager.js` | L21, L33 | `execPromise(cmd)` / `execWithTimeout(cmd, timeoutMs)` | Oui | **Non** — `String(stdout).trim()` ; msg `Timeout (${ms}ms)` sans « ADB » ; pas de default sur `execWithTimeout` |
+| `app-icon-extractor.js` | L76, L88 | `execPromise(cmd, timeoutMs=12000)` / `execWithTimeout(cmd, timeoutMs=12000)` | Oui | **Non** — `maxBuffer` **20 Mo** ; `timeoutMs` passé à `execPromise` mais **non utilisé** dans le corps |
+| `wifi-adb-service.js` | L9, L21 | `execPromise(cmd, timeoutMs=12000)` / `execWithTimeout(cmd, timeoutMs)` | Oui | **Non** — `maxBuffer` 1 Mo ; erreur `String(stderr\|\|msg).trim()` ; `timeoutMs` inutilisé dans `execPromise` |
+| `main.js` | L78 | `execPromise(cmd)` | Non | **Non** — identique à device-manager sauf usage local launch ADB |
+| `device-orientation-manager.js` | L5 | `execPromise(cmd)` | Non | **Non** — `maxBuffer` 1 Mo ; **`resolve(stdout)` sans trim** |
+| `device-power-manager.js` | L4 | `execPromise(cmd)` | Non | **Non** — **pas de `maxBuffer`** ; stdout brut |
+| `device-audio-volume-manager.js` | L6 | `execPromise(cmd)` | Non | **Non** — `maxBuffer` 1 Mo ; stdout brut |
+| `adb-input-controller.js` **LOCK** | L6 | `execPromise(cmd)` | Non | **Non** — `maxBuffer` 5 Mo ; **non modifiable** ce chantier |
+| `new-instance-manager.js` **LOCK** | L41 | `execPromise(cmd)` | Non | **Non** — pas de `maxBuffer` ; stdout brut ; **non modifiable** ce chantier |
+
+**Total :** 10 fichiers, **4 paires** `execPromise`+`execWithTimeout`, **6** `execPromise` seul.
+
+### Variations fonctionnellement importantes
+
+| Variation | Fichiers | Impact factorisation |
+|-----------|----------|----------------------|
+| `maxBuffer` 1 / 5 / 10 / 20 Mo / absent | icon 20 Mo, managers 1–10 Mo, power/new-instance aucun | Module doit accepter `maxBuffer` optionnel |
+| `stdout.trim()` vs brut | device-manager vs orientation/power/audio/LOCK | Option `trim: boolean` (défaut `true`) |
+| Message timeout `ADB` vs générique | device-manager/icon/wifi vs metadata | Paramètre `label` ou `prefix` optionnel |
+| `execWithTimeout` default 12000 | device-manager, icon ; metadata/wifi sans default | Paramètre requis ou default configurable |
+| `timeoutMs` dans signature `execPromise` (wifi, icon) | Inutilisé — dead param | Ne pas reproduire ; timeout uniquement via race |
+
+### LOCK — référence uniquement (hors chantier)
+
+- `adb-input-controller.js` L6–15 : copie locale 5 Mo + trim ; utilisée pour `wm size` et commandes shell input.
+- `new-instance-manager.js` L41–50 : copie minimale (pas maxBuffer) ; stay-awake / keyevent / launch.
+
+### Emplacement module partagé proposé
+
+**`src/main/utils/adb-exec.js`** (à créer) — aucun conflit : pas de `utils/` existant, pas de `adb-exec.js` dans le repo. `src/shared/` possible pour usage cross-process mais **LOCK** `adb-input-controller` resterait local.
+
+API suggérée :
+
+```javascript
+execPromise(command, { maxBuffer = 10 * 1024 * 1024, trim = true } = {})
+execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Promise.race
+```
+
+### Verdict 7.1
+
+**Factorisation possible hors LOCK, mais module paramétrable requis** — pas une extraction mot-pour-mot unique.
+
+| Périmètre migration (futur) | Fichiers |
+|-----------------------------|----------|
+| Cible immédiate | `device-manager`, `app-metadata-manager`, `app-icon-extractor`, `wifi-adb-service`, `main.js`, `device-orientation-manager`, `device-power-manager`, `device-audio-volume-manager` |
+| **Exclus LOCK** | `adb-input-controller.js`, `new-instance-manager.js` |
+
+**LOCK / input / sessions :** non concernés par ce diagnostic.
+
+---
+
+## ADD — Module partagé adb-exec.js (7.1, 2026-07-12)
+
+**Fichier créé :** `src/main/utils/adb-exec.js` — **non importé** par le code existant (migration différée).
+
+**API :**
+
+- `execPromise(command, { maxBuffer = 10 Mo, trim = true })`
+- `execWithTimeout(command, timeoutMs = 12000, { maxBuffer, trim, timeoutLabel = "ADB", timeoutMessage })`
+- Constantes exportées : `DEFAULT_MAX_BUFFER_BYTES`, `DEFAULT_COMMAND_TIMEOUT_MS`
+
+**Migration :** au cas par cas sur les 8 managers + `main.js` si jugée utile ; **LOCK** `adb-input-controller.js` / `new-instance-manager.js` exclus.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

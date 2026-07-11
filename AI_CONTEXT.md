@@ -271,8 +271,9 @@ Aucune API `on*` dans `src/preload/*.js` ne retourne de fonction de désinscript
 | 7.5 `test.js` | **Supprimé** (2026-07-12) — non référencé, exclu du build |
 | 7.6 `getConnectedDevices` | **Terminé** — fallbacks relocalisés dans `device-manager` ; duplication `main.js` retirée |
 | 7.4 `DEBUG_CRASH` | **Supprimé** (2026-07-12) — pas de garde env ; résilience worker légitime conservée |
+| 7.1 `execPromise` dup | **Module créé** (2026-07-12) — `src/main/utils/adb-exec.js` ; migration différée |
 
-Détail : `PROGRESS_CHECK.md` § CLEANUP — Retrait DEBUG_CRASH.
+Détail : `PROGRESS_CHECK.md` § DIAGNOSTIC — execPromise / execWithTimeout dupliqués.
 
 ---
 
@@ -325,6 +326,8 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - **2026-07-12** — **Overlay chargement hub** — composant `hub-loading-overlay.js` (spinner centré, non bloquant). LOCK intact.
 - **2026-07-12** — **Localisation switch USB/WiFi** — toggle sidebar `DevicePanel.js` → `wifiAPI.toggle` / `wifi:toggle` ; fin = réponse IPC invoke. LOCK intact.
 - **2026-07-12** — **Async I/O metadata main (3 étapes)** — (1) cache lookup `fs.promises` ; (2) `app-icon-extractor` async pour `resolveOne` ; (3) `enrichHistoryEntries` → `prefetchHistoryApps` (remplace `setImmediate`). Worker / LOCK inchangés.
+- **2026-07-12** — **Add adb-exec.js** — module partagé exec ADB (non branché) ; migration managers différée. LOCK intact.
+- **2026-07-12** — **Diagnostic execPromise dup (7.1)** — 10 copies, variations maxBuffer/trim ; module `src/main/utils/adb-exec.js` paramétrable ; LOCK adb-input + new-instance exclus. LOCK intact.
 - **2026-07-12** — **Cleanup DEBUG_CRASH** — retrait crash volontaire worker (4 fichiers) ; restart/fallback inchangés. LOCK intact.
 - **2026-07-12** — **Cleanup getConnectedDevices** — fallbacks `main.js` → `device-manager` ; `DeviceRegistry` source unique. LOCK intact.
 - **2026-07-12** — **Fix device-manager connected** — `state === "device"` dans `getConnectedDevices` ; fallbacks main inchangés. LOCK intact.
