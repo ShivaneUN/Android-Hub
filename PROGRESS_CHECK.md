@@ -4725,6 +4725,12 @@ Contenu : snippet Electron minimal **syntaxiquement invalide** (parenthèses/arr
 
 ---
 
+## CLEANUP — Suppression test.js racine (2026-07-12)
+
+Fichier `test.js` (racine) supprimé. Non référencé (`package.json`, scripts, imports) ; exclu du build `files: src/**/*`.
+
+---
+
 ### 7.6 — `getConnectedDevices` dupliqué
 
 | Implémentation | Fichier | Lignes | Rôle |
