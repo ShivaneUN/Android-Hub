@@ -1,6 +1,10 @@
 function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
-    async function resolveLaunchDims(serial, stableDeviceId, retries = 2) {
+    async function resolveLaunchDims(serial, stableDeviceId, preresolvedDims = null, retries = 2) {
         if (!serial) return null;
+
+        if (preresolvedDims?.width > 0 && preresolvedDims?.height > 0) {
+            return { width: preresolvedDims.width, height: preresolvedDims.height };
+        }
 
         const cached = global.readCachedDeviceDimensions?.(serial);
         if (cached?.width > 0 && cached?.height > 0) {
@@ -37,6 +41,12 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
     ipcMain.handle("new-instance:create", async (_event, payload = {}) => {
         try {
             const session = manager.createNewInstanceSession(payload);
+            if (payload.externalLaunchId && typeof global.getExternalLaunchLaunchDims === "function") {
+                const dims = global.getExternalLaunchLaunchDims(payload.externalLaunchId);
+                if (dims) {
+                    session.launchDims = dims;
+                }
+            }
             return { success: true, session };
         } catch (err) {
             return { success: false, error: err.message };
@@ -50,7 +60,11 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
             let launchDims = null;
             if (pending?.streamOptions) {
                 const { applyTypeBLaunchOrientation } = require("../../shared/stream-params");
-                launchDims = await resolveLaunchDims(pending.serial, pending.stableDeviceId);
+                launchDims = await resolveLaunchDims(
+                    pending.serial,
+                    pending.stableDeviceId,
+                    pending.launchDims
+                );
                 applyTypeBLaunchOrientation(
                     pending.streamOptions,
                     launchDims?.width,
@@ -92,7 +106,11 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                 if (entry) {
                     const { fromScrcpyOptions, applyTypeBLaunchOrientation } = require("../../shared/stream-params");
                     if (!launchDims && session.serial) {
-                        launchDims = await resolveLaunchDims(session.serial, session.stableDeviceId);
+                        launchDims = await resolveLaunchDims(
+                            session.serial,
+                            session.stableDeviceId,
+                            session.launchDims
+                        );
                     }
                     applyTypeBLaunchOrientation(
                         session.streamOptions,

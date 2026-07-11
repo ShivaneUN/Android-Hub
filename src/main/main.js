@@ -818,6 +818,16 @@ function handoffExternalScrcpyLaunch(launchId) {
 }
 
 global.handoffExternalScrcpyLaunch = handoffExternalScrcpyLaunch;
+
+function getExternalLaunchLaunchDims(launchId) {
+    const dims = externalLaunches[launchId]?.launchDims;
+    if (dims?.width > 0 && dims?.height > 0) {
+        return { width: dims.width, height: dims.height };
+    }
+    return null;
+}
+
+global.getExternalLaunchLaunchDims = getExternalLaunchLaunchDims;
 const externalScrcpyWindows = {}; // { tabId: { child, displayId, displayReadyPromise } }
 const pendingRendererRestarts = new Map();
 
@@ -1888,7 +1898,11 @@ async function listDevicesForUI({ lightweight = false } = {}) {
                 displayId: null,
                 baseArgs,
                 restartingForAudio: false,
-                latencyTraceId
+                latencyTraceId,
+                stableDeviceId: stableDeviceId || null,
+                launchDims: launchDims?.width > 0 && launchDims?.height > 0
+                    ? { width: launchDims.width, height: launchDims.height }
+                    : null
             };
 
             let resolved = false;

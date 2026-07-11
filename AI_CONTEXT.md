@@ -290,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- **2026-07-12** — **Fix Type B launchDims propagation** — `launchDims` stockées dans `externalLaunches`, copiées sur session au `create`, réutilisées au `start` via `preresolvedDims`. LOCK intact.
 - **2026-07-12** — **Fix Type B fallback dims cache** — `resolveLaunchDims` écrit `deviceDimensionsCache` après succès fallback ; helper `writeDeviceDimensionsCache` dans `main.js`. LOCK intact.
 - **2026-07-12** — **Diagnostic cache wm size / dims Type B** — TTL 60 s existe ; happy path Type B = 1× wm réel ; redondance = appels fonction + fallback sans cache. LOCK : non touchés.
 - **2026-07-12** — **Fix USB resolveAdbSerialForDims** — `isLikelyUsbTransportSerial` avant `forceFresh` : lancement USB sans scan `listUnifiedDevices`. WiFi garde `forceFresh: true`. LOCK intact.

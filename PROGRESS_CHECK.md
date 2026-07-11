@@ -178,6 +178,17 @@ Retry 400 ms : 2ᵉ `wm size` **uniquement** si 1ᵉʳ appel retourne `null`.
 
 ---
 
+## FIX — Propagation launchDims launch → start Type B (2026-07-12)
+
+**Commit étape 2** — `main.js` + `new-instance-ipc.js`.
+
+- `new-instance:launch` stocke `launchDims` dans `externalLaunches[launchId]`.
+- `new-instance:create` copie via `getExternalLaunchLaunchDims(externalLaunchId)` sur l'objet session (`session.launchDims`, sans modifier `new-instance-manager.js`).
+- `resolveLaunchDims` accepte `preresolvedDims` : réutilisation directe au `start`, sans `readCachedDeviceDimensions` ni `resolveDeviceDimensionsForSerial`.
+- Type A non touché. LOCK non touchés.
+
+---
+
 **Statut : livré — 2 commits, 1 fichier par patch.**
 
 | Commit | Fichier | Changement |
@@ -4289,6 +4300,7 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.
 - **2026-07-12** — **Diagnostic** — cache wm size / dims Type B redondantes.
 - **2026-07-12** — **Fix USB** — raccourci `isLikelyUsbTransportSerial` avant `forceFresh` dans `resolveAdbSerialForDims`.
 - **2026-07-12** — **Perf ADB** — `forceFresh: true` sur `resolveAdbSerialForDims` (lancement session). Commits `9a5d05d` + main.js.
