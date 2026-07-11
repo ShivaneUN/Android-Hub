@@ -4467,7 +4467,7 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 - **Worker** : réduction latence perçue du worker (meilleur entrelacement messages IPC METADATA_UPDATED) ; gain modéré sur durée totale prefetch (I/O toujours séquentiel par icône)
 
 **Fallback in-process** (`apps-worker-bridge.js` `activateFallback`, `main.js` ~L1235-1250) :
-- Déclenché si : échec INIT worker, **3** crashs/restarts (`MAX_RESTART_ATTEMPTS`), timeout DEBUG_CRASH
+- Déclenché si : échec INIT worker, **3** crashs/restarts (`MAX_RESTART_ATTEMPTS`)
 - **Usage réel estimé : rare** (worker stable en nominal) ; alors **100 %** prefetch + enrich repasse sur main avec sync I/O complet
 
 **Proposition vérification (non implémentée)** : prioriser routage **main → worker** pour `app-metadata:resolve` et prefetch historique ; async I/O en second sur `app-icon-extractor` (gain worker perf).
@@ -4800,6 +4800,25 @@ Fichier `test.js` (racine) supprimé. Non référencé (`package.json`, scripts,
 Chaîne fallback relocalisée dans `device-manager.js` (`_fetchConnectedDevicesLong` → relaxed → simple). `device-registry.js` : `getRawAdbDevices` délègue uniquement à `deviceManager`. Suppression `getConnectedDevices` / `getConnectedDevicesSimple` + injection L1189–L1190 dans `main.js`.
 
 **Tests :** `diagnose-devices.js` → 1 USB connecté ; Electron boot + `[get-devices] connected count=1`.
+
+---
+
+## CLEANUP — Retrait DEBUG_CRASH (7.4, 2026-07-12)
+
+**Protection env :** aucune — `debugCrashWorker` / `DEBUG_CRASH` actifs en production (DevTools : `await electronAPI.debugCrashWorker()`).
+
+**Retiré (4 commits) :**
+
+| Fichier | Commit | Contenu supprimé |
+|---------|--------|------------------|
+| `apps-worker.js` | `3c55450` | `case "DEBUG_CRASH"` → `process.exit(1)` |
+| `apps-worker-bridge.js` | `6cfa5b6` | `debugCrashWorker()` |
+| `preload.js` | `303bafc` | `electronAPI.debugCrashWorker` |
+| `main.js` | *(ce commit)* | IPC `apps-worker:debug-crash` |
+
+**Conservé :** restart / `MAX_RESTART_ATTEMPTS` / fallback in-process sur crash réel (`child.on("exit")`).
+
+**Tests auto :** aucun ne dépendait de `DEBUG_CRASH`.
 
 ---
 

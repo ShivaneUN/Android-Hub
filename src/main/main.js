@@ -2572,14 +2572,6 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getAppMetadataManager: () => appMetadataManager
     });
 
-    // TEMP DEBUG - à retirer avant release
-    ipcMain.handle("apps-worker:debug-crash", async () => {
-        if (!appsWorkerBridge) {
-            return { success: false, error: "AppsWorkerBridge indisponible." };
-        }
-        return appsWorkerBridge.debugCrashWorker();
-    });
-
     registerAppMetadataHandlers({
         ipcMain,
         getAppMetadataManager: () => appMetadataManager,
