@@ -241,50 +241,28 @@ class AdbInputController {
             ? this._normalizeStreamPixelCoordinate(normX, normY)
             : this._normalizeCoordinate(normX, normY);
 
-        const LONG_PRESS_MIN_MS = 400;
-        const TAP_MOVE_TOLERANCE = 12;
-
         if (type === "down") {
             this._activeTouchStart = { x, y };
             this._activeTouch = { x, y };
             this._activeTouchAt = Date.now();
-            return;
+            return this._runAdbShellCommand(
+                this._buildInputShellCommand("motionevent", "DOWN", x, y)
+            );
         }
 
         if (type === "move") {
-            if (this._activeTouch) {
-                this._activeTouch = { x, y };
-            }
-            return;
+            this._activeTouch = { x, y };
+            return this._runAdbShellCommand(
+                this._buildInputShellCommand("motionevent", "MOVE", x, y)
+            );
         }
 
         if (type === "up") {
-            const start = this._activeTouchStart || this._activeTouch || { x, y };
-            const end = { x, y };
-            const heldMs = this._activeTouchAt > 0 ? Date.now() - this._activeTouchAt : 0;
             this._activeTouch = null;
             this._activeTouchStart = null;
             this._activeTouchAt = 0;
-
-            const moveDistance = Math.hypot(end.x - start.x, end.y - start.y);
-            if (moveDistance <= TAP_MOVE_TOLERANCE) {
-                if (heldMs >= LONG_PRESS_MIN_MS) {
-                    const duration = Math.min(Math.max(heldMs, LONG_PRESS_MIN_MS), 3000);
-                    return this._runAdbShellCommand(
-                        this._buildInputShellCommand(
-                            "swipe",
-                            start.x,
-                            start.y,
-                            start.x,
-                            start.y,
-                            duration
-                        )
-                    );
-                }
-                return this._runAdbShellCommand(this._buildInputShellCommand("tap", start.x, start.y));
-            }
             return this._runAdbShellCommand(
-                this._buildInputShellCommand("swipe", start.x, start.y, end.x, end.y, 150)
+                this._buildInputShellCommand("motionevent", "UP", x, y)
             );
         }
 
