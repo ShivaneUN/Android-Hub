@@ -4,12 +4,48 @@ const { exec, spawn } = require("child_process");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
 const { toAppIconUrl } = require("../../shared/app-icon-url");
 const {
-    MIN_ICON_FILE_BYTES,
-    isValidIconFileSize
+    MIN_ICON_FILE_BYTES
 } = require("../../shared/app-icon-placeholder");
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 20000;
 const MAX_APK_PULL_ATTEMPTS = 2;
+
+async function pathExists(targetPath) {
+    try {
+        await fs.promises.access(targetPath);
+        return true;
+    } catch (_err) {
+        return false;
+    }
+}
+
+async function isValidIconFileSizeAsync(filePath) {
+    if (!filePath || typeof filePath !== "string") return false;
+    try {
+        const stat = await fs.promises.stat(filePath);
+        return stat.size >= MIN_ICON_FILE_BYTES;
+    } catch (_err) {
+        return false;
+    }
+}
+
+async function removePathIfExists(targetPath) {
+    if (!(await pathExists(targetPath))) return;
+    try {
+        await fs.promises.unlink(targetPath);
+    } catch (_err) {
+        // noop
+    }
+}
+
+async function removeTreeIfExists(targetPath) {
+    if (!(await pathExists(targetPath))) return;
+    try {
+        await fs.promises.rm(targetPath, { recursive: true, force: true });
+    } catch (_err) {
+        // noop
+    }
+}
 
 const ICON_ENTRY_PRIORITY = [
     /[/\\]res[/\\]mipmap-xxxhdpi[^/\\]*[/\\]ic_launcher\.(png|webp)$/i,
@@ -69,18 +105,19 @@ function hasLauncherOrIconName(filePath) {
     return baseName.includes("launcher") || baseName.includes("icon");
 }
 
-function isValidIconCandidate(filePath) {
-    return isIconResourcePath(filePath) && isValidIconFileSize(filePath);
+async function isValidIconCandidate(filePath) {
+    return isIconResourcePath(filePath) && await isValidIconFileSizeAsync(filePath);
 }
 
-function walkFiles(dir, files = []) {
-    if (!fs.existsSync(dir)) return files;
+async function walkFiles(dir, files = []) {
+    if (!(await pathExists(dir))) return files;
 
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             if (/^assets$/i.test(entry.name)) continue;
-            walkFiles(fullPath, files);
+            await walkFiles(fullPath, files);
         } else if (/\.(png|webp)$/i.test(entry.name)) {
             files.push(fullPath);
         }
@@ -89,13 +126,14 @@ function walkFiles(dir, files = []) {
     return files;
 }
 
-function walkXmlFiles(dir, files = []) {
-    if (!fs.existsSync(dir)) return files;
+async function walkXmlFiles(dir, files = []) {
+    if (!(await pathExists(dir))) return files;
 
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-            walkXmlFiles(fullPath, files);
+            await walkXmlFiles(fullPath, files);
         } else if (/\.xml$/i.test(entry.name)) {
             files.push(fullPath);
         }
@@ -104,12 +142,19 @@ function walkXmlFiles(dir, files = []) {
     return files;
 }
 
-function collectValidIconCandidates(extractDir) {
-    return walkFiles(extractDir).filter(isValidIconCandidate);
+async function collectValidIconCandidates(extractDir) {
+    const files = await walkFiles(extractDir);
+    const candidates = [];
+    for (const filePath of files) {
+        if (await isValidIconCandidate(filePath)) {
+            candidates.push(filePath);
+        }
+    }
+    return candidates;
 }
 
-function findBestIconFile(extractDir) {
-    const candidates = collectValidIconCandidates(extractDir);
+async function findBestIconFile(extractDir) {
+    const candidates = await collectValidIconCandidates(extractDir);
     if (!candidates.length) return null;
 
     const normalizedCandidates = candidates.map((filePath) => ({
@@ -150,8 +195,7 @@ function parseDrawableRef(xmlContent, tagName) {
     return { type: match[1], name: match[2] };
 }
 
-function findAdaptiveLauncherXml(extractDir) {
-    const xmlFiles = walkXmlFiles(extractDir);
+function findAdaptiveLauncherXmlPaths(xmlFiles) {
     const launcherXml = xmlFiles
         .filter((filePath) => /[/\\]res[/\\]mipmap-anydpi[^/\\]*[/\\]ic_launcher\.xml$/i.test(filePath.replace(/\\/g, "/")))
         .sort((a, b) => a.length - b.length);
@@ -160,41 +204,47 @@ function findAdaptiveLauncherXml(extractDir) {
     return xmlFiles.find((filePath) => /ic_launcher\.xml$/i.test(filePath)) || null;
 }
 
-function resolveResourceFile(extractDir, resourceType, resourceName) {
+async function findAdaptiveLauncherXml(extractDir) {
+    const xmlFiles = await walkXmlFiles(extractDir);
+    return findAdaptiveLauncherXmlPaths(xmlFiles);
+}
+
+async function resolveResourceFile(extractDir, resourceType, resourceName) {
     const resDir = path.join(extractDir, "res");
-    if (!fs.existsSync(resDir)) return null;
+    if (!(await pathExists(resDir))) return null;
 
     const folderPrefix = resourceType.startsWith("drawable") ? "drawable" : "mipmap";
     const orderedFolders = DPI_FOLDER_PRIORITY.filter((folder) => folder.startsWith(folderPrefix));
 
     for (const folder of orderedFolders) {
         const folderPath = path.join(resDir, folder);
-        if (!fs.existsSync(folderPath)) continue;
+        if (!(await pathExists(folderPath))) continue;
         for (const ext of ["png", "webp"]) {
             const candidate = path.join(folderPath, `${resourceName}.${ext}`);
-            if (isValidIconCandidate(candidate)) return candidate;
+            if (await isValidIconCandidate(candidate)) return candidate;
         }
     }
 
-    for (const entry of fs.readdirSync(resDir, { withFileTypes: true })) {
+    const entries = await fs.promises.readdir(resDir, { withFileTypes: true });
+    for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         if (!entry.name.startsWith(folderPrefix)) continue;
         for (const ext of ["png", "webp"]) {
             const candidate = path.join(resDir, entry.name, `${resourceName}.${ext}`);
-            if (isValidIconCandidate(candidate)) return candidate;
+            if (await isValidIconCandidate(candidate)) return candidate;
         }
     }
 
     return null;
 }
 
-function findAdaptiveIconRaster(extractDir) {
-    const xmlPath = findAdaptiveLauncherXml(extractDir);
+async function findAdaptiveIconRaster(extractDir) {
+    const xmlPath = await findAdaptiveLauncherXml(extractDir);
     if (!xmlPath) return null;
 
     let xmlContent = "";
     try {
-        xmlContent = fs.readFileSync(xmlPath, "utf-8");
+        xmlContent = await fs.promises.readFile(xmlPath, "utf-8");
     } catch (_err) {
         return null;
     }
@@ -203,10 +253,10 @@ function findAdaptiveIconRaster(extractDir) {
     const background = parseDrawableRef(xmlContent, "background");
 
     const foregroundFile = foreground
-        ? resolveResourceFile(extractDir, foreground.type, foreground.name)
+        ? await resolveResourceFile(extractDir, foreground.type, foreground.name)
         : null;
     const backgroundFile = background
-        ? resolveResourceFile(extractDir, background.type, background.name)
+        ? await resolveResourceFile(extractDir, background.type, background.name)
         : null;
 
     return foregroundFile || backgroundFile || null;
@@ -250,8 +300,6 @@ function shellQuote(value) {
 
 function streamExecOutToFile(adbPath, serial, shellCommand, outputPath, timeoutMs = 20000) {
     return new Promise((resolve, reject) => {
-        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
         const proc = spawn(
             adbPath,
             ["-s", adbSerialArg(serial), "exec-out", "sh", "-c", shellCommand],
@@ -280,19 +328,20 @@ function streamExecOutToFile(adbPath, serial, shellCommand, outputPath, timeoutM
                 return;
             }
 
-            try {
-                fs.writeFileSync(outputPath, Buffer.concat(chunks));
-                if (isValidIconFileSize(outputPath)) {
-                    resolve(outputPath);
-                    return;
+            void (async () => {
+                try {
+                    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+                    await fs.promises.writeFile(outputPath, Buffer.concat(chunks));
+                    if (await isValidIconFileSizeAsync(outputPath)) {
+                        resolve(outputPath);
+                        return;
+                    }
+                    await removePathIfExists(outputPath);
+                    reject(new Error("Icon stream invalide"));
+                } catch (err) {
+                    reject(err);
                 }
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
-                reject(new Error("Icon stream invalide"));
-            } catch (err) {
-                reject(err);
-            }
+            })();
         });
     });
 }
@@ -338,47 +387,46 @@ class AppIconExtractor {
     }
 
     async pullApk(serial, remoteApkPath, localApkPath) {
-        fs.mkdirSync(path.dirname(localApkPath), { recursive: true });
+        await fs.promises.mkdir(path.dirname(localApkPath), { recursive: true });
         await execWithTimeout(
             `"${this.adbPath}" -s ${adbSerialArg(serial)} pull "${remoteApkPath}" "${localApkPath}"`,
             45000
         );
 
-        if (!fs.existsSync(localApkPath) || fs.statSync(localApkPath).size === 0) {
+        if (!(await pathExists(localApkPath))) {
+            throw new Error("APK introuvable après pull ADB");
+        }
+        const stat = await fs.promises.stat(localApkPath);
+        if (stat.size === 0) {
             throw new Error("APK introuvable après pull ADB");
         }
     }
 
     async extractIconFromApk(apkPath, outputPath) {
         const extractDir = `${outputPath}.extract`;
-        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-        if (fs.existsSync(extractDir)) {
-            fs.rmSync(extractDir, { recursive: true, force: true });
-        }
-        fs.mkdirSync(extractDir, { recursive: true });
+        await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+        await removeTreeIfExists(extractDir);
+        await fs.promises.mkdir(extractDir, { recursive: true });
 
         try {
             await execWithTimeout(`tar -xf "${apkPath}" -C "${extractDir}"`, 30000);
 
-            const legacyIcon = findBestIconFile(extractDir);
+            const legacyIcon = await findBestIconFile(extractDir);
             if (legacyIcon) {
-                fs.copyFileSync(legacyIcon, outputPath);
-                return isValidIconFileSize(outputPath) ? outputPath : null;
+                await fs.promises.copyFile(legacyIcon, outputPath);
+                return (await isValidIconFileSizeAsync(outputPath)) ? outputPath : null;
             }
 
-            const adaptiveIcon = findAdaptiveIconRaster(extractDir);
+            const adaptiveIcon = await findAdaptiveIconRaster(extractDir);
             if (adaptiveIcon) {
-                fs.copyFileSync(adaptiveIcon, outputPath);
-                return isValidIconFileSize(outputPath) ? outputPath : null;
+                await fs.promises.copyFile(adaptiveIcon, outputPath);
+                return (await isValidIconFileSizeAsync(outputPath)) ? outputPath : null;
             }
 
             return null;
         } finally {
-            fs.rmSync(extractDir, { recursive: true, force: true });
-            if (fs.existsSync(apkPath)) {
-                fs.unlinkSync(apkPath);
-            }
+            await removeTreeIfExists(extractDir);
+            await removePathIfExists(apkPath);
         }
     }
 
@@ -389,8 +437,8 @@ class AppIconExtractor {
         return path.join(cacheRoot, deviceSegment, `${packageSegment}${userSegment}.png`);
     }
 
-    toIconUrl(iconPath) {
-        if (!iconPath || !isValidIconFileSize(iconPath)) return null;
+    async toIconUrl(iconPath) {
+        if (!iconPath || !(await isValidIconFileSizeAsync(iconPath))) return null;
         return toAppIconUrl(iconPath);
     }
 
@@ -447,13 +495,7 @@ class AppIconExtractor {
             } catch (err) {
                 console.warn(`[AppIconExtractor] ${packageName} (${path.basename(remoteApkPath)}):`, err.message);
             } finally {
-                if (fs.existsSync(tempApkPath)) {
-                    try {
-                        fs.unlinkSync(tempApkPath);
-                    } catch (_err) {
-                        // noop
-                    }
-                }
+                await removePathIfExists(tempApkPath);
             }
         }
 

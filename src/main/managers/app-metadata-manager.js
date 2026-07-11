@@ -207,7 +207,7 @@ class AppMetadataManager {
             ...entry,
             iconPath,
             appName: this.resolveAppName(entry, packageName),
-            iconUrl: this.iconExtractor.toIconUrl(iconPath)
+            iconUrl: await this.iconExtractor.toIconUrl(iconPath)
         };
     }
 
@@ -571,7 +571,7 @@ class AppMetadataManager {
         return {
             appName,
             iconPath: savedIconPath,
-            iconUrl: this.iconExtractor.toIconUrl(savedIconPath)
+            iconUrl: await this.iconExtractor.toIconUrl(savedIconPath)
         };
     }
 

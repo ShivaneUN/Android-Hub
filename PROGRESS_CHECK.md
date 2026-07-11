@@ -4492,6 +4492,12 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## FIX — Async icon extraction (étape 2/3, 2026-07-12)
+
+`app-icon-extractor.js` : `walkFiles`, `extractIconFromApk`, `streamExecOutToFile`, `pullApk` → `fs.promises`. `toIconUrl` async. Handler `app-metadata:resolve` inchangé (déjà `await resolveOne`).
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
