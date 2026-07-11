@@ -48,6 +48,13 @@ async function handleWifiToggle(device, enabled, toggleInput) {
 
     if (toggleInput) toggleInput.disabled = true;
 
+    const switchFailedMessage = dt("devicePanel.switchFailed");
+    window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
+        timeoutMs: 120000,
+        timeoutMessage: switchFailedMessage,
+        errorAutoCloseMs: 2800
+    });
+
     try {
         const result = await window.wifiAPI.toggle({
             deviceId: device.deviceId,
@@ -66,6 +73,7 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         }
 
         if (result?.success) {
+            window.hideHubLoadingOverlay?.();
             window.showHubToast?.(
                 result.message || (enabled ? dt("devicePanel.wifiEnabled") : dt("devicePanel.wifiDisconnected")),
                 "success"
@@ -84,10 +92,12 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         }
 
         const message = wifiErrorMessage(result?.step) || result?.error || dt("devicePanel.wifiFailed");
+        window.showHubLoadingOverlayError?.(message || switchFailedMessage, 2800);
         window.showHubToast?.(message, "error", 5500);
         if (toggleInput) toggleInput.checked = false;
         await window.refreshDevices?.();
     } catch (err) {
+        window.showHubLoadingOverlayError?.(err.message || dt("devicePanel.wifiError"), 2800);
         window.showHubToast?.(err.message || dt("devicePanel.wifiError"), "error", 5500);
         if (toggleInput) toggleInput.checked = false;
     } finally {

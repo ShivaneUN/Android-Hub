@@ -4321,8 +4321,18 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ---
 
+## FIX — Overlay branché sur switch USB/WiFi (2026-07-12)
+
+**Commit étape 3** — `DevicePanel.js` + i18n `devicePanel.switchInProgress` / `switchFailed`.
+
+- Affichage au clic toggle ; masquage au succès ; erreur + auto-fermeture 2,8 s ; timeout client 120 s.
+- Type A / LOCK non touchés.
+
+---
+
 ## Historique récent
 
+- **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré sidebar toggle. LOCK intact.
 - **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.
 - **2026-07-12** — **Diagnostic** — cache wm size / dims Type B redondantes.
 - **2026-07-12** — **Fix USB** — raccourci `isLikelyUsbTransportSerial` avant `forceFresh` dans `resolveAdbSerialForDims`.

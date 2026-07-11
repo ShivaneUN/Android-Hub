@@ -155,6 +155,8 @@
     "wifiFailed": "WiFi connection failed",
     "wifiError": "WiFi error",
     "wifiConnected": "Connected over WiFi",
+    "switchInProgress": "Switching connection…",
+    "switchFailed": "Connection switch failed",
     "errors": {
       "tcpip": "Unable to enable WiFi mode on this device",
       "ip": "IP address not found — make sure WiFi is enabled on the phone",

@@ -290,6 +290,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 
 ## Journal des micro-changements (validés)
 
+- **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré au toggle sidebar ; masqué à la réponse IPC. LOCK intact.
 - **2026-07-12** — **Overlay chargement hub** — composant `hub-loading-overlay.js` (spinner centré, non bloquant). LOCK intact.
 - **2026-07-12** — **Localisation switch USB/WiFi** — toggle sidebar `DevicePanel.js` → `wifiAPI.toggle` / `wifi:toggle` ; fin = réponse IPC invoke. LOCK intact.
 - **2026-07-12** — **Fix Type B launchDims propagation** — `launchDims` stockées dans `externalLaunches`, copiées sur session au `create`, réutilisées au `start` via `preresolvedDims`. LOCK intact.

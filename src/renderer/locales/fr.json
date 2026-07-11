@@ -155,6 +155,8 @@
     "wifiFailed": "Échec connexion WiFi",
     "wifiError": "Erreur WiFi",
     "wifiConnected": "Connecté en WiFi",
+    "switchInProgress": "Changement de connexion en cours…",
+    "switchFailed": "Échec du changement",
     "errors": {
       "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
       "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
