@@ -4770,6 +4770,16 @@ Fichier `test.js` (racine) supprimé. Non référencé (`package.json`, scripts,
 
 ---
 
+## FIX — device-manager getConnectedDevices connected (étape 1/2, 2026-07-12)
+
+`device-manager.js` L206 : `connected: state === "device"`. `main.js` fallbacks inchangés.
+
+**Appelants :** `device-registry.js` — aucun ne dépend de `connected: true` sur offline/unauthorized ; le fix aligne primaire et fallbacks.
+
+**Test :** device USB `state=device` → `{ connected: true, status: "green" }`.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

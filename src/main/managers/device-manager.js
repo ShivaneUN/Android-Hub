@@ -203,7 +203,7 @@ class DeviceManager {
                 serial,
                 status,
                 name,
-                connected: true
+                connected: state === "device"
             };
         });
     }
