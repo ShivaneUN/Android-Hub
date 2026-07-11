@@ -24,6 +24,7 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
         for (let attempt = 0; attempt < retries; attempt += 1) {
             const dims = await global.deviceOrientationManager.getDeviceDimensions(adbSerial);
             if (dims?.width > 0 && dims?.height > 0) {
+                global.writeDeviceDimensionsCache?.(serial, adbSerial, dims);
                 return dims;
             }
             if (attempt < retries - 1) {

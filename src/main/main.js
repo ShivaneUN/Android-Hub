@@ -463,7 +463,15 @@ async function resolveDeviceDimensionsForSerial(serial, stableDeviceId = null, t
     return null;
 }
 
+function writeDeviceDimensionsCache(serial, adbSerial, dims) {
+    if (!dims || dims.width <= 0 || dims.height <= 0) return;
+    const entry = { width: dims.width, height: dims.height, at: Date.now() };
+    if (adbSerial) deviceDimensionsCache.set(adbSerial, entry);
+    if (serial) deviceDimensionsCache.set(serial, entry);
+}
+
 global.readCachedDeviceDimensions = readCachedDeviceDimensions;
+global.writeDeviceDimensionsCache = writeDeviceDimensionsCache;
 global.resolveDeviceDimensionsForSerial = resolveDeviceDimensionsForSerial;
 global.resolveAdbSerialForDims = resolveAdbSerialForDims;
 

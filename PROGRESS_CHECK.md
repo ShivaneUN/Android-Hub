@@ -169,6 +169,15 @@ Retry 400 ms : 2ᵉ `wm size` **uniquement** si 1ᵉʳ appel retourne `null`.
 
 ---
 
+## FIX — Fallback resolveLaunchDims écrit deviceDimensionsCache (2026-07-12)
+
+**Commit étape 1** — `writeDeviceDimensionsCache` (`main.js`) + fallback `resolveLaunchDims` (`new-instance-ipc.js`).
+
+- Si le fallback `getDeviceDimensions` réussit, écriture cache sous clés `serial` + `adbSerial` (même logique que `resolveDeviceDimensionsForSerial`).
+- Retry inchangé. Type A non touché. LOCK non touchés.
+
+---
+
 **Statut : livré — 2 commits, 1 fichier par patch.**
 
 | Commit | Fichier | Changement |
