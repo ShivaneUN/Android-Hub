@@ -4795,6 +4795,14 @@ Fichier `test.js` (racine) supprimé. Non référencé (`package.json`, scripts,
 
 ---
 
+## CLEANUP — getConnectedDevices fallbacks main.js (étape 2/2, 2026-07-12)
+
+Chaîne fallback relocalisée dans `device-manager.js` (`_fetchConnectedDevicesLong` → relaxed → simple). `device-registry.js` : `getRawAdbDevices` délègue uniquement à `deviceManager`. Suppression `getConnectedDevices` / `getConnectedDevicesSimple` + injection L1189–L1190 dans `main.js`.
+
+**Tests :** `diagnose-devices.js` → 1 USB connecté ; Electron boot + `[get-devices] connected count=1`.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

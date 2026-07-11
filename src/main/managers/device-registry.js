@@ -6,15 +6,11 @@ class DeviceRegistry {
     constructor({
         deviceManager,
         wifiDevicesManager,
-        wifiAdbService,
-        getConnectedDevicesFallback,
-        getConnectedDevicesSimpleFallback
+        wifiAdbService
     }) {
         this.deviceManager = deviceManager;
         this.wifiDevicesManager = wifiDevicesManager;
         this.wifiAdbService = wifiAdbService;
-        this.getConnectedDevicesFallback = getConnectedDevicesFallback;
-        this.getConnectedDevicesSimpleFallback = getConnectedDevicesSimpleFallback;
 
         /** @type {{ result: object[]|null, fetchedAt: number, rawFingerprint: string|null }} */
         this._listUnifiedCache = {
@@ -62,32 +58,13 @@ class DeviceRegistry {
     }
 
     async getRawAdbDevices() {
-        let connected = [];
         try {
-            connected = await this.deviceManager.getConnectedDevices();
+            const connected = await this.deviceManager.getConnectedDevices();
+            return Array.isArray(connected) ? connected : [];
         } catch (err) {
             console.warn("[DeviceRegistry] DeviceManager error:", err.message);
+            return [];
         }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await this.getConnectedDevicesFallback();
-            } catch (err) {
-                console.warn("[DeviceRegistry] fallback adb error:", err.message);
-                connected = [];
-            }
-        }
-
-        if (!Array.isArray(connected) || connected.length === 0) {
-            try {
-                connected = await this.getConnectedDevicesSimpleFallback();
-            } catch (err) {
-                console.warn("[DeviceRegistry] simple adb fallback error:", err.message);
-                connected = [];
-            }
-        }
-
-        return Array.isArray(connected) ? connected : [];
     }
 
     async attachStableIds(rawDevices) {

@@ -185,18 +185,45 @@ class DeviceManager {
     }
 
     async getConnectedDevices() {
-        const stdout = await execWithTimeout(`"${this.adbPath}" devices -l`, DEFAULT_COMMAND_TIMEOUT_MS);
-        const lines = stdout.split("\n").slice(1).filter((line) => line.trim() !== "");
+        let devices = [];
+
+        try {
+            devices = await this._fetchConnectedDevicesLong();
+        } catch (err) {
+            console.warn("[DeviceManager] getConnectedDevices primary:", err.message);
+        }
+
+        if (!devices.length) {
+            try {
+                devices = await this._fetchConnectedDevicesLongRelaxed();
+            } catch (err) {
+                console.warn("[DeviceManager] getConnectedDevices relaxed:", err.message);
+            }
+        }
+
+        if (!devices.length) {
+            try {
+                devices = await this._fetchConnectedDevicesSimple();
+            } catch (err) {
+                console.warn("[DeviceManager] getConnectedDevices simple:", err.message);
+            }
+        }
+
+        return devices;
+    }
+
+    _parseDeviceLines(stdout, { includeModel = true } = {}) {
+        const lines = String(stdout || "").split(/\r?\n/).slice(1).filter((line) => line.trim() !== "");
 
         return lines.map((line) => {
             const parts = line.trim().split(/\s+/);
             const serial = parts[0];
-            const state = parts[1];
+            const state = parts[1] || "unknown";
             let status = "orange";
             if (state === "device") status = "green";
             else if (state === "offline" || state === "unauthorized") status = "red";
 
-            const modelMatch = line.match(/model:(\S+)/);
+            const modelMatch = includeModel ? line.match(/model:(\S+)/) : null;
             const name = modelMatch ? modelMatch[1].replace(/_/g, " ") : serial;
 
             return {
@@ -206,6 +233,21 @@ class DeviceManager {
                 connected: state === "device"
             };
         });
+    }
+
+    async _fetchConnectedDevicesLong() {
+        const stdout = await execWithTimeout(`"${this.adbPath}" devices -l`, DEFAULT_COMMAND_TIMEOUT_MS);
+        return this._parseDeviceLines(stdout, { includeModel: true });
+    }
+
+    async _fetchConnectedDevicesLongRelaxed() {
+        const stdout = await execPromise(`"${this.adbPath}" devices -l`);
+        return this._parseDeviceLines(stdout, { includeModel: true });
+    }
+
+    async _fetchConnectedDevicesSimple() {
+        const stdout = await execPromise(`"${this.adbPath}" devices`);
+        return this._parseDeviceLines(stdout, { includeModel: false });
     }
 
     async getInstalledApps(serial) {

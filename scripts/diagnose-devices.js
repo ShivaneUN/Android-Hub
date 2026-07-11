@@ -7,32 +7,9 @@ const { DeviceManager } = require("../src/main/managers/device-manager");
 const { WifiDevicesManager } = require("../src/main/managers/wifi-devices-manager");
 const { WifiAdbService } = require("../src/main/managers/wifi-adb-service");
 const { DeviceRegistry } = require("../src/main/managers/device-registry");
-const { exec } = require("child_process");
 
 const adbPath = path.join(__dirname, "..", "tools", "adb.exe");
 const userDataPath = path.join(process.env.APPDATA || "", "android-hub");
-
-function execSimple(cmd) {
-    return new Promise((resolve, reject) => {
-        exec(cmd, { windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-            if (err) reject(new Error(stderr || err.message));
-            else resolve(String(stdout || "").trim());
-        });
-    });
-}
-
-async function getConnectedDevicesFallback() {
-    const stdout = await execSimple(`"${adbPath}" devices -l`);
-    return stdout.split("\n").slice(1).filter((l) => l.trim()).map((line) => {
-        const parts = line.trim().split(/\s+/);
-        return {
-            serial: parts[0],
-            status: parts[1] === "device" ? "green" : "red",
-            name: parts[0],
-            connected: parts[1] === "device"
-        };
-    });
-}
 
 async function main() {
     console.log("=== Android Hub — diagnostic appareils ===\n");
@@ -51,9 +28,7 @@ async function main() {
     const registry = new DeviceRegistry({
         deviceManager: dm,
         wifiDevicesManager: wifiMgr,
-        wifiAdbService: wifiSvc,
-        getConnectedDevicesFallback,
-        getConnectedDevicesSimpleFallback: getConnectedDevicesFallback
+        wifiAdbService: wifiSvc
     });
 
     const unified = await registry.listUnifiedDevices();

@@ -269,7 +269,7 @@ Aucune API `on*` dans `src/preload/*.js` ne retourne de fonction de désinscript
 | 7.2 preload racine | **Supprimé** (2026-07-12) — `src/preload/preload.js` seul actif |
 | 7.3 `get-apps` | **Supprimé** (2026-07-12) — `device:apps` / `getAppsWithDetails` seul chemin |
 | 7.5 `test.js` | **Supprimé** (2026-07-12) — non référencé, exclu du build |
-| 7.6 `getConnectedDevices` | **Étape 1/2** — `device-manager` `connected` corrigé ; fallbacks `main.js` inchangés |
+| 7.6 `getConnectedDevices` | **Terminé** — fallbacks relocalisés dans `device-manager` ; duplication `main.js` retirée |
 
 Détail : `PROGRESS_CHECK.md` § DIAGNOSTIC — Audit nettoyage 7.2 / 7.3 / 7.5 / 7.6.
 
@@ -324,6 +324,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - **2026-07-12** — **Overlay chargement hub** — composant `hub-loading-overlay.js` (spinner centré, non bloquant). LOCK intact.
 - **2026-07-12** — **Localisation switch USB/WiFi** — toggle sidebar `DevicePanel.js` → `wifiAPI.toggle` / `wifi:toggle` ; fin = réponse IPC invoke. LOCK intact.
 - **2026-07-12** — **Async I/O metadata main (3 étapes)** — (1) cache lookup `fs.promises` ; (2) `app-icon-extractor` async pour `resolveOne` ; (3) `enrichHistoryEntries` → `prefetchHistoryApps` (remplace `setImmediate`). Worker / LOCK inchangés.
+- **2026-07-12** — **Cleanup getConnectedDevices** — fallbacks `main.js` → `device-manager` ; `DeviceRegistry` source unique. LOCK intact.
 - **2026-07-12** — **Fix device-manager connected** — `state === "device"` dans `getConnectedDevices` ; fallbacks main inchangés. LOCK intact.
 - **2026-07-12** — **Deprecation get-apps** — preload `getApps` + handler IPC retirés ; liste apps via `device:apps`. LOCK intact.
 - **2026-07-12** — **Cleanup** — suppression `test.js` racine (script abandonné). LOCK intact.

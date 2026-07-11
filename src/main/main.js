@@ -721,46 +721,6 @@ function rawUsbOnline(device, isWifiSerial) {
     return Boolean(device.usbSerial || device.serial);
 }
 
-function getConnectedDevices() {
-    return new Promise((resolve) => {
-        exec(`"${adbPath}" devices -l`, { windowsHide: true }, (error, stdout) => {
-            if (error) { console.error(error); resolve([]); return; }
-            const lines = stdout.split(/\r?\n/).slice(1).filter(l => l.trim() !== "");
-            const devices = lines.map(line => {
-                const parts = line.trim().split(/\s+/);
-                const serial = parts[0];
-                const state = parts[1];
-                let status = "orange";
-                if (state === "device") status = "green";
-                else if (state === "offline" || state === "unauthorized") status = "red";
-                const modelMatch = line.match(/model:(\S+)/);
-                const name = modelMatch ? modelMatch[1].replace(/_/g, " ") : serial;
-                return { serial, status, name, connected: state === "device" };
-            });
-            resolve(devices);
-        });
-    });
-}
-
-function getConnectedDevicesSimple() {
-    return new Promise((resolve) => {
-        exec(`"${adbPath}" devices`, { windowsHide: true }, (error, stdout) => {
-            if (error) { resolve([]); return; }
-            const lines = stdout.split(/\r?\n/).slice(1).filter(l => l.trim() !== "");
-            const devices = lines.map((line) => {
-                const parts = line.trim().split(/\s+/);
-                const serial = parts[0];
-                const state = parts[1] || "unknown";
-                let status = "orange";
-                if (state === "device") status = "green";
-                else if (state === "offline" || state === "unauthorized") status = "red";
-                return { serial, status, name: serial, connected: state === "device" };
-            });
-            resolve(devices);
-        });
-    });
-}
-
 // --- Flux vidéo natif (socket scrcpy-server + WebCodecs côté renderer) ---
 
 const videoClients = {}; // { tabId: ScrcpySocketClient }
@@ -1185,9 +1145,7 @@ app.whenReady().then(() => {
     deviceRegistry = new DeviceRegistry({
         deviceManager,
         wifiDevicesManager,
-        wifiAdbService,
-        getConnectedDevicesFallback: getConnectedDevices,
-        getConnectedDevicesSimpleFallback: getConnectedDevicesSimple
+        wifiAdbService
     });
     global.deviceRegistry = deviceRegistry;
     deviceHistoryCache = null;
