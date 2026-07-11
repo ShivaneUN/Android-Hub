@@ -4406,8 +4406,89 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## DIAGNOSTIC — I/O sync métadonnées / icônes (2026-07-12)
+
+**Statut : diagnostic uniquement — aucune modification code.**
+
+### Partie 1 — `app-metadata-manager.js`
+
+**Deux instances** (même module, chemins disque partagés `app-metadata-cache.json` + `app-icons/`) :
+| Instance | Process | Création |
+|----------|---------|----------|
+| Main | `main.js` ~L1208 | Toujours |
+| Worker | `apps-worker.js` INIT ~L87 | Fork `apps-worker-bridge` |
+
+**Prefetch typique (panneau apps)** : `app-metadata:prefetch` → worker `PREFETCH_APP_METADATA` → **`queuePrefetch` worker**. Les `writeFileSync` de flush viennent donc **du worker** en pratique.
+
+**Main encore actif pour** :
+- `app-metadata:resolve` → `resolveOne` complet (icônes incluses) — **main thread**
+- `launch-history:list` → `enrichHistoryEntries` + `queuePrefetch` via `setImmediate` — **main thread** si entrées sans icône
+- `getCachedEntry` (ex. `new-instance-ipc.js` L88, historique) — lectures mémoire + `existsSync` / `statSync` via `isFresh` / `isValidIconFileSize`
+- `pruneStaleIconCacheEntries` au boot + maintenance cleanup — **main**
+- **Fallback in-process** : même code sur main (voir Partie 3)
+
+**Flush `writeFileSync` (~L145-161, ~L164-171)** :
+- `scheduleSaveIndex` : debounce **500 ms** (`INDEX_SAVE_DEBOUNCE_MS`) — coalesce les `setCachedEntry` pendant prefetch
+- `flushIndex` : appel **fin de queue** prefetch (`runQueue` ~L694) + SHUTDOWN worker
+- Rafales : pendant batch 4–6 icônes parallèles, **≤ ~2 écritures/s max** (debounce) + 1 flush final ; pas de contournement massif du debounce sauf `flushIndex` / `invalidate` ponctuels
+- **Estimation prefetch 32 icônes** : ~5–15 `writeFileSync` debouncés sur **30–90 s** + 1 flush final — **worker**
+
+**Sync restants main (hors prefetch worker)** : `loadIndex` `readFileSync` (1× boot), `mkdirSync`, `existsSync`/`unlinkSync` dans `isFresh`/`invalidate`/`rejectFalsePositive` — **faible fréquence** sauf `resolveOne` / fallback.
+
+### Partie 2 — `app-icon-extractor.js`
+
+**Exécution** : instancié par `AppMetadataManager` → **worker** pour prefetch/liste apps normale ; **main** pour `app-metadata:resolve`, `enrichHistory` prefetch, fallback.
+
+| Fichier | Fonction | Op. sync | Thread | Fréq. estimée |
+|---------|----------|----------|--------|---------------|
+| `app-icon-extractor.js` | `walkFiles` | `existsSync`, `readdirSync` | Worker (prefetch) / Main (resolve/fallback) | Par extraction APK (pull path) |
+| `app-icon-extractor.js` | `walkXmlFiles` | `existsSync`, `readdirSync` | idem | idem |
+| `app-icon-extractor.js` | `resolveResourceFile` | `existsSync`, `readdirSync` | idem | Adaptive icon path |
+| `app-icon-extractor.js` | `findAdaptiveIconRaster` | `readFileSync` | idem | Adaptive icon path |
+| `app-icon-extractor.js` | `streamExecOutToFile` | `mkdirSync`, `writeFileSync`, `existsSync`, `unlinkSync` | idem | Zip stream path (prioritaire) |
+| `app-icon-extractor.js` | `pullApk` | `mkdirSync`, `existsSync`, `statSync` | idem | Fallback pull APK |
+| `app-icon-extractor.js` | `extractIconFromApk` | `mkdirSync`, `rmSync`, `copyFileSync`, `unlinkSync` | idem | Si zip stream échoue |
+| `app-icon-extractor.js` | `extractIcon` finally | `existsSync`, `unlinkSync` | idem | Chaque tentative |
+| `app-metadata-manager.js` | `loadIndex` | `existsSync`, `readFileSync` | Main + Worker (INIT) | 1× / process |
+| `app-metadata-manager.js` | `saveIndex` / `flushIndex` | `writeFileSync` | Worker (prefetch) / Main (resolve) | Debounce + fin queue |
+| `app-metadata-manager.js` | `isFresh` / `hasUsableIcon` | `existsSync` + `statSync` via `isValidIconFileSize` | Main surtout | Chaque lookup cache |
+| `app-metadata-manager.js` | `invalidate` / `rejectFalsePositive` | `existsSync`, `unlinkSync` | Worker + Main | Retry icône / erreur |
+| `app-metadata-manager.js` | `pruneStaleIconCacheEntries` | `fs.promises` (async) | Main boot + cleanup | Rare |
+| `shared/app-icon-placeholder.js` | `isValidIconFileSize` | `statSync` | Partout | Chaque vérif taille icône |
+
+**Équivalent async existant** : `isIconFileAccessible` (~L94-102) utilise `fs.promises.access` + `stat` — modèle pour remplacer `statSync`/`existsSync` ailleurs.
+
+**Blocage main thread** : **résolu pour le prefetch bulk** (déporté worker). **Non résolu** pour `app-metadata:resolve` (onglets sidebar), `enrichHistoryEntries` prefetch main, fallback.
+
+### Partie 3 — Impact réel
+
+**Bénéfice async si tout est déjà dans le worker** :
+- **UI / main thread** : **aucun** pour le prefetch worker seul
+- **Worker** : réduction latence perçue du worker (meilleur entrelacement messages IPC METADATA_UPDATED) ; gain modéré sur durée totale prefetch (I/O toujours séquentiel par icône)
+
+**Fallback in-process** (`apps-worker-bridge.js` `activateFallback`, `main.js` ~L1235-1250) :
+- Déclenché si : échec INIT worker, **3** crashs/restarts (`MAX_RESTART_ATTEMPTS`), timeout DEBUG_CRASH
+- **Usage réel estimé : rare** (worker stable en nominal) ; alors **100 %** prefetch + enrich repasse sur main avec sync I/O complet
+
+**Proposition vérification (non implémentée)** : prioriser routage **main → worker** pour `app-metadata:resolve` et prefetch historique ; async I/O en second sur `app-icon-extractor` (gain worker perf).
+
+### Conclusion
+
+| Question | Réponse |
+|----------|---------|
+| Chantier encore pertinent ? | **Oui**, mais priorité déplacée |
+| Priorité 1 | Chemins **encore sur main** : `app-metadata:resolve`, `enrichHistoryEntries` → `queuePrefetch` |
+| Priorité 2 | `app-icon-extractor.js` async — accélère **worker**, pas l'UI |
+| Priorité 3 | Fallback in-process (rare mais sync total main) |
+| Debounce index | **Efficace** pour prefetch worker ; pas le goulot principal |
+
+**LOCK** : non concerné.
+
+---
+
 ## Historique récent
 
+- **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
 - **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré sidebar toggle. LOCK intact.
