@@ -4390,6 +4390,12 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## FIX — get-devices forceFresh (2026-07-12)
+
+**Commit étape 1** — `main.js` : `get-devices({ forceFresh: true })` → `listUnifiedDevices({ forceFresh: true })`. Poll normal inchangé (sans option).
+
+---
+
 ## Historique récent
 
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

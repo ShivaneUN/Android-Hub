@@ -1347,14 +1347,16 @@ function broadcastAppMetadataUpdated({ serial, updates } = {}) {
     }
 }
 
-async function listDevicesForUI({ lightweight = false } = {}) {
+async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}) {
     if (wifiStartupPromise) {
         await wifiStartupPromise;
     }
 
     let connected = [];
     try {
-        connected = await deviceRegistry.listUnifiedDevices();
+        connected = await deviceRegistry.listUnifiedDevices({
+            forceFresh: forceFresh === true
+        });
     } catch (err) {
         console.error("[listDevicesForUI] registry error:", err.message);
         connected = [];
@@ -1406,7 +1408,8 @@ async function listDevicesForUI({ lightweight = false } = {}) {
         };
         try {
             const devices = await listDevicesForUI({
-                lightweight: options?.lightweight === true
+                lightweight: options?.lightweight === true,
+                forceFresh: options?.forceFresh === true
             });
             const connectedCount = devices.filter((d) => d.connected !== false).length;
             console.log(`[get-devices] connected count=${connectedCount}`);
