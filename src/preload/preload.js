@@ -41,9 +41,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     prefetchAppMetadata: (payload) => ipcRenderer.invoke("app-metadata:prefetch", payload),
     onAppMetadataUpdated: (callback) => ipcRenderer.on("app-metadata:updated", (_event, data) => callback(data)),
 
-    // TEMP DEBUG - à retirer avant release — console DevTools : await electronAPI.debugCrashWorker()
-    debugCrashWorker: () => ipcRenderer.invoke("apps-worker:debug-crash"),
-
     // --- Nouvelle session ---
     getAppsWithDetails: (serial) => ipcRenderer.invoke("device:apps", serial),
     launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null, stableDeviceId = null) =>
