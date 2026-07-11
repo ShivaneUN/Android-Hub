@@ -173,12 +173,6 @@ async function handleMessage(message) {
                 return;
             }
 
-            // TEMP DEBUG - à retirer avant release
-            case "DEBUG_CRASH": {
-                setImmediate(() => process.exit(1));
-                return;
-            }
-
             default:
                 throw new Error(`Type message worker inconnu: ${type}`);
         }
