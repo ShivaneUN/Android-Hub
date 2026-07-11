@@ -307,8 +307,9 @@ function createVideoPlayer(tabId, canvasElement) {
 
     // Le décodage vidéo est assuré par BrowserView (session.js) — pas de listeners IPC ici.
 
+    let unsubscribeStreamRestarting = null;
     if (window.sessionAPI?.onStreamRestarting) {
-        window.sessionAPI.onStreamRestarting((data) => {
+        unsubscribeStreamRestarting = window.sessionAPI.onStreamRestarting((data) => {
             if (data?.sessionId !== tabId) return;
             resetRuntime();
             state.started = true;
@@ -372,6 +373,13 @@ function createVideoPlayer(tabId, canvasElement) {
 
         getFrameCount() {
             return state.frameCount;
+        },
+
+        dispose() {
+            if (typeof unsubscribeStreamRestarting === "function") {
+                unsubscribeStreamRestarting();
+                unsubscribeStreamRestarting = null;
+            }
         }
     };
 }

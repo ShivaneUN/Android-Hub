@@ -4636,6 +4636,12 @@ Référence initiale : rapport optimisation § 6.1 (`ipcRenderer.on` dans preloa
 
 ---
 
+## FIX — Cleanup listener stream-restarting Type A (étape 2/3, 2026-07-12)
+
+`video-player.js` : `createVideoPlayer` stocke l'unsubscribe, expose `dispose()`. `instance-manager.js` : `dispose()` dans `closeInstance` et chemins d'échec au démarrage.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.

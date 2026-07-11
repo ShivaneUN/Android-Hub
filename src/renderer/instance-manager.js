@@ -86,12 +86,14 @@ async function setupInstance(id, deviceId, deviceName, packageName, label, optio
         } else {
             console.error(`[InstanceManager] Échec démarrage instance ${id}:`, result.error);
             if (window.sessionAPI) await window.sessionAPI.close(id);
+            instance.player.dispose?.();
             instance.canvas.remove();
             delete instances[id];
         }
     } catch (err) {
         console.error(`[InstanceManager] Erreur instance ${id}:`, err);
         if (window.sessionAPI) await window.sessionAPI.close(id);
+        instance.player.dispose?.();
         instance.canvas.remove();
         delete instances[id];
     }
@@ -127,6 +129,7 @@ async function closeInstance(id) {
     if (!instance) return;
 
     await instance.player.stop();
+    instance.player.dispose?.();
     instance.canvas.remove();
     delete instances[id];
 
