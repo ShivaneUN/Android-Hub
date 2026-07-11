@@ -1,6 +1,23 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-09
+Dernière mise à jour : 2026-07-12
+
+---
+
+## Perf UI — debounce recherche apps (2026-07-12)
+
+**Statut : livré — 2 commits, 1 fichier par patch.**
+
+| Commit | Fichier | Changement |
+|--------|---------|------------|
+| `aad55b3` | `src/renderer/apps/AppLauncherSearch.js` | `SEARCH_DEBOUNCE_MS = 100` ; `_onSearchInput` debounce via `clearTimeout`/`setTimeout` avant `filterAndRender` ; cleanup timer dans `destroy()` |
+| `28344f4` | `src/renderer/apps/AppList.js` | Même délai 100 ms sur `_handleSearchInput` → `setSearchQuery` ; cleanup timer dans `destroy()` |
+
+**Comportement :** la logique filtre/tri/render (`filterAndRender`, `applyFilter`) est inchangée ; seul le déclenchement depuis l'événement `input` est différé. Les appels programmatiques (`loadForDevice`, `setItems`, `resetSearch`, `updateMetadata`) restent immédiats.
+
+**LOCK intact** : aucun fichier scrcpy-socket / new-instance-manager / input / Type A-B / `createSession` touché.
+
+Référence diagnostic : rapport CPU 2026-07-11 (P0 — recherche apps sans debounce).
 
 ---
 
@@ -4100,6 +4117,7 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Perf UI** — debounce 100 ms recherche apps : `AppLauncherSearch.js` (`aad55b3`), `AppList.js` (`28344f4`). LOCK intact.
 - **2026-07-08** — **LOCK validé** — Clic long Type B : `adb-input-controller.js`, `new-instance-manager.js`, `main.js` (synthèse swipe, ADB display virtuel, contrôleur unifié).
 - **2026-07-08** — Implémentation icônes apps : multi-APK, adaptive XML, cache fallback stableDeviceId, retry max 3 (`iconAttempts`), placeholder stylé, prefetch once + auto-refresh Nouvelle instance.
 - **2026-07-08** — Diagnostic icônes apps manquantes (Nouvelle instance + sidebar) : source commune `AppMetadataManager`/`AppIconExtractor`, cache partagé, faux positifs micro-PNG filtrés.
