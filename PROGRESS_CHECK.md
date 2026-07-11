@@ -134,11 +134,38 @@ WiFi : **non mesuré** (appareil hors ligne ADB) — estimé 0,5–2,5 s froid (
 | `resolveAdbSerialForDims` | `isLikelyUsbTransportSerial(serial)` testé **en premier** → retour direct du serial USB, sans `resolveEffectiveAdbSerial` |
 | WiFi inchangé | `forceFresh: true` conservé sur les branches registry (serial WiFi / `stableDeviceId`) |
 
-**Validation (relecture)** :
-- USB (`e176518f`…) : `recordListUnified(0)`, **aucun** appel `listUnifiedDevices`
-- WiFi (`ip:port`) : `isLikelyUsbTransportSerial` faux → `forceFresh` intact
-
 **LOCK / vidéo :** non touchés.
+
+---
+
+## DIAGNOSTIC — Cache wm size / dims Type B redondantes (2026-07-12)
+
+**Statut : diagnostic uniquement — aucune modification code ; pas d'instrumentation temporaire.**
+
+### Partie 1 — Cache existant (`deviceDimensionsCache`, TTL 60 s)
+
+- Écriture : `resolveDeviceDimensionsForSerial` (~L458-460) sous clés `adbSerial` + `serial` transport.
+- Lecture : `readCachedDeviceDimensions` (~L343-352) ; priorité dims input controller si session active.
+- `getDeviceDimensions` (`device-orientation-manager.js` ~L46) : pas de cache propre.
+
+**Pourquoi insuffisant aujourd'hui :** (1) 1er lancement toujours froid ~176 ms USB ; (2) `resolveAdbSerialForDims` exécuté avant lecture cache à chaque `resolveDeviceDimensionsForSerial` ; (3) fallback `resolveLaunchDims` L24-31 appelle `getDeviceDimensions` sans remplir `deviceDimensionsCache` ; (4) clé `entry.deviceId` vs serial transport peut rater le cache.
+
+**Dims changeantes pendant lancement :** rotation/`wm override` = marginal ; display virtuel Type B n'altère pas `Physical size`.
+
+### Partie 2 — Appels Type B
+
+| Étape | Fichier | Lignes |
+|-------|---------|--------|
+| Launch | `main.js` | L1851 (+ L1853-1854 retry 400 ms si null) |
+| Start | `new-instance-ipc.js` | L52 `resolveLaunchDims` ; L94 si L52 null |
+
+**`wm size` réels typiques :** Type A froid **1×** ; Type B happy path **1×** (start = cache hit L5) ; pire cas launch retry + fallback **jusqu'à 4×**.
+
+Retry 400 ms : 2ᵉ `wm size` **uniquement** si 1ᵉʳ appel retourne `null`.
+
+### Partie 3 — LOCK
+
+`new-instance-manager.js` et `scrcpy-socket.js` : **aucun** appel dims/wm size.
 
 ---
 
@@ -4253,8 +4280,8 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Diagnostic** — cache wm size / dims Type B redondantes.
 - **2026-07-12** — **Fix USB** — raccourci `isLikelyUsbTransportSerial` avant `forceFresh` dans `resolveAdbSerialForDims`.
-- **2026-07-12** — **Diagnostic** — chronométrage lancement USB/WiFi post-cache/forceFresh ; dominant : `wm size` (USB 78 %), `attachStableIds` WiFi estimé, mutex+poll, dims Type B répétées.
 - **2026-07-12** — **Perf ADB** — `forceFresh: true` sur `resolveAdbSerialForDims` (lancement session). Commits `9a5d05d` + main.js.
 - **2026-07-12** — **Perf ADB** — cache TTL 10 s + mutex `listUnifiedDevices` (`device-registry.js`). LOCK / vidéo : non concernés.
 - **2026-07-12** — **Diagnostic** — cache `listUnifiedDevices` (étape 1, docs seulement).
