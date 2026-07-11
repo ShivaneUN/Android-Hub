@@ -3,6 +3,7 @@
  * Composant independant de l'historique (AppList / historyEntries).
  */
 (function initAppLauncherSearch(global) {
+    const SEARCH_DEBOUNCE_MS = 100;
     const t = (key, vars) => global.HubI18n?.t(key, vars) ?? key;
     const DEFAULT_ICON_SVG = globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
         || `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="#3d4f6f"/></svg>`;
@@ -47,6 +48,7 @@
             this.searchQuery = "";
             this.deviceSerial = null;
             this._launching = false;
+            this._searchDebounceTimer = null;
 
             this._onSearchInput = this._onSearchInput.bind(this);
             this._onResultClick = this._onResultClick.bind(this);
@@ -60,6 +62,10 @@
         }
 
         destroy() {
+            if (this._searchDebounceTimer !== null) {
+                clearTimeout(this._searchDebounceTimer);
+                this._searchDebounceTimer = null;
+            }
             if (this.searchInput) {
                 this.searchInput.removeEventListener("input", this._onSearchInput);
             }
@@ -69,7 +75,14 @@
         }
 
         _onSearchInput(event) {
-            this.filterAndRender(event.target.value || "");
+            const query = event.target.value || "";
+            if (this._searchDebounceTimer !== null) {
+                clearTimeout(this._searchDebounceTimer);
+            }
+            this._searchDebounceTimer = setTimeout(() => {
+                this._searchDebounceTimer = null;
+                this.filterAndRender(query);
+            }, SEARCH_DEBOUNCE_MS);
         }
 
         _onResultClick(event) {
