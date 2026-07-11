@@ -4330,8 +4330,69 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ---
 
+## DIAGNOSTIC — Que garantit `success` de `wifi:toggle` ? (2026-07-12)
+
+**Statut : diagnostic uniquement — avant patch overlay transport réel.**
+
+### 1. Ce que garantit réellement `success: true`
+
+| Branche | Actions await avant `success` | Garantie réelle |
+|---------|------------------------------|-----------------|
+| **WiFi ON — 1ère config** (`setupFirstConnection`) | `fetchWlan0Ip` → `adb tcpip` → `adb connect` + **`get-state === device`** (timeout 7 s) → persistance config `wifiEnabled: true` → `refreshDeviceList()` | **ADB** : serial WiFi `ip:port` vu en état `device` au moment du connect. **Pas** de relecture `listUnifiedDevices` avant le retour IPC |
+| **WiFi ON — config existante** (`reconnectSaved`) | `setWifiEnabled(true)` → (si USB dispo : re-fetch IP + `tcpip`) → `connect()` + **`get-state === device`** → `refreshDeviceList()` | Idem : état ADB `device` sur le serial WiFi à la fin du handler |
+| **WiFi OFF** | `setWifiEnabled(false)` → `adb disconnect` (erreurs **avalées**, timeout 5 s) → `refreshDeviceList()` | **Faible** : commande disconnect envoyée ; **aucune** attente que le serial WiFi disparaisse de `adb devices`, ni que `transport` redevienne `usb` |
+
+`refreshDeviceList()` dans le handler = `requestRendererDeviceRefresh()` uniquement (event `devices:refresh-request`), **sans** `await` de sync UI ni invalidation explicite du cache registry côté main.
+
+### 2. Champ / source de vérité transport UI
+
+| Champ | Rôle | Source |
+|-------|------|--------|
+| `transport` | `"usb"` \| `"wifi"` effectif affiché | `device-registry.resolveEffectiveTransport()` : `wifiEnabled` (config persistée) + présence online USB/WiFi dans `adb devices` (`status === green`) |
+| `serial` | Serial ADB actif pour ce transport | Même résolution (`group.wifiSerial` ou `group.usbSerial`) |
+| `wifiActive` | Toggle sidebar coché | `wifiEnabled && transport === "wifi" && connected` |
+| `wifiEnabled` | Préférence persistée | `wifi-devices-manager` |
+| `connected` / `status` | Online | `adb devices -l` via `getRawAdbDevices` + enrichissement optionnel |
+
+Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevices()` (cache TTL **10 s**, pas de `forceFresh` depuis le renderer).
+
+### 3. Délai typique commande acceptée → transport visible UI
+
+| Mécanisme | Délai |
+|-----------|-------|
+| Réponse IPC `wifi:toggle` | Fin des opérations ADB du handler (jusqu'à ~25 s 1ère config ; ~7 s reconnect ; quasi-immédiat WiFi OFF) |
+| `refreshDevices()` post-toggle (`DevicePanel`) | `refreshDevicesForce` → `get-devices` immédiat si pas de `refreshInFlight` (debounce min **2,5 s** contourné par `force: true`) |
+| Cache `listUnifiedDevices` | Peut servir une entrée **périmée jusqu'à 10 s** si `_executeListUnifiedDevices` n'est pas relancé (pas de `forceFresh` sur `get-devices`) |
+| Poll normal (`devices.js`) | **12 s** ; scan complet (`force: true`) toutes les **4** itérations (~**48 s**) |
+| Overlay actuel (`afe0dab`) | Masqué **avant** `await refreshDevices()` → peut disparaître **avant** que l'UI reflète le nouveau transport |
+
+**Écart constaté** : `success` WiFi ON ≈ confirmation ADB ponctuelle ; `success` WiFi OFF ≈ commande envoyée. L'UI unifiée peut **laguer** (cache 10 s + overlay fermé trop tôt).
+
+### 4. `refreshDevices()` réutilisable ?
+
+- **Oui partiellement** : `window.refreshDevices` = `refreshDevicesForce` → `get-devices` → met à jour `currentDevices` + event `devices-refreshed` (sidebar `DevicePanel` écoute).
+- **Limite** : pas de `forceFresh` registry ; pas de condition « transport cible atteint » ; pas d'attente dans l'overlay actuel.
+- **Manque** : boucle courte post-toggle vérifiant `findDeviceById(deviceId)` jusqu'à `(enabled && transport==='wifi' && wifiActive)` ou `(!enabled && transport==='usb')`, avec timeout ~15–20 s et intervalle 500–800 ms + `forceFresh` côté main si exposé.
+
+### 5. Proposition mécanisme (non implémenté)
+
+**Option A (renderer, min scope)** — dans `handleWifiToggle` après IPC success :
+1. Garder overlay ouvert
+2. Boucle `await refreshDevicesForce()` toutes les 600 ms
+3. Lire `findDeviceById(deviceId)` ; fermer overlay quand condition transport OK ou timeout → erreur
+4. Exposer `get-devices({ forceFresh: true })` pour éviter cache 10 s (petit patch `main.js` + preload)
+
+**Option B (main)** — avant `return { success: true }` dans `wifi:toggle` : `listUnifiedDevices({ forceFresh: true })` + vérif `transport` / `wifiActive` pour le `deviceId` ; retourner `transportConfirmed: true/false`.
+
+**Recommandation** : Option A + `forceFresh` sur le poll post-toggle ; conserver `success: false` IPC inchangé pour les vrais échecs ADB.
+
+**LOCK** : non concerné.
+
+---
+
 ## Historique récent
 
+- **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
 - **2026-07-12** — **Overlay switch USB/WiFi** — spinner centré sidebar toggle. LOCK intact.
 - **2026-07-12** — **Fix Type B** — propagation `launchDims` launch→start ; fallback dims écrit cache. LOCK intact.
 - **2026-07-12** — **Diagnostic** — cache wm size / dims Type B redondantes.
