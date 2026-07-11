@@ -376,6 +376,11 @@ async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut 
         }
     };
 
+    if (isLikelyUsbTransportSerial(serial)) {
+        recordListUnified(0);
+        return serial;
+    }
+
     if (stableDeviceId && global.deviceRegistry?.resolveEffectiveAdbSerial) {
         const listT0 = Date.now();
         const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
@@ -385,11 +390,6 @@ async function resolveAdbSerialForDims(serial, stableDeviceId = null, timingOut 
         });
         recordListUnified(Date.now() - listT0);
         return resolved || serial;
-    }
-
-    if (isLikelyUsbTransportSerial(serial)) {
-        recordListUnified(0);
-        return serial;
     }
 
     if (global.deviceRegistry?.resolveEffectiveAdbSerial) {

@@ -125,6 +125,23 @@ WiFi : **non mesuré** (appareil hors ligne ADB) — estimé 0,5–2,5 s froid (
 
 ---
 
+## Fix — raccourci USB avant forceFresh (2026-07-12)
+
+**Statut : livré — `main.js` uniquement.**
+
+| Changement | Détail |
+|------------|--------|
+| `resolveAdbSerialForDims` | `isLikelyUsbTransportSerial(serial)` testé **en premier** → retour direct du serial USB, sans `resolveEffectiveAdbSerial` |
+| WiFi inchangé | `forceFresh: true` conservé sur les branches registry (serial WiFi / `stableDeviceId`) |
+
+**Validation (relecture)** :
+- USB (`e176518f`…) : `recordListUnified(0)`, **aucun** appel `listUnifiedDevices`
+- WiFi (`ip:port`) : `isLikelyUsbTransportSerial` faux → `forceFresh` intact
+
+**LOCK / vidéo :** non touchés.
+
+---
+
 **Statut : livré — 2 commits, 1 fichier par patch.**
 
 | Commit | Fichier | Changement |
@@ -4236,6 +4253,7 @@ Référence : `AI_CONTEXT.md` § Multi-appareils & polling.
 
 ## Historique récent
 
+- **2026-07-12** — **Fix USB** — raccourci `isLikelyUsbTransportSerial` avant `forceFresh` dans `resolveAdbSerialForDims`.
 - **2026-07-12** — **Diagnostic** — chronométrage lancement USB/WiFi post-cache/forceFresh ; dominant : `wm size` (USB 78 %), `attachStableIds` WiFi estimé, mutex+poll, dims Type B répétées.
 - **2026-07-12** — **Perf ADB** — `forceFresh: true` sur `resolveAdbSerialForDims` (lancement session). Commits `9a5d05d` + main.js.
 - **2026-07-12** — **Perf ADB** — cache TTL 10 s + mutex `listUnifiedDevices` (`device-registry.js`). LOCK / vidéo : non concernés.
