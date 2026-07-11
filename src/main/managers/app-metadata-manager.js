@@ -361,20 +361,15 @@ class AppMetadataManager {
         }
     }
 
-    pruneForDevice(deviceId, activePackageKeys) {
+    async pruneForDevice(deviceId, activePackageKeys) {
         let changed = false;
         for (const [key, entry] of Object.entries(this.index)) {
             if (entry.deviceId !== deviceId) continue;
             const activeKey = this.buildKey(entry.deviceId, entry.packageName, entry.userId);
             if (activePackageKeys.has(activeKey)) continue;
 
-            if (entry.iconPath && fs.existsSync(entry.iconPath)) {
-                this._verifiedIconPaths.delete(entry.iconPath);
-                try {
-                    fs.unlinkSync(entry.iconPath);
-                } catch (_err) {
-                    // noop
-                }
+            if (entry.iconPath) {
+                await this.removeIconFileIfExists(entry.iconPath);
             }
             delete this.index[key];
             changed = true;

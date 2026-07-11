@@ -4506,6 +4506,14 @@ Chaîne renderer : `get-devices` → `listDevicesForUI()` → `listUnifiedDevice
 
 ---
 
+## FIX — Async pruneForDevice (2026-07-12)
+
+`app-metadata-manager.js` : `pruneForDevice` → `async`, suppression icônes via `removeIconFileIfExists` (remplace `existsSync` / `unlinkSync`). Logique de purge inchangée (entrées hors `activePackageKeys` pour le `deviceId` donné).
+
+**Appelants :** aucun dans le dépôt (`pruneForDevice` n'est invoqué nulle part actuellement) — pas d'ajustement IPC/renderer requis. Futurs appelants devront `await manager.pruneForDevice(...)`.
+
+---
+
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
