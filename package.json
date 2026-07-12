@@ -54,6 +54,14 @@
       "icon": "build/icon.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ShivaneUN",
+        "repo": "Android-Hub",
+        "private": true
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,
