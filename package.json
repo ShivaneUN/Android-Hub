@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "set ANDROID_HUB_DEVTOOLS=1&& electron . --devtools",
-    "prebuild": "node scripts/clean-dist-unpack.js",
+    "prebuild": "node scripts/clean-dist-unpack.js && node scripts/generate-update-feed.js",
     "build": "electron-builder --win --config electron-builder.config.js",
     "build:dir": "electron-builder --win --dir --config electron-builder.config.js",
     "icons": "node scripts/generate-icons.js",

@@ -2,5 +2,7 @@ node_modules/
 dist/
 out/
 releases/
+.env
+src/shared/update-feed.json
 .DS_Store
 *.log

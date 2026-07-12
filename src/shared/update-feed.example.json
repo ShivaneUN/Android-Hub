@@ -1,0 +1,8 @@
+{
+  "configured": true,
+  "provider": "github",
+  "owner": "ShivaneUN",
+  "repo": "Android-Hub",
+  "private": true,
+  "token": "ghp_READ_ONLY_TOKEN_GENERATED_AT_BUILD"
+}
