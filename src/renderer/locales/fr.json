@@ -91,6 +91,9 @@
     "error": {
       "title": "Erreur de mise à jour",
       "checkFailed": "Impossible de vérifier les mises à jour."
+    },
+    "settings": {
+      "check": "Vérifier"
     }
   },
   "hubModal": {
@@ -147,7 +150,8 @@
     "title": "Paramètres",
     "tabDevices": "Appareils",
     "tabControl": "Contrôle",
-    "tabMaintenance": "Nettoyage"
+    "tabMaintenance": "Nettoyage",
+    "tabUpdates": "Mise à jour"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",

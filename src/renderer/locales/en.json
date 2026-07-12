@@ -91,6 +91,9 @@
     "error": {
       "title": "Update error",
       "checkFailed": "Unable to check for updates."
+    },
+    "settings": {
+      "check": "Check for updates"
     }
   },
   "hubModal": {
@@ -147,7 +150,8 @@
     "title": "Settings",
     "tabDevices": "Devices",
     "tabControl": "Control",
-    "tabMaintenance": "Cleanup"
+    "tabMaintenance": "Cleanup",
+    "tabUpdates": "Updates"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",

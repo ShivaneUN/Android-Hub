@@ -91,6 +91,9 @@ module.exports = {
         error: {
             title: "Erreur de mise à jour",
             checkFailed: "Impossible de vérifier les mises à jour."
+        },
+        settings: {
+            check: "Vérifier"
         }
     },
     hubModal: {
@@ -147,7 +150,8 @@ module.exports = {
         title: "Paramètres",
         tabDevices: "Appareils",
         tabControl: "Contrôle",
-        tabMaintenance: "Nettoyage"
+        tabMaintenance: "Nettoyage",
+        tabUpdates: "Mise à jour"
     },
     devicePanel: {
         wifiEnabled: "WiFi activé",
@@ -155,6 +159,8 @@ module.exports = {
         wifiFailed: "Échec connexion WiFi",
         wifiError: "Erreur WiFi",
         wifiConnected: "Connecté en WiFi",
+        switchInProgress: "Changement de connexion en cours…",
+        switchFailed: "Échec du changement",
         errors: {
             tcpip: "Impossible d'activer le mode WiFi sur cet appareil",
             ip: "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
@@ -178,6 +184,13 @@ module.exports = {
         reconnect: "Reconnecter",
         remove: "Supprimer",
         cleanupNow: "Nettoyer maintenant",
+        discoverDevices: "Recherche de nouveau appareil",
+        discoverSearching: "Recherche en cours...",
+        discoverFoundNew: "{count} appareil(s) détecté(s)",
+        discoverFoundNewNamed: "Nouveau(x) : {names}",
+        discoverNoNew: "Aucun nouvel appareil ({connected} connecté(s))",
+        discoverNone: "Aucun appareil détecté — vérifiez USB ou WiFi",
+        discoverFailed: "Recherche impossible",
         maintenanceHint: "Logs/cache : {days} jours. Historique : entrées visibles dans le hub.",
         autoCleanup: "Nettoyage automatique",
         autoLogs: "Logs",
@@ -272,6 +285,26 @@ module.exports = {
         sessionType: "Type {type}",
         sessionMeta: "{label} · Type {type}",
         active: "Active",
+        presets: {
+            label: "Presets d'affichage",
+            none: "— Aucun preset —",
+            setDefault: "Définir par défaut",
+            saveCurrent: "Enregistrer le réglage actuel",
+            applyAll: "Appliquer à toutes les instances",
+            applyAllHint: "Met à jour le preset par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.",
+            namePlaceholder: "Nom du preset",
+            nameEmpty: "Indiquez un nom pour le preset.",
+            namePrompt: "Nom du preset :",
+            saved: "Preset « {name} » enregistré.",
+            saveFailed: "Impossible d'enregistrer le preset.",
+            defaultSet: "Preset « {name} » défini par défaut pour les nouvelles sessions.",
+            defaultSetFailed: "Impossible de définir le preset par défaut.",
+            loadFailed: "Impossible de charger les presets.",
+            applyAllUnavailable: "Mise à jour du preset par défaut indisponible.",
+            applyingAll: "Enregistrement pour les prochains lancements…",
+            appliedAll: "Paramètres enregistrés pour les prochains lancements. Les sessions actives restent inchangées.",
+            applyAllFailed: "Impossible d'enregistrer les paramètres pour les prochains lancements."
+        },
         resolution: {
             label: "Résolution",
             fullHd: "FULL HD",
@@ -505,6 +538,7 @@ module.exports = {
                 "Appareil déconnecté aléatoirement : branchez directement sur le PC, évitez les hubs USB.",
                 "Mirroring ne démarre pas : fermez les autres outils ADB (Android Studio, scrcpy en CLI).",
                 "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
+                "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
                 "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
                 "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
             ]

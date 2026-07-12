@@ -91,6 +91,9 @@ module.exports = {
         error: {
             title: "Update error",
             checkFailed: "Unable to check for updates."
+        },
+        settings: {
+            check: "Check for updates"
         }
     },
     hubModal: {
@@ -147,7 +150,8 @@ module.exports = {
         title: "Settings",
         tabDevices: "Devices",
         tabControl: "Control",
-        tabMaintenance: "Cleanup"
+        tabMaintenance: "Cleanup",
+        tabUpdates: "Updates"
     },
     devicePanel: {
         wifiEnabled: "WiFi enabled",
@@ -155,6 +159,8 @@ module.exports = {
         wifiFailed: "WiFi connection failed",
         wifiError: "WiFi error",
         wifiConnected: "Connected over WiFi",
+        switchInProgress: "Switching connection…",
+        switchFailed: "Connection switch failed",
         errors: {
             tcpip: "Unable to enable WiFi mode on this device",
             ip: "IP address not found — make sure WiFi is enabled on the phone",
@@ -178,6 +184,13 @@ module.exports = {
         reconnect: "Reconnect",
         remove: "Remove",
         cleanupNow: "Clean up now",
+        discoverDevices: "Search for new devices",
+        discoverSearching: "Searching...",
+        discoverFoundNew: "{count} device(s) detected",
+        discoverFoundNewNamed: "New: {names}",
+        discoverNoNew: "No new devices ({connected} connected)",
+        discoverNone: "No devices detected — check USB or WiFi",
+        discoverFailed: "Device search failed",
         maintenanceHint: "Logs/cache: {days} days. History: entries visible in the hub.",
         autoCleanup: "Automatic cleanup",
         autoLogs: "Logs",
@@ -275,6 +288,26 @@ module.exports = {
         sessionType: "Type {type}",
         sessionMeta: "{label} · Type {type}",
         active: "Active",
+        presets: {
+            label: "Display presets",
+            none: "— No preset —",
+            setDefault: "Set as default",
+            saveCurrent: "Save current settings",
+            applyAll: "Apply to all instances",
+            applyAllHint: "Updates the default preset for future launches. Open sessions are not restarted.",
+            namePlaceholder: "Preset name",
+            nameEmpty: "Enter a preset name.",
+            namePrompt: "Preset name:",
+            saved: "Preset \"{name}\" saved.",
+            saveFailed: "Could not save preset.",
+            defaultSet: "Preset \"{name}\" set as default for new sessions.",
+            defaultSetFailed: "Could not set default preset.",
+            loadFailed: "Could not load presets.",
+            applyAllUnavailable: "Default preset update is unavailable.",
+            applyingAll: "Saving for future launches…",
+            appliedAll: "Settings saved for future launches. Active sessions are unchanged.",
+            applyAllFailed: "Could not save settings for future launches."
+        },
         resolution: {
             label: "Resolution",
             fullHd: "FULL HD",
@@ -508,6 +541,7 @@ module.exports = {
                 "Device disconnects randomly: plug directly into the PC and avoid USB hubs.",
                 "Mirroring does not start: close other ADB tools (Android Studio, scrcpy CLI).",
                 "Keyboard input ignored: click once on the video stream to focus it.",
+                "AZERTY keyboard: accented letters, Shift (digits and ?./§%…), Alt Gr (@, #, {, }), and € are sent to the device. Ctrl+Tab / Ctrl+Shift+Tab switch session tabs (not typing).",
                 "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
                 "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
             ]

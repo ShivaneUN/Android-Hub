@@ -91,6 +91,9 @@
     "error": {
       "title": "Erreur de mise à jour",
       "checkFailed": "Impossible de vérifier les mises à jour."
+    },
+    "settings": {
+      "check": "Vérifier"
     }
   },
   "hubModal": {
@@ -147,7 +150,8 @@
     "title": "Paramètres",
     "tabDevices": "Appareils",
     "tabControl": "Contrôle",
-    "tabMaintenance": "Nettoyage"
+    "tabMaintenance": "Nettoyage",
+    "tabUpdates": "Mise à jour"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -155,6 +159,8 @@
     "wifiFailed": "Échec connexion WiFi",
     "wifiError": "Erreur WiFi",
     "wifiConnected": "Connecté en WiFi",
+    "switchInProgress": "Changement de connexion en cours…",
+    "switchFailed": "Échec du changement",
     "errors": {
       "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
       "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
