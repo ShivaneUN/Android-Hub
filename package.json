@@ -1,6 +1,6 @@
 {
   "name": "android-hub",
-  "version": "1.1.37",
+  "version": "1.1.39",
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",
@@ -59,7 +59,9 @@
         "provider": "github",
         "owner": "ShivaneUN",
         "repo": "Android-Hub",
-        "private": true
+        "private": true,
+        "draft": false,
+        "releaseType": "release"
       }
     ],
     "nsis": {
