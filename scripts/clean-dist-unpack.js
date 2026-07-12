@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 const {
+    markerPath,
     setAlternateOutputDir,
     clearAlternateOutputDir
 } = require("./build-output-dir");
@@ -15,6 +16,7 @@ const {
 const root = path.join(__dirname, "..");
 const dist = path.join(root, "dist");
 const repoAdbPath = path.join(root, "tools", "adb.exe");
+const STALE_BUILD_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 
 function killByImageName(imageName) {
     try {
@@ -104,6 +106,40 @@ function removeDir(target) {
     fs.rmSync(target, { recursive: true, force: true, maxRetries: 8, retryDelay: 750 });
 }
 
+function readCurrentMarkerSubdir() {
+    if (!fs.existsSync(markerPath)) return null;
+    const sub = fs.readFileSync(markerPath, "utf8").trim();
+    return sub || null;
+}
+
+function cleanStaleBuildDirs() {
+    if (!fs.existsSync(dist)) return;
+
+    const keepSubdir = readCurrentMarkerSubdir();
+    const now = Date.now();
+
+    for (const entry of fs.readdirSync(dist, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.startsWith("build-")) continue;
+        if (keepSubdir && entry.name === keepSubdir) continue;
+
+        const target = path.join(dist, entry.name);
+        let mtimeMs;
+        try {
+            mtimeMs = fs.statSync(target).mtimeMs;
+        } catch (_err) {
+            continue;
+        }
+        if (now - mtimeMs < STALE_BUILD_MAX_AGE_MS) continue;
+
+        try {
+            removeDir(target);
+            console.log(`Supprimé (build orphelin): dist\\${entry.name}`);
+        } catch (_err) {
+            console.warn(`Impossible de supprimer dist\\${entry.name} (build orphelin).`);
+        }
+    }
+}
+
 function cleanTarget(name) {
     const target = path.join(dist, name);
     if (!fs.existsSync(target)) return true;
@@ -153,6 +189,8 @@ for (const name of ["win-unpacked", "win-unpacked.tmp"]) {
     if (result === "locked") winUnpackedLocked = true;
     else if (result === false) failed = true;
 }
+
+cleanStaleBuildDirs();
 
 if (!failed && !winUnpackedLocked) {
     clearAlternateOutputDir();
