@@ -3,6 +3,11 @@
  */
 (function initUpdateNotifier() {
     const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+    const { renderUpdateState } = globalThis.HubUpdateUi || {};
+    if (!renderUpdateState) {
+        console.warn("[UpdateNotifier] HubUpdateUi indisponible");
+        return;
+    }
 
     const banner = document.getElementById("update-banner");
     if (!banner || !window.electronAPI) return;
@@ -17,6 +22,19 @@
     const btnLater = document.getElementById("update-btn-later");
     const btnCheck = document.getElementById("update-btn-check");
 
+    const targets = {
+        titleEl,
+        detailEl,
+        progressEl,
+        progressBarEl,
+        buttons: {
+            download: btnDownload,
+            install: btnInstall,
+            later: btnLater,
+            check: btnCheck
+        }
+    };
+
     let dismissedVersion = null;
     let manualCheckPending = false;
 
@@ -26,32 +44,6 @@
 
     function hideBanner() {
         banner.classList.add("hidden");
-    }
-
-    function setProgress(visible, percent = 0) {
-        if (!progressEl || !progressBarEl) return;
-        progressEl.classList.toggle("hidden", !visible);
-        progressBarEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    }
-
-    function renderActions(status) {
-        btnDownload?.classList.add("hidden");
-        btnInstall?.classList.add("hidden");
-        btnLater?.classList.add("hidden");
-        btnCheck?.classList.add("hidden");
-
-        if (status === "available") {
-            btnDownload?.classList.remove("hidden");
-            btnLater?.classList.remove("hidden");
-        } else if (status === "downloading") {
-            btnLater?.classList.remove("hidden");
-        } else if (status === "downloaded") {
-            btnInstall?.classList.remove("hidden");
-            btnLater?.classList.remove("hidden");
-        } else if (status === "error" || status === "dev-mode" || status === "uptodate") {
-            btnCheck?.classList.remove("hidden");
-            btnLater?.classList.remove("hidden");
-        }
     }
 
     function updateVersionBadge(state = {}) {
@@ -64,91 +56,16 @@
     }
 
     function renderState(state = {}) {
-        const status = state.status || "idle";
-        const currentVersion = state.currentVersion || "?";
-        const nextVersion = state.version;
-
         updateVersionBadge(state);
-
-        if (status === "idle" || status === "checking") {
-            if (status === "checking") {
-                titleEl.textContent = t("update.status.checking");
-                detailEl.textContent = t("update.status.currentVersion", { version: currentVersion });
-                setProgress(false);
-                renderActions(status);
-                showBanner();
-            } else if (manualCheckPending) {
-                manualCheckPending = false;
-                titleEl.textContent = t("update.status.upToDate");
-                detailEl.textContent = t("update.status.upToDateDetail", { version: currentVersion });
-                setProgress(false);
-                renderActions("uptodate");
-                showBanner();
-            } else if (state.error && state.enabled === false) {
-                titleEl.textContent = t("update.status.notConfigured");
-                detailEl.textContent = state.error;
-                renderActions("error");
-                showBanner();
-            } else {
-                hideBanner();
-            }
-            return;
-        }
-
-        manualCheckPending = false;
-
-        if (status === "available") {
-            if (dismissedVersion && dismissedVersion === nextVersion) {
-                hideBanner();
-                return;
-            }
-            titleEl.textContent = t("update.status.available", { version: nextVersion });
-            detailEl.textContent = state.releaseNotes
-                ? state.releaseNotes.split("\n")[0]
-                : t("update.status.availableDetail", { currentVersion });
-            setProgress(false);
-            renderActions(status);
-            showBanner();
-            return;
-        }
-
-        if (status === "downloading") {
-            const percent = Math.round(state.progress?.percent ?? 0);
-            titleEl.textContent = t("update.status.downloading", { version: nextVersion || "" });
-            detailEl.textContent = t("update.status.progress", { percent });
-            setProgress(true, state.progress?.percent ?? 0);
-            renderActions(status);
-            showBanner();
-            return;
-        }
-
-        if (status === "downloaded") {
-            titleEl.textContent = t("update.status.downloaded", { version: nextVersion });
-            detailEl.textContent = state.canInstall === false
-                ? t("update.status.downloadedManual")
-                : t("update.status.downloadedInstall");
-            setProgress(true, 100);
-            renderActions(status);
-            showBanner();
-            return;
-        }
-
-        if (status === "error") {
-            titleEl.textContent = t("update.error.title");
-            detailEl.textContent = state.error || t("update.error.checkFailed");
-            setProgress(false);
-            renderActions(status);
-            showBanner();
-            return;
-        }
-
-        if (status === "dev-mode") {
-            titleEl.textContent = t("update.status.devMode");
-            detailEl.textContent = state.error || t("update.status.devModeDetail");
-            setProgress(false);
-            renderActions(status);
-            showBanner();
-        }
+        const result = renderUpdateState(state, targets, {
+            t,
+            surface: "banner",
+            manualCheckPending,
+            dismissedVersion
+        });
+        manualCheckPending = result.manualCheckPending;
+        if (result.visibility === "show") showBanner();
+        else hideBanner();
     }
 
     btnDownload?.addEventListener("click", async () => {
