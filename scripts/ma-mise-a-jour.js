@@ -9,6 +9,8 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
+const { findSetupExe } = require("./build-output-dir");
+
 const ROOT = path.join(__dirname, "..");
 const args = process.argv.slice(2);
 const noBump = args.includes("--no-bump");
@@ -91,7 +93,7 @@ async function main() {
 
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     const setupName = `Android Hub-Setup-${pkg.version}.exe`;
-    const setupPath = path.join(ROOT, "dist", setupName);
+    const setupPath = findSetupExe(path.join(ROOT, "dist"), setupName);
 
     if (!fs.existsSync(setupPath)) {
         console.error(`ERREUR: introuvable ${setupPath}`);
