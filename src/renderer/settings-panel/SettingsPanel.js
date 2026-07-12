@@ -32,6 +32,10 @@
         if (tab === "maintenance") {
             window.bindMaintenanceSection?.();
         }
+
+        if (tab === "updates") {
+            window.bindUpdateSettingsSection?.();
+        }
     }
 
     function bindTabButtons() {
