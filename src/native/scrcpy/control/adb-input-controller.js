@@ -119,6 +119,118 @@ class AdbInputController {
         this._activeTouch = null;
         this._activeTouchStart = null;
         this._activeTouchAt = 0;
+        this._persistentShell = null;
+    }
+
+    _isPersistentShellAlive() {
+        return Boolean(
+            this._persistentShell
+            && !this._persistentShell.killed
+            && this._persistentShell.exitCode === null
+        );
+    }
+
+    _getOrCreatePersistentShell() {
+        if (this._isPersistentShellAlive()) {
+            return this._persistentShell;
+        }
+
+        this._persistentShell = null;
+
+        const args = ["-s", this.serial, "shell"];
+        const options = { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
+        if (process.platform === "win32") {
+            options.creationFlags = CREATE_NO_WINDOW;
+        }
+
+        const child = spawn(this.adbPath, args, options);
+        this._persistentShell = child;
+
+        const onUnexpectedExit = (reason, detail) => {
+            if (this._persistentShell !== child) return;
+            const suffix = detail ? `: ${detail}` : "";
+            console.warn(`[AdbInputController] shell persistant ${reason} (${this.serial})${suffix}`);
+            this._persistentShell = null;
+        };
+
+        child.on("error", (err) => onUnexpectedExit("error", err.message));
+        child.on("close", (code) => onUnexpectedExit("close", `code ${code}`));
+        child.stdout?.on("data", () => {});
+        child.stderr?.on("data", () => {});
+
+        return child;
+    }
+
+    _writeToShellStdin(shell, line) {
+        return new Promise((resolve, reject) => {
+            if (!shell?.stdin || shell.stdin.destroyed) {
+                reject(new Error("shell stdin unavailable"));
+                return;
+            }
+            shell.stdin.write(line, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    }
+
+    _clearPersistentShell() {
+        if (!this._persistentShell) return;
+        const shell = this._persistentShell;
+        this._persistentShell = null;
+        try {
+            shell.removeAllListeners();
+            shell.stdout?.removeAllListeners();
+            shell.stderr?.removeAllListeners();
+            shell.stdin?.removeAllListeners();
+        } catch (_err) {
+            // noop
+        }
+        try {
+            if (!shell.killed && shell.exitCode === null) {
+                shell.kill();
+            }
+        } catch (_err) {
+            // noop
+        }
+    }
+
+    async _writePersistentMotionEvent(action, x, y) {
+        const line = `${this._buildInputShellCommand("motionevent", action, x, y)}\n`;
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const shell = this._getOrCreatePersistentShell();
+                await this._writeToShellStdin(shell, line);
+                return;
+            } catch (err) {
+                this._clearPersistentShell();
+                if (attempt === 1) {
+                    throw err;
+                }
+            }
+        }
+    }
+
+    dispose() {
+        if (!this._persistentShell) return;
+        const shell = this._persistentShell;
+        this._persistentShell = null;
+        try {
+            shell.removeAllListeners();
+            shell.stdout?.removeAllListeners();
+            shell.stderr?.removeAllListeners();
+            shell.stdin?.removeAllListeners();
+        } catch (_err) {
+            // noop
+        }
+        try {
+            if (!shell.killed && shell.exitCode === null) {
+                shell.kill();
+            }
+        } catch (_err) {
+            // noop
+        }
     }
 
     async init() {
@@ -245,25 +357,19 @@ class AdbInputController {
             this._activeTouchStart = { x, y };
             this._activeTouch = { x, y };
             this._activeTouchAt = Date.now();
-            return this._runAdbShellCommand(
-                this._buildInputShellCommand("motionevent", "DOWN", x, y)
-            );
+            return this._writePersistentMotionEvent("DOWN", x, y);
         }
 
         if (type === "move") {
             this._activeTouch = { x, y };
-            return this._runAdbShellCommand(
-                this._buildInputShellCommand("motionevent", "MOVE", x, y)
-            );
+            return this._writePersistentMotionEvent("MOVE", x, y);
         }
 
         if (type === "up") {
             this._activeTouch = null;
             this._activeTouchStart = null;
             this._activeTouchAt = 0;
-            return this._runAdbShellCommand(
-                this._buildInputShellCommand("motionevent", "UP", x, y)
-            );
+            return this._writePersistentMotionEvent("UP", x, y);
         }
 
         if (type === "tap") {
