@@ -1421,6 +1421,10 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
     function releaseSessionInputResources(sessionId) {
         if (!sessionId) return;
+        const controller = inputControllersBySession[sessionId];
+        if (controller && typeof controller.dispose === "function") {
+            controller.dispose();
+        }
         delete inputControllersBySession[sessionId];
         delete inputDeviceMetaBySession[sessionId];
         invalidateSessionAdbSerialCache(sessionId);
