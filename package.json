@@ -1,6 +1,6 @@
 {
   "name": "android-hub",
-  "version": "1.1.40",
+  "version": "1.1.50",
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",
@@ -12,6 +12,8 @@
     "prebuild": "node scripts/clean-dist-unpack.js && node scripts/generate-update-feed.js",
     "build": "electron-builder --win --config electron-builder.config.js",
     "build:dir": "electron-builder --win --dir --config electron-builder.config.js",
+    "build:release": "node scripts/publish-github-release.js",
+    "release:upload": "node scripts/publish-github-release.js --upload-only",
     "icons": "node scripts/generate-icons.js",
     "build:perso": "node scripts/ma-mise-a-jour.js --no-bump",
     "update:perso": "node scripts/ma-mise-a-jour.js",
@@ -54,15 +56,6 @@
       "icon": "build/icon.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "ShivaneUN",
-        "repo": "Android-Hub",
-        "private": true,
-        "releaseType": "release"
-      }
-    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,

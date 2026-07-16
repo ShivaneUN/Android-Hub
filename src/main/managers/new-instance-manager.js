@@ -386,6 +386,9 @@ class NewInstanceManager extends EventEmitter {
         });
 
         if (session.inputController) {
+            if (typeof session.inputController.dispose === "function") {
+                session.inputController.dispose();
+            }
             session.inputController = null;
         }
 
@@ -649,6 +652,9 @@ class NewInstanceManager extends EventEmitter {
         }
 
         if (session.inputController) {
+            if (typeof session.inputController.dispose === "function") {
+                session.inputController.dispose();
+            }
             session.inputController = null;
         }
 

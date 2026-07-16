@@ -74,6 +74,7 @@
       <button type="button" class="settings-tab-btn active" data-settings-tab="devices" data-i18n="settingsPanel.tabDevices">Appareils</button>
       <button type="button" class="settings-tab-btn" data-settings-tab="control" data-i18n="settingsPanel.tabControl">Contrôle</button>
       <button type="button" class="settings-tab-btn" data-settings-tab="maintenance" data-i18n="settingsPanel.tabMaintenance">Nettoyage</button>
+      <button type="button" class="settings-tab-btn" data-settings-tab="updates" data-i18n="settingsPanel.tabUpdates">Mise à jour</button>
     </nav>
     <div class="hub-panel-body settings-panel-body">
       <div id="settings-pane-devices" class="settings-tab-pane active" data-settings-pane="devices">
@@ -163,6 +164,20 @@
           </label>
         </div>
       </div>
+      <div id="settings-pane-updates" class="settings-tab-pane" data-settings-pane="updates">
+        <div id="settings-update-current-version" class="settings-update-current-version"></div>
+        <div class="settings-divider"></div>
+        <div id="settings-update-title" class="settings-update-title"></div>
+        <div id="settings-update-detail" class="settings-update-detail"></div>
+        <div class="settings-update-progress hidden" id="settings-update-progress">
+          <div class="settings-update-progress-bar" id="settings-update-progress-bar"></div>
+        </div>
+        <div class="settings-update-actions">
+          <button type="button" class="update-btn update-btn-secondary hidden" id="settings-update-btn-check" data-i18n="update.settings.check">Vérifier</button>
+          <button type="button" class="update-btn update-btn-primary hidden" id="settings-update-btn-download" data-i18n="update.banner.download">Télécharger</button>
+          <button type="button" class="update-btn update-btn-primary hidden" id="settings-update-btn-install" data-i18n="update.banner.install">Redémarrer et installer</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -215,6 +230,8 @@
 <script src="../apps/AppList.js"></script>
 <script src="../new-instance/new-instance-pipeline.js"></script>
 <script src="../new-session.js"></script>
+<script src="../update/update-ui-controller.js"></script>
+<script src="../settings-panel/UpdateSettingsSection.js"></script>
 <script src="../settings-panel/SettingsPanel.js"></script>
 <script src="../control-panel/ControlPanel.js"></script>
 <script src="../help/HelpPanel.js"></script>

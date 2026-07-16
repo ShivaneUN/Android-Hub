@@ -45,10 +45,50 @@ function findSetupExe(distRoot, setupName) {
     return direct;
 }
 
+function resolveDistAbsolute(defaultOutput = "dist") {
+    const rel = resolveBuildOutputDir(defaultOutput);
+    return path.isAbsolute(rel) ? rel : path.join(root, rel);
+}
+
+function findLatestYml(distRoot) {
+    const direct = path.join(distRoot, "latest.yml");
+    if (fs.existsSync(direct)) return direct;
+    if (!fs.existsSync(distRoot)) return null;
+
+    for (const entry of fs.readdirSync(distRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name === "win-unpacked" || entry.name.startsWith("win-unpacked.")) continue;
+        const candidate = path.join(distRoot, entry.name, "latest.yml");
+        if (fs.existsSync(candidate)) return candidate;
+    }
+    return null;
+}
+
+/**
+ * @param {string} distRoot
+ * @param {string} version
+ * @returns {{ setup: string, latestYml: string, blockmap: string|null }}
+ */
+function findUpdateArtifacts(distRoot, version) {
+    const setupName = `Android Hub-Setup-${version}.exe`;
+    const setup = findSetupExe(distRoot, setupName);
+    const setupDir = path.dirname(setup);
+    const latestYml = findLatestYml(distRoot) || path.join(setupDir, "latest.yml");
+    const blockmap = `${setup}.blockmap`;
+    return {
+        setup,
+        latestYml,
+        blockmap: fs.existsSync(blockmap) ? blockmap : null
+    };
+}
+
 module.exports = {
     markerPath,
     setAlternateOutputDir,
     clearAlternateOutputDir,
     resolveBuildOutputDir,
-    findSetupExe
+    resolveDistAbsolute,
+    findSetupExe,
+    findLatestYml,
+    findUpdateArtifacts
 };

@@ -57,6 +57,21 @@ function killLockingProcesses() {
     killRepoAdbProcesses();
 }
 
+function isFileLocked(filePath) {
+    if (!fs.existsSync(filePath)) return false;
+    try {
+        const fd = fs.openSync(filePath, "r+");
+        fs.closeSync(fd);
+        return false;
+    } catch (_err) {
+        return true;
+    }
+}
+
+function getWinUnpackedAsarPath() {
+    return path.join(dist, "win-unpacked", "resources", "app.asar");
+}
+
 function sleepSync(ms) {
     try {
         execSync(`ping -n ${Math.max(2, Math.ceil(ms / 1000) + 1)} 127.0.0.1 >nul`, {
@@ -184,6 +199,15 @@ function cleanTarget(name) {
 let failed = false;
 let winUnpackedLocked = false;
 
+killLockingProcesses();
+sleepSync(800);
+
+if (isFileLocked(getWinUnpackedAsarPath())) {
+    console.warn("app.asar verrouillé — tentative de libération…");
+    killLockingProcesses();
+    sleepSync(1500);
+}
+
 for (const name of ["win-unpacked", "win-unpacked.tmp"]) {
     const result = cleanTarget(name);
     if (result === "locked") winUnpackedLocked = true;
@@ -208,6 +232,10 @@ if (winUnpackedLocked) {
     const alt = setAlternateOutputDir();
     console.warn(`Contournement: le build utilisera ${alt.replace(/\//g, "\\")} (win-unpacked verrouillé).`);
     console.warn("Vous pourrez supprimer dist\\win-unpacked plus tard (fermez Cursor si besoin).");
+} else if (isFileLocked(getWinUnpackedAsarPath())) {
+    const alt = setAlternateOutputDir();
+    winUnpackedLocked = true;
+    console.warn(`Contournement: app.asar toujours verrouillé — build dans ${alt.replace(/\//g, "\\")}.`);
 } else if (failed) {
     process.exitCode = 1;
 }

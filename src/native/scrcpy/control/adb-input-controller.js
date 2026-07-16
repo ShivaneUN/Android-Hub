@@ -2,6 +2,8 @@ const { exec, spawn } = require("child_process");
 const { adbSerialArg } = require("../../../shared/adb-serial-arg");
 
 const CREATE_NO_WINDOW = 0x08000000;
+const MOTION_ACK_TIMEOUT_MS = 2000;
+const MOTION_ACK_PATTERN = /^__ACK_(\d+)__$/;
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -120,6 +122,9 @@ class AdbInputController {
         this._activeTouchStart = null;
         this._activeTouchAt = 0;
         this._persistentShell = null;
+        this._ackCounter = 0;
+        this._pendingAcks = [];
+        this._stdoutBuffer = "";
     }
 
     _isPersistentShellAlive() {
@@ -130,12 +135,44 @@ class AdbInputController {
         );
     }
 
+    _rejectPendingAcks(error) {
+        const pending = this._pendingAcks.splice(0, this._pendingAcks.length);
+        for (const entry of pending) {
+            if (entry.timer) clearTimeout(entry.timer);
+            try {
+                entry.reject(error);
+            } catch (_err) {
+                // noop
+            }
+        }
+    }
+
+    _handleStdoutChunk(chunk) {
+        this._stdoutBuffer += chunk.toString();
+        let newlineIndex = this._stdoutBuffer.indexOf("\n");
+        while (newlineIndex !== -1) {
+            const rawLine = this._stdoutBuffer.slice(0, newlineIndex);
+            this._stdoutBuffer = this._stdoutBuffer.slice(newlineIndex + 1);
+            const line = rawLine.replace(/\r$/, "").trim();
+            const match = MOTION_ACK_PATTERN.exec(line);
+            if (match) {
+                const entry = this._pendingAcks.shift();
+                if (entry) {
+                    if (entry.timer) clearTimeout(entry.timer);
+                    entry.resolve();
+                }
+            }
+            newlineIndex = this._stdoutBuffer.indexOf("\n");
+        }
+    }
+
     _getOrCreatePersistentShell() {
         if (this._isPersistentShellAlive()) {
             return this._persistentShell;
         }
 
         this._persistentShell = null;
+        this._stdoutBuffer = "";
 
         const args = ["-s", this.serial, "shell"];
         const options = { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
@@ -151,11 +188,13 @@ class AdbInputController {
             const suffix = detail ? `: ${detail}` : "";
             console.warn(`[AdbInputController] shell persistant ${reason} (${this.serial})${suffix}`);
             this._persistentShell = null;
+            this._stdoutBuffer = "";
+            this._rejectPendingAcks(new Error("shell closed"));
         };
 
         child.on("error", (err) => onUnexpectedExit("error", err.message));
         child.on("close", (code) => onUnexpectedExit("close", `code ${code}`));
-        child.stdout?.on("data", () => {});
+        child.stdout?.on("data", (chunk) => this._handleStdoutChunk(chunk));
         child.stderr?.on("data", () => {});
 
         return child;
@@ -175,9 +214,15 @@ class AdbInputController {
     }
 
     _clearPersistentShell() {
-        if (!this._persistentShell) return;
+        if (!this._persistentShell) {
+            this._rejectPendingAcks(new Error("shell closed"));
+            this._stdoutBuffer = "";
+            return;
+        }
         const shell = this._persistentShell;
         this._persistentShell = null;
+        this._stdoutBuffer = "";
+        this._rejectPendingAcks(new Error("shell closed"));
         try {
             shell.removeAllListeners();
             shell.stdout?.removeAllListeners();
@@ -195,13 +240,70 @@ class AdbInputController {
         }
     }
 
-    async _writePersistentMotionEvent(action, x, y) {
-        const line = `${this._buildInputShellCommand("motionevent", action, x, y)}\n`;
+    _waitForAck(id) {
+        let resolve;
+        let reject;
+        const promise = new Promise((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        const entry = {
+            id,
+            resolve: null,
+            reject: null,
+            timer: null
+        };
+        entry.resolve = () => {
+            if (entry.timer) clearTimeout(entry.timer);
+            entry.timer = null;
+            resolve();
+        };
+        entry.reject = (err) => {
+            if (entry.timer) clearTimeout(entry.timer);
+            entry.timer = null;
+            reject(err);
+        };
+        entry.timer = setTimeout(() => {
+            const index = this._pendingAcks.indexOf(entry);
+            if (index !== -1) {
+                this._pendingAcks.splice(index, 1);
+            }
+            entry.reject(new Error(`motion ack timeout (${MOTION_ACK_TIMEOUT_MS}ms)`));
+        }, MOTION_ACK_TIMEOUT_MS);
+        this._pendingAcks.push(entry);
+        return { promise, entry };
+    }
 
+    _cancelPendingAck(entry, error) {
+        if (!entry) return;
+        const index = this._pendingAcks.indexOf(entry);
+        if (index !== -1) {
+            this._pendingAcks.splice(index, 1);
+        }
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = null;
+        try {
+            entry.reject(error);
+        } catch (_err) {
+            // noop
+        }
+    }
+
+    async _writePersistentMotionEvent(action, x, y) {
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
+                const id = ++this._ackCounter;
+                const line = `${this._buildInputShellCommand("motionevent", action, x, y)}; echo __ACK_${id}__\n`;
                 const shell = this._getOrCreatePersistentShell();
-                await this._writeToShellStdin(shell, line);
+                const { promise: ackPromise, entry } = this._waitForAck(id);
+                try {
+                    await this._writeToShellStdin(shell, line);
+                } catch (writeErr) {
+                    this._cancelPendingAck(entry, writeErr);
+                    void ackPromise.catch(() => {});
+                    throw writeErr;
+                }
+                await ackPromise;
                 return;
             } catch (err) {
                 this._clearPersistentShell();
@@ -213,9 +315,15 @@ class AdbInputController {
     }
 
     dispose() {
-        if (!this._persistentShell) return;
+        if (!this._persistentShell) {
+            this._rejectPendingAcks(new Error("shell closed"));
+            this._stdoutBuffer = "";
+            return;
+        }
         const shell = this._persistentShell;
         this._persistentShell = null;
+        this._stdoutBuffer = "";
+        this._rejectPendingAcks(new Error("shell closed"));
         try {
             shell.removeAllListeners();
             shell.stdout?.removeAllListeners();

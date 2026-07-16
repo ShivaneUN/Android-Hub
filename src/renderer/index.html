@@ -29,30 +29,12 @@
     <div class="titlebar-left">
       <img class="titlebar-icon" src="assets/android-hub-logo.png" alt="" width="28" height="28">
       <span class="titlebar-title" data-i18n="titlebar.appTitle">Android Hub</span>
-      <button type="button" class="titlebar-version" id="titlebar-version" data-i18n-title="titlebar.checkUpdates" title="Vérifier les mises à jour">v…</button>
+      <button type="button" class="titlebar-version" id="titlebar-version" data-i18n-title="settingsPanel.tabUpdates" title="Mise à jour">v…</button>
     </div>
     <div class="titlebar-controls">
       <button id="btn-min" data-i18n-title="titlebar.minimize" title="Réduire">&#8211;</button>
       <button id="btn-max" data-i18n-title="titlebar.maximize" title="Agrandir">&#9633;</button>
       <button id="btn-close" class="close" data-i18n-title="titlebar.close" title="Fermer">&#10005;</button>
-    </div>
-  </div>
-
-  <div class="update-banner hidden" id="update-banner">
-    <div class="update-banner-content">
-      <div class="update-banner-text">
-        <div class="update-banner-title" id="update-banner-title" data-i18n="update.status.available">Mise à jour disponible</div>
-        <div class="update-banner-detail" id="update-banner-detail"></div>
-        <div class="update-banner-progress hidden" id="update-banner-progress">
-          <div class="update-banner-progress-bar" id="update-banner-progress-bar"></div>
-        </div>
-      </div>
-      <div class="update-banner-actions" id="update-banner-actions">
-        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-download" data-i18n="update.banner.download">Télécharger</button>
-        <button type="button" class="update-btn update-btn-primary hidden" id="update-btn-install" data-i18n="update.banner.install">Redémarrer et installer</button>
-        <button type="button" class="update-btn update-btn-secondary hidden" id="update-btn-check" data-i18n="update.banner.retry">Réessayer</button>
-        <button type="button" class="update-btn update-btn-ghost hidden" id="update-btn-later" data-i18n="update.banner.later">Plus tard</button>
-      </div>
     </div>
   </div>
 
@@ -192,10 +174,27 @@
     if (window.electronAPI) window.electronAPI.close();
   });
 
-  document.getElementById('titlebar-version')?.addEventListener('click', async () => {
-    if (!window.electronAPI?.updateCheck) return;
-    await window.electronAPI.updateCheck();
+  document.getElementById('titlebar-version')?.addEventListener('click', () => {
+    openSettingsPanelFromMain?.('updates');
   });
+
+  (function initTitlebarVersionBadge() {
+    const versionBtn = document.getElementById('titlebar-version');
+    if (!versionBtn || !window.electronAPI) return;
+    const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
+
+    function renderBadge(state = {}) {
+      versionBtn.textContent = t('titlebar.version', { version: state.currentVersion || '?' });
+      const hasUpdate = state.status === 'available' || state.status === 'downloaded';
+      versionBtn.classList.toggle('has-update', hasUpdate);
+    }
+
+    window.electronAPI.onUpdateStatus(renderBadge);
+    window.electronAPI.updateGetStatus?.().then(renderBadge).catch(() => {});
+    globalThis.HubI18n?.onChange?.(() => {
+      window.electronAPI.updateGetStatus?.().then(renderBadge).catch(() => {});
+    });
+  })();
 
   const navButtons = {
     "nav-new-session": "page-new-session",
@@ -251,8 +250,6 @@
 <script src="devices-panel/DevicesPanel.js"></script>
 <script src="new-session.js"></script>
 <script src="session-stream-bridge.js"></script>
-<script src="update/update-ui-controller.js"></script>
-<script src="update-notifier.js"></script>
 <script>
   void globalThis.HubI18n?.init?.();
 </script>

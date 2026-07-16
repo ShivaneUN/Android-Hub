@@ -7,6 +7,9 @@
  */
 const fs = require("fs");
 const path = require("path");
+const { loadEnv } = require("./load-env");
+
+loadEnv(path.join(__dirname, ".."));
 
 const root = path.join(__dirname, "..");
 const outPath = path.join(root, "src", "shared", "update-feed.json");

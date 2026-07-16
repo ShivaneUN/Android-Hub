@@ -52,3 +52,58 @@
 .settings-tab-pane .control-panel-body {
   min-height: 0;
 }
+
+/* --- Section Mise à jour (onglet Paramètres) --- */
+/* Boutons : .update-btn* partagés avec le bandeau (style.css). */
+
+.settings-update-current-version {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-update-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-update-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-update-progress {
+  margin-top: 12px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.settings-update-progress.hidden {
+  display: none;
+}
+
+.settings-update-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent-blue);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.settings-update-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.settings-update-actions .update-btn.hidden {
+  display: none;
+}

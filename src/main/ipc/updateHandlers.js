@@ -1,6 +1,6 @@
 const {
     checkForUpdates,
-    downloadUpdate,
+    startDownloadUpdate,
     quitAndInstall,
     getPublicState
 } = require("../auto-updater");
@@ -14,7 +14,7 @@ function registerUpdateHandlers(ipcMain) {
 
     ipcMain.handle("update:download", async () => {
         try {
-            return { success: true, ...(await downloadUpdate()) };
+            return { success: true, ...startDownloadUpdate() };
         } catch (err) {
             return { success: false, error: err.message, ...getPublicState() };
         }

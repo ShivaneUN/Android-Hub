@@ -3,11 +3,19 @@ const path = require("path");
 const { app, BrowserWindow } = require("electron");
 const { autoUpdater } = require("electron-updater");
 
+// electron-updater n'active onProgress que si listenerCount > 0 au démarrage du download.
+autoUpdater.on("download-progress", () => {});
+
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const STARTUP_CHECK_DELAY_MS = 5000;
 
 let intervalHandle = null;
 let configured = false;
+let downloadPromise = null;
+let progressPollHandle = null;
+let expectedDownloadBytes = 0;
+let lastPollBytes = 0;
+let lastPollAt = 0;
 let installMode = "dev";
 let updateState = {
     status: "idle",
@@ -93,6 +101,14 @@ function resolveGithubToken(embedded = {}) {
     );
 }
 
+function applyGithubAuthHeaders(token) {
+    if (!token) return;
+    autoUpdater.requestHeaders = {
+        Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`,
+        Accept: "application/octet-stream"
+    };
+}
+
 function applyGithubFeed({ owner, repo, token, isPrivate = true }) {
     const feed = {
         provider: "github",
@@ -104,6 +120,7 @@ function applyGithubFeed({ owner, repo, token, isPrivate = true }) {
         feed.token = token;
     }
     autoUpdater.setFeedURL(feed);
+    applyGithubAuthHeaders(token);
     configured = true;
     updateState.feedUrl = `https://github.com/${owner}/${repo}/releases/latest`;
     appendLog(`Feed GitHub: ${updateState.feedUrl}${token ? " (auth)" : " (sans token)"}`);
@@ -207,10 +224,126 @@ function getPublicState() {
     };
 }
 
+function extractSetupFileSize(info = {}) {
+    const files = Array.isArray(info.files) ? info.files : [];
+    const setup = files.find((file) => /\.exe$/i.test(String(file.url || "")));
+    return Number(setup?.size || files[0]?.size || 0);
+}
+
+function getUpdaterCacheDir() {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (!localAppData) return null;
+    return path.join(localAppData, "android-hub-updater");
+}
+
+function measureCacheBytes(cacheDir) {
+    if (!cacheDir || !fs.existsSync(cacheDir)) return 0;
+
+    let bytes = 0;
+    const stack = [cacheDir];
+    while (stack.length > 0) {
+        const current = stack.pop();
+        let entries = [];
+        try {
+            entries = fs.readdirSync(current, { withFileTypes: true });
+        } catch (_err) {
+            continue;
+        }
+        for (const entry of entries) {
+            const fullPath = path.join(current, entry.name);
+            try {
+                if (entry.isDirectory()) {
+                    stack.push(fullPath);
+                } else if (entry.isFile()) {
+                    bytes = Math.max(bytes, fs.statSync(fullPath).size);
+                }
+            } catch (_err) {
+                // noop
+            }
+        }
+    }
+    return bytes;
+}
+
+function stopDownloadProgressPolling() {
+    if (progressPollHandle) {
+        clearInterval(progressPollHandle);
+        progressPollHandle = null;
+    }
+}
+
+function publishDownloadProgress(cacheBytes, totalBytes, bytesPerSecond = 0) {
+    if (updateState.status !== "downloading") return;
+
+    const total = totalBytes > 0 ? totalBytes : Math.max(cacheBytes, 1);
+    const normalized = normalizeDownloadProgress({
+        percent: totalBytes > 0 ? (cacheBytes / totalBytes) * 100 : 0,
+        transferred: cacheBytes,
+        total,
+        bytesPerSecond
+    });
+
+    const previousPercent = updateState.progress?.percent ?? 0;
+    if (Math.abs(normalized.percent - previousPercent) < 0.25 && normalized.percent < 100) {
+        return;
+    }
+
+    setState({ status: "downloading", progress: normalized });
+    broadcast("update:status", getPublicState());
+}
+
+function startDownloadProgressPolling(totalBytes) {
+    stopDownloadProgressPolling();
+    const cacheDir = getUpdaterCacheDir();
+    lastPollBytes = measureCacheBytes(cacheDir);
+    lastPollAt = Date.now();
+
+    progressPollHandle = setInterval(() => {
+        const cacheBytes = measureCacheBytes(cacheDir);
+        const now = Date.now();
+        const elapsedSec = Math.max(0.001, (now - lastPollAt) / 1000);
+        const bytesPerSecond = Math.max(0, (cacheBytes - lastPollBytes) / elapsedSec);
+        lastPollBytes = cacheBytes;
+        lastPollAt = now;
+        publishDownloadProgress(cacheBytes, totalBytes, bytesPerSecond);
+    }, 400);
+}
+
+async function ensureUpdateInfoBeforeDownload() {
+    if (autoUpdater.updateInfoAndProvider) {
+        return;
+    }
+    appendLog("Resynchronisation des métadonnées avant téléchargement…");
+    await autoUpdater.checkForUpdates();
+}
+
+function normalizeDownloadProgress(progress = {}) {
+    let percent = Number(progress.percent);
+    if (!Number.isFinite(percent) && Number(progress.total) > 0) {
+        percent = (Number(progress.transferred) / Number(progress.total)) * 100;
+    }
+    if (!Number.isFinite(percent)) {
+        percent = 0;
+    }
+    return {
+        percent: Math.max(0, Math.min(100, percent)),
+        transferred: progress.transferred ?? 0,
+        total: progress.total ?? 0,
+        bytesPerSecond: progress.bytesPerSecond ?? 0
+    };
+}
+
 function attachAutoUpdaterEvents() {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
+    autoUpdater.disableDifferentialDownload = true;
+    autoUpdater.logger = {
+        info: (message) => appendLog(String(message)),
+        warn: (message) => appendLog(`WARN ${message}`),
+        error: (message) => appendLog(`ERROR ${message}`),
+        debug: () => {}
+    };
 
     autoUpdater.on("checking-for-update", () => {
         setState({ status: "checking", error: null, progress: null });
@@ -218,7 +351,8 @@ function attachAutoUpdaterEvents() {
     });
 
     autoUpdater.on("update-available", (info) => {
-        appendLog(`Mise à jour disponible: v${info.version}`);
+        expectedDownloadBytes = extractSetupFileSize(info);
+        appendLog(`Mise à jour disponible: v${info.version}${expectedDownloadBytes ? ` (${Math.round(expectedDownloadBytes / 1024 / 1024)} Mo)` : ""}`);
         setState({
             status: "available",
             version: info.version,
@@ -245,24 +379,25 @@ function attachAutoUpdaterEvents() {
     autoUpdater.on("error", (err) => {
         const message = err?.message || String(err);
         appendLog(`Erreur: ${message}`);
-        setState({ status: "error", error: message });
+        stopDownloadProgressPolling();
+        setState({ status: "error", error: message, progress: null });
         broadcast("update:status", getPublicState());
     });
 
     autoUpdater.on("download-progress", (progress) => {
+        const normalized = normalizeDownloadProgress(progress);
+        if (normalized.percent > 0) {
+            stopDownloadProgressPolling();
+        }
         setState({
             status: "downloading",
-            progress: {
-                percent: progress.percent,
-                transferred: progress.transferred,
-                total: progress.total,
-                bytesPerSecond: progress.bytesPerSecond
-            }
+            progress: normalized
         });
         broadcast("update:status", getPublicState());
     });
 
     autoUpdater.on("update-downloaded", (info) => {
+        stopDownloadProgressPolling();
         appendLog(`Mise à jour téléchargée: v${info.version}`);
         setState({
             status: "downloaded",
@@ -318,17 +453,56 @@ async function checkForUpdates({ manual = false } = {}) {
     }
 }
 
-async function downloadUpdate() {
+function startDownloadUpdate() {
     if (!configured) {
         throw new Error("Mises à jour non configurées.");
+    }
+    if (downloadPromise) {
+        return getPublicState();
     }
     if (updateState.status !== "available" && updateState.status !== "error") {
         throw new Error("Aucune mise à jour disponible à télécharger.");
     }
 
-    setState({ status: "downloading", error: null, progress: { percent: 0 } });
+    setState({
+        status: "downloading",
+        error: null,
+        progress: { percent: 0, transferred: 0, total: expectedDownloadBytes, bytesPerSecond: 0 }
+    });
     broadcast("update:status", getPublicState());
-    await autoUpdater.downloadUpdate();
+    appendLog("Démarrage du téléchargement…");
+    startDownloadProgressPolling(expectedDownloadBytes);
+
+    downloadPromise = (async () => {
+        try {
+            await ensureUpdateInfoBeforeDownload();
+            if (!expectedDownloadBytes && autoUpdater.updateInfoAndProvider?.info) {
+                expectedDownloadBytes = extractSetupFileSize(autoUpdater.updateInfoAndProvider.info);
+            }
+            startDownloadProgressPolling(expectedDownloadBytes);
+            await autoUpdater.downloadUpdate();
+            appendLog("Téléchargement terminé côté electron-updater.");
+            return getPublicState();
+        } catch (err) {
+            const message = err?.message || String(err);
+            appendLog(`Erreur download: ${message}`);
+            setState({ status: "error", error: message, progress: null });
+            broadcast("update:status", getPublicState());
+            throw err;
+        } finally {
+            stopDownloadProgressPolling();
+            downloadPromise = null;
+        }
+    })();
+
+    return getPublicState();
+}
+
+async function downloadUpdate() {
+    startDownloadUpdate();
+    if (downloadPromise) {
+        await downloadPromise;
+    }
     return getPublicState();
 }
 
@@ -381,6 +555,7 @@ function initAutoUpdater(_mainWindow) {
 module.exports = {
     initAutoUpdater,
     checkForUpdates,
+    startDownloadUpdate,
     downloadUpdate,
     quitAndInstall,
     getPublicState
