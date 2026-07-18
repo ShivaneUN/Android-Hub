@@ -314,7 +314,8 @@
                     width: draft.width,
                     height: draft.height,
                     maxFps: draft.maxFps,
-                    bitRateMbps: draft.bitRateMbps
+                    bitRateMbps: draft.bitRateMbps,
+                    videoCodec: draft.videoCodec
                 }
             });
 
