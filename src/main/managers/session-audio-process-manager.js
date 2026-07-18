@@ -11,7 +11,7 @@ const CREATE_NO_WINDOW = 0x08000000;
 class SessionAudioProcessManager {
     constructor(scrcpyBinaryPath) {
         this.scrcpyBinaryPath = scrcpyBinaryPath;
-        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null, pid: number|null }>} */
+        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null, pid: number|null, deviceKey: string|null }>} */
         this.processes = new Map();
         /** @type {Set<number>} */
         this._knownPids = new Set();
@@ -81,7 +81,15 @@ class SessionAudioProcessManager {
         });
     }
 
-    _buildArgs({ serial, displayId }) {
+    _resolveDeviceKey(entry, niSession, serial) {
+        return entry?.stableDeviceId
+            || niSession?.stableDeviceId
+            || entry?.deviceId
+            || serial
+            || null;
+    }
+
+    _buildArgs({ serial, displayId, deviceKey }) {
         const manager = global.globalAudioOutputManager;
         const args = [
             "--serial", serial,
@@ -95,7 +103,7 @@ class SessionAudioProcessManager {
             args.push(`--display-id=${displayId}`);
         }
 
-        if (manager?.isGlobalMuted?.()) {
+        if (!manager?.isDeviceAudioEnabled?.(deviceKey)) {
             args.push("--no-audio");
         }
 
@@ -168,7 +176,7 @@ class SessionAudioProcessManager {
         });
     }
 
-    async start(sessionId, { serial, displayId = null } = {}) {
+    async start(sessionId, { serial, displayId = null, deviceKey = null } = {}) {
         if (!sessionId || !serial) return { success: false, error: "sessionId ou serial manquant" };
         if (!this.scrcpyBinaryPath) return { success: false, error: "scrcpy introuvable" };
 
@@ -177,9 +185,10 @@ class SessionAudioProcessManager {
             return { success: false, error: `scrcpy introuvable: ${this.scrcpyBinaryPath}` };
         }
 
-        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
+        const key = deviceKey || serial;
+        if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) {
             await this.stop(sessionId);
-            return { success: true, skipped: true, reason: "global-muted" };
+            return { success: true, skipped: true, reason: "device-or-global-muted" };
         }
 
         const normalizedDisplayId = Number.isInteger(displayId) ? displayId : null;
@@ -188,6 +197,7 @@ class SessionAudioProcessManager {
             existing
             && existing.serial === serial
             && existing.displayId === normalizedDisplayId
+            && existing.deviceKey === key
             && this.isRunning(sessionId)
         ) {
             return { success: true, reused: true };
@@ -195,11 +205,11 @@ class SessionAudioProcessManager {
 
         await this.stop(sessionId);
 
-        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
-            return { success: true, skipped: true, reason: "global-muted" };
+        if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) {
+            return { success: true, skipped: true, reason: "device-or-global-muted" };
         }
 
-        const args = this._buildArgs({ serial, displayId: normalizedDisplayId });
+        const args = this._buildArgs({ serial, displayId: normalizedDisplayId, deviceKey: key });
         console.log(`[SessionAudio ${sessionId}] demarrage scrcpy audio (${args.join(" ")})`);
 
         try {
@@ -211,7 +221,8 @@ class SessionAudioProcessManager {
                 child,
                 serial,
                 displayId: normalizedDisplayId,
-                pid
+                pid,
+                deviceKey: key
             });
             this._attachLogging(sessionId, child);
             return { success: true };
@@ -229,17 +240,12 @@ class SessionAudioProcessManager {
         this._getNewInstanceManager = typeof getNewInstanceManager === "function" ? getNewInstanceManager : null;
     }
 
-    async syncAllActiveSessions() {
-        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
-            await this.stopAll();
-            return;
-        }
-
+    _listActiveSessionTargets() {
         const browserViewManager = this._getBrowserViewManager?.();
-        if (!browserViewManager) return;
+        if (!browserViewManager) return [];
 
         const sessions = browserViewManager.getAllSessions?.() || [];
-        const activeIds = new Set();
+        const targets = [];
 
         for (const session of sessions) {
             const sessionId = session?.sessionId;
@@ -250,27 +256,93 @@ class SessionAudioProcessManager {
             let serial = entry?.deviceId || niSession?.serial;
             if (!sessionId || !serial) continue;
 
-            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
-                const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
-                    deviceId: entry?.stableDeviceId || niSession?.stableDeviceId || null,
-                    serial
-                });
-                if (resolved) serial = resolved;
-            }
-
+            const deviceKey = this._resolveDeviceKey(entry, niSession, serial);
             let displayId = null;
             if (entry?.type === "B") {
                 displayId = Number.isInteger(niSession?.displayId) ? niSession.displayId : null;
             }
 
-            activeIds.add(sessionId);
-            await this.start(sessionId, { serial, displayId });
+            targets.push({ sessionId, serial, displayId, deviceKey, entry, niSession });
+        }
+
+        return targets;
+    }
+
+    async _resolveSerial(target) {
+        let serial = target.serial;
+        if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+            const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                deviceId: target.entry?.stableDeviceId || target.niSession?.stableDeviceId || null,
+                serial
+            });
+            if (resolved) serial = resolved;
+        }
+        return serial;
+    }
+
+    _matchesDeviceKey(target, deviceKey) {
+        if (!deviceKey) return false;
+        return target.deviceKey === deviceKey
+            || target.serial === deviceKey
+            || target.entry?.deviceId === deviceKey
+            || target.entry?.stableDeviceId === deviceKey
+            || target.niSession?.stableDeviceId === deviceKey
+            || target.niSession?.serial === deviceKey;
+    }
+
+    async syncAllActiveSessions() {
+        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
+            await this.stopAll();
+            return;
+        }
+
+        const targets = this._listActiveSessionTargets();
+        const activeIds = new Set();
+
+        for (const target of targets) {
+            const serial = await this._resolveSerial(target);
+            activeIds.add(target.sessionId);
+            await this.start(target.sessionId, {
+                serial,
+                displayId: target.displayId,
+                deviceKey: target.deviceKey
+            });
         }
 
         for (const sessionId of [...this.processes.keys()]) {
             if (!activeIds.has(sessionId)) {
                 await this.stop(sessionId);
             }
+        }
+    }
+
+    async syncDeviceSessions(deviceKey, muted) {
+        const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
+        if (!key) return;
+
+        if (muted || global.globalAudioOutputManager?.isGlobalMuted?.()) {
+            const running = [...this.processes.entries()].filter(([, entry]) => (
+                entry?.deviceKey === key || entry?.serial === key
+            ));
+            await Promise.allSettled(running.map(([sessionId]) => this.stop(sessionId)));
+
+            // Aussi stopper via listing sessions (deviceKey peut différer du serial stocké).
+            for (const target of this._listActiveSessionTargets()) {
+                if (this._matchesDeviceKey(target, key) && this.isRunning(target.sessionId)) {
+                    await this.stop(target.sessionId);
+                }
+            }
+            return;
+        }
+
+        for (const target of this._listActiveSessionTargets()) {
+            if (!this._matchesDeviceKey(target, key)) continue;
+            const serial = await this._resolveSerial(target);
+            await this.start(target.sessionId, {
+                serial,
+                displayId: target.displayId,
+                deviceKey: target.deviceKey || key
+            });
         }
     }
 

@@ -1862,13 +1862,59 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* --- WiFi toggle sidebar --- */
+/* --- WiFi / audio toggles sidebar --- */
 .sidebar-device-header {
   gap: 6px;
 }
 
-.sidebar-wifi-toggle {
+.sidebar-device-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sidebar-device-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8b93a3;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-device-audio-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-device-audio-btn.audio-on {
+  color: #3ecf6f;
+}
+
+.sidebar-device-audio-btn.audio-off {
+  color: #6b7280;
+}
+
+.sidebar-device-audio-btn.pending {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sidebar-device-audio-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.sidebar-wifi-toggle {
+  margin-left: 0;
   flex-shrink: 0;
   cursor: pointer;
 }

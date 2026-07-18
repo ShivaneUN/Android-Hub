@@ -141,7 +141,8 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                 if (typeof startAudio === "function") {
                     void startAudio(sessionId, {
                         serial: session.serial,
-                        displayId: session.displayId
+                        displayId: session.displayId,
+                        deviceKey: session.stableDeviceId || session.serial
                     });
                 }
             }

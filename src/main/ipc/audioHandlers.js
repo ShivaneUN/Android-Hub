@@ -1,7 +1,7 @@
 const { ipcMain } = require("electron");
 
 function broadcastGlobalAudioState(manager, getMainWindow) {
-    const payload = { globalMuted: manager.isGlobalMuted() };
+    const payload = manager.getState();
     const win = getMainWindow?.();
     if (win && !win.isDestroyed()) {
         win.webContents.send("audio:global-state-changed", payload);
@@ -16,9 +16,7 @@ function broadcastGlobalAudioState(manager, getMainWindow) {
 }
 
 function registerAudioHandlers(getMainWindow, manager) {
-    ipcMain.handle("audio:getGlobalState", () => ({
-        globalMuted: manager.isGlobalMuted()
-    }));
+    ipcMain.handle("audio:getGlobalState", () => manager.getState());
 
     ipcMain.handle("audio:setGlobalMuted", async (_event, { muted } = {}) => {
         const result = await manager.setGlobalMuted(Boolean(muted));
@@ -28,6 +26,18 @@ function registerAudioHandlers(getMainWindow, manager) {
 
     ipcMain.handle("audio:toggleGlobalMuted", async () => {
         const result = await manager.toggleGlobalMuted();
+        broadcastGlobalAudioState(manager, getMainWindow);
+        return result;
+    });
+
+    ipcMain.handle("audio:setDeviceMuted", async (_event, { deviceKey, muted } = {}) => {
+        const result = await manager.setDeviceMuted(deviceKey, Boolean(muted));
+        broadcastGlobalAudioState(manager, getMainWindow);
+        return result;
+    });
+
+    ipcMain.handle("audio:toggleDeviceMuted", async (_event, { deviceKey } = {}) => {
+        const result = await manager.toggleDeviceMuted(deviceKey);
         broadcastGlobalAudioState(manager, getMainWindow);
         return result;
     });

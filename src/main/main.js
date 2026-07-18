@@ -980,12 +980,26 @@ function resolveHubSocketAudioEnabled(_options = {}) {
     return false;
 }
 
-async function startSessionAudioPlayback(sessionId, { serial, displayId = null } = {}) {
+async function startSessionAudioPlayback(sessionId, { serial, displayId = null, deviceKey = null } = {}) {
     if (!sessionId || !serial || !global.sessionAudioProcessManager) return;
-    if (global.globalAudioOutputManager?.isGlobalMuted?.()) return;
+
+    let key = deviceKey;
+    if (!key) {
+        const entry = global.browserViewManager?.getSessionEntry?.(sessionId);
+        const niSession = entry?.type === "B"
+            ? global.newInstanceManager?.getNewInstanceSession?.(sessionId)
+            : null;
+        key = entry?.stableDeviceId || niSession?.stableDeviceId || entry?.deviceId || serial;
+    }
+
+    if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) return;
 
     try {
-        await global.sessionAudioProcessManager.start(sessionId, { serial, displayId });
+        await global.sessionAudioProcessManager.start(sessionId, {
+            serial,
+            displayId,
+            deviceKey: key
+        });
     } catch (err) {
         console.warn(`[SessionAudio ${sessionId}] demarrage:`, err?.message || err);
     }
@@ -1256,6 +1270,12 @@ app.whenReady().then(() => {
     });
     global.globalAudioOutputManager.setOnMuteStateChanged(async (globalMuted) => {
         await applyGlobalAudioMuteSideEffects(globalMuted);
+    });
+    global.globalAudioOutputManager.setOnDeviceMuteChanged(async (deviceKey, muted) => {
+        console.log(`[DeviceAudio] ${deviceKey} → ${muted ? "off" : "on"}`);
+        if (global.sessionAudioProcessManager?.syncDeviceSessions) {
+            await global.sessionAudioProcessManager.syncDeviceSessions(deviceKey, muted);
+        }
     });
     registerAudioHandlers(() => win, global.globalAudioOutputManager);
 
@@ -2435,7 +2455,10 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 }
             }
 
-            void startSessionAudioPlayback(tabId, { serial });
+            void startSessionAudioPlayback(tabId, {
+                serial,
+                deviceKey: entry?.stableDeviceId || entry?.deviceId || serial
+            });
         }
 
         return result;

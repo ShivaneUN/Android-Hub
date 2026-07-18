@@ -1,14 +1,19 @@
 /**
- * État global audio (toggle sidebar).
- * OFF : arrete les processus scrcpy audio + socket sans audio.
- * ON  : processus scrcpy --no-video par session (son PC + silence device).
+ * État audio PC :
+ * - globalMuted : interrupteur maître (OFF = silence total)
+ * - deviceMuted : OFF/ON par appareil (deviceKey = stableDeviceId || serial)
+ *   défaut si absent de la map = ON (autorisé) dès que le maître est ON
  */
 class GlobalAudioOutputManager {
     constructor() {
         /** @type {boolean} true = son PC coupé (OFF) */
         this.globalMuted = true;
+        /** @type {Map<string, boolean>} deviceKey → true = muet */
+        this.deviceMuted = new Map();
         /** @type {((muted: boolean) => Promise<void>)|null} */
         this._onMuteStateChanged = null;
+        /** @type {((deviceKey: string, muted: boolean) => Promise<void>)|null} */
+        this._onDeviceMuteChanged = null;
     }
 
     isGlobalMuted() {
@@ -16,30 +21,51 @@ class GlobalAudioOutputManager {
     }
 
     /**
-     * Callback Main : refresh des sessions actives quand l'état mute change.
-     * @param {(muted: boolean) => Promise<void>} fn
+     * @param {string} deviceKey
+     * @returns {boolean} true si le son PC est autorisé pour cet appareil
      */
+    isDeviceAudioEnabled(deviceKey) {
+        if (this.globalMuted) return false;
+        if (!deviceKey) return true;
+        if (this.deviceMuted.get(deviceKey) === true) return false;
+        return true;
+    }
+
+    /**
+     * true si le device est considéré muet (maître OFF inclus).
+     * Accepte une clé unique ; le rendu UI peut croiser deviceId + serial.
+     */
+    isDeviceMuted(deviceKey) {
+        if (!deviceKey) return true;
+        if (this.globalMuted) return true;
+        return this.deviceMuted.get(deviceKey) === true;
+    }
+
+    getState() {
+        const devices = {};
+        for (const [key, muted] of this.deviceMuted.entries()) {
+            devices[key] = { muted: Boolean(muted) };
+        }
+        return {
+            globalMuted: this.globalMuted,
+            devices
+        };
+    }
+
     setOnMuteStateChanged(fn) {
         this._onMuteStateChanged = typeof fn === "function" ? fn : null;
     }
 
-    /**
-     * scrcpy.exe externe (bootstrap display Type B) : jamais d'audio côté CLI.
-     * La capture + lecture PC passent uniquement par le socket Hub.
-     * @param {string[]} args
-     * @returns {string[]}
-     */
+    setOnDeviceMuteChanged(fn) {
+        this._onDeviceMuteChanged = typeof fn === "function" ? fn : null;
+    }
+
     applyDisplayBootstrapScrcpyArgs(args) {
         const next = args.filter((arg) => arg !== "--no-audio" && arg !== "--no-playback");
         next.push("--no-audio", "--no-playback");
         return next;
     }
 
-    /**
-     * Applique ou retire --no-audio selon l'état global (scrcpy.exe externe).
-     * @param {string[]} args
-     * @returns {string[]}
-     */
     applyScrcpyCliArgs(args) {
         const next = args.filter((arg) => arg !== "--no-audio");
         if (this.globalMuted) {
@@ -48,16 +74,8 @@ class GlobalAudioOutputManager {
         return next;
     }
 
-    /**
-     * Applique l'état global aux options scrcpy-server (socket Hub).
-     * ON = audio:true (capture playback, device muet via OS).
-     * OFF = audio:false.
-     * @param {object} options
-     * @returns {object}
-     */
     applySocketScrcpyOptions(options = {}) {
         const next = { ...options };
-        // Capture audio = processus scrcpy.exe dedie (--no-video), pas le socket Hub.
         next.audio = false;
         return next;
     }
@@ -71,11 +89,49 @@ class GlobalAudioOutputManager {
             await this._onMuteStateChanged(this.globalMuted);
         }
 
-        return { globalMuted: this.globalMuted };
+        return this.getState();
     }
 
     async toggleGlobalMuted() {
         return this.setGlobalMuted(!this.globalMuted);
+    }
+
+    /**
+     * Mute/unmute PC audio pour un appareil physique.
+     * Si on active un device alors que le maître est OFF → le maître passe ON
+     * (sync global qui respecte déjà le mute par device).
+     */
+    async setDeviceMuted(deviceKey, muted) {
+        const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
+        if (!key) {
+            return { ...this.getState(), success: false, error: "deviceKey manquant" };
+        }
+
+        const nextMuted = Boolean(muted);
+        this.deviceMuted.set(key, nextMuted);
+
+        if (!nextMuted && this.globalMuted) {
+            this.globalMuted = false;
+            if (this._onMuteStateChanged) {
+                await this._onMuteStateChanged(false);
+            }
+            return { ...this.getState(), success: true, deviceKey: key };
+        }
+
+        if (this._onDeviceMuteChanged) {
+            await this._onDeviceMuteChanged(key, nextMuted);
+        }
+
+        return { ...this.getState(), success: true, deviceKey: key };
+    }
+
+    async toggleDeviceMuted(deviceKey) {
+        const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
+        if (!key) {
+            return { ...this.getState(), success: false, error: "deviceKey manquant" };
+        }
+        const currentlyMuted = this.isDeviceMuted(key);
+        return this.setDeviceMuted(key, !currentlyMuted);
     }
 }
 

@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld("audioAPI", {
     getGlobalState: () => ipcRenderer.invoke("audio:getGlobalState"),
     setGlobalMuted: (muted) => ipcRenderer.invoke("audio:setGlobalMuted", { muted }),
     toggleGlobalMuted: () => ipcRenderer.invoke("audio:toggleGlobalMuted"),
+    setDeviceMuted: (deviceKey, muted) => ipcRenderer.invoke("audio:setDeviceMuted", { deviceKey, muted }),
+    toggleDeviceMuted: (deviceKey) => ipcRenderer.invoke("audio:toggleDeviceMuted", { deviceKey }),
     onGlobalStateChanged: (callback) =>
         ipcRenderer.on("audio:global-state-changed", (_event, data) => callback(data))
 });
