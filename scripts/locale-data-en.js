@@ -333,7 +333,8 @@ module.exports = {
             label: "Video codec",
             h264: "H264",
             h265: "H265 (HEVC)",
-            lockedHint: "Stop all instances to change launch settings"
+            lockedHint: "Stop all instances to change launch settings",
+            fallbackToast: "H265 not supported on this device — switched to H264"
         },
         validation: {
             selectBeforeApply: "Select an instance before applying settings.",

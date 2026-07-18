@@ -330,7 +330,8 @@
       "label": "Codec vidéo",
       "h264": "H264",
       "h265": "H265 (HEVC)",
-      "lockedHint": "Arrête toutes les instances pour changer les paramètres de lancement"
+      "lockedHint": "Arrête toutes les instances pour changer les paramètres de lancement",
+      "fallbackToast": "H265 non supporté par cet appareil — bascule sur H264"
     },
     "validation": {
       "selectBeforeApply": "Sélectionnez une instance avant d'appliquer les paramètres.",

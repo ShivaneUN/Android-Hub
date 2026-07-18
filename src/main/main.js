@@ -2251,6 +2251,19 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                     };
 
                     await codecRetryClient.start(serverJarPath, codecRetryOptions);
+
+                    const codecFallbackPayload = {
+                        tabId,
+                        codecFallback: true,
+                        error: "H265 non supporté par cet appareil — bascule sur H264"
+                    };
+                    forwardTypeAVideoEvent(tabId, "video-error", codecFallbackPayload);
+                    const hubWin = global.hubModalOverlayManager?.overlayWindow;
+                    if (hubWin && !hubWin.isDestroyed()) {
+                        hubWin.webContents.send("video-error", codecFallbackPayload);
+                    } else if (win && !win.isDestroyed()) {
+                        win.webContents.send("video-error", codecFallbackPayload);
+                    }
                 } else {
                     const canRetryWithNewDisplay = Number.isInteger(options.displayId);
                     if (!canRetryWithNewDisplay) {

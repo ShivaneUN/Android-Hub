@@ -397,6 +397,16 @@ function setupBrowserViewVideoForwarding(newInstanceManager, getMainWindow) {
         forward(data.sessionId, "new-instance:video-error", data);
 
         const win = typeof getMainWindow === "function" ? getMainWindow() : null;
+        if (data.codecFallback) {
+            const hubWin = global.hubModalOverlayManager?.overlayWindow;
+            if (hubWin && !hubWin.isDestroyed()) {
+                hubWin.webContents.send("new-instance:video-error", data);
+            } else if (win && !win.isDestroyed()) {
+                win.webContents.send("new-instance:video-error", data);
+            }
+            return;
+        }
+
         if (win && !win.isDestroyed()) {
             win.webContents.send("new-instance:video-error", data);
         }

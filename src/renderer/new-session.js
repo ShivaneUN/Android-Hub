@@ -1336,8 +1336,19 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    if (window.electronAPI?.onVideoError) {
+        window.electronAPI.onVideoError((data) => {
+            if (!data?.codecFallback) return;
+            window.showHubToast?.(t("controlPanel.videoCodec.fallbackToast"), "info");
+        });
+    }
+
     if (window.electronAPI?.onNewInstanceVideoError) {
         window.electronAPI.onNewInstanceVideoError((data) => {
+            if (data?.codecFallback) {
+                window.showHubToast?.(t("controlPanel.videoCodec.fallbackToast"), "info");
+                return;
+            }
             if (!launchPipeline || !data || data.sessionId !== launchPipeline.sessionId) return;
             setStatus(`Erreur flux video: ${data.error || "inconnue"}`, true);
         });

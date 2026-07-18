@@ -891,6 +891,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
 
     window.videoAPI.onVideoError((eventData) => {
         if (eventData.tabId !== tabId) return;
+        if (eventData.codecFallback) return;
         console.error(`[SessionView ${tabId}] Erreur stream:`, eventData.error);
     });
 
@@ -1084,6 +1085,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
 
     window.videoAPI.onNewInstanceVideoError((data) => {
         if (!data || data.sessionId !== sessionIdParam) return;
+        if (data.codecFallback) return;
         console.error(`[SessionView ${sessionIdParam}] Erreur stream:`, data.error);
     });
 

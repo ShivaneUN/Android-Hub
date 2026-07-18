@@ -539,7 +539,13 @@ class NewInstanceManager extends EventEmitter {
                 session.streamOptions = fallbackOptions;
 
                 try {
-                    return await this._runClientStart(session, fallbackOptions);
+                    const result = await this._runClientStart(session, fallbackOptions);
+                    this.emit("video-error", {
+                        sessionId,
+                        codecFallback: true,
+                        error: "H265 non supporté par cet appareil — bascule sur H264"
+                    });
+                    return result;
                 } catch (fallbackErr) {
                     session.state = "error";
                     this.emit("state", { sessionId, state: session.state, error: fallbackErr.message });
