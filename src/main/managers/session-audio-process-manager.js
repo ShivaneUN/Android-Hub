@@ -1,16 +1,20 @@
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 
 const CREATE_NO_WINDOW = 0x08000000;
 
 /**
  * Lecture audio PC via scrcpy.exe (--no-video).
  * Un processus par session ; le socket Hub reste vidéo seule (audio:false).
+ *
+ * Windows : kill arbre (taskkill /T /F) + balayage des orphelins --no-video.
  */
 class SessionAudioProcessManager {
     constructor(scrcpyBinaryPath) {
         this.scrcpyBinaryPath = scrcpyBinaryPath;
-        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null }>} */
+        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null, pid: number|null }>} */
         this.processes = new Map();
+        /** @type {Set<number>} */
+        this._knownPids = new Set();
     }
 
     _spawnHidden(command, args) {
@@ -19,6 +23,62 @@ class SessionAudioProcessManager {
             options.creationFlags = CREATE_NO_WINDOW;
         }
         return spawn(command, args, options);
+    }
+
+    _killPidTree(pid) {
+        if (!pid || !Number.isInteger(pid) || pid <= 0) return;
+        if (process.platform === "win32") {
+            try {
+                const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+                    windowsHide: true,
+                    stdio: "ignore",
+                    detached: true
+                });
+                killer.unref?.();
+            } catch (_) {
+                /* ignore */
+            }
+            return;
+        }
+        try {
+            process.kill(pid, "SIGKILL");
+        } catch (_) {
+            /* ignore */
+        }
+    }
+
+    async _killOrphanScrcpyAudioProcesses() {
+        if (process.platform !== "win32") return;
+
+        await new Promise((resolve) => {
+            const script = [
+                "$killed = @()",
+                "$procs = Get-CimInstance Win32_Process -Filter \"Name = 'scrcpy.exe'\" -ErrorAction SilentlyContinue",
+                "foreach ($p in $procs) {",
+                "  if ($p.CommandLine -and (($p.CommandLine -like '*--no-video*') -or (($p.CommandLine -like '*--record=NUL*') -and ($p.CommandLine -notlike '*--no-audio*')))) {",
+                "    $killed += $p.ProcessId",
+                "    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue",
+                "    & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null",
+                "  }",
+                "}",
+                "if ($killed.Count -gt 0) { $killed -join ',' } else { '' }"
+            ].join("; ");
+
+            execFile(
+                "powershell.exe",
+                ["-NoProfile", "-NonInteractive", "-Command", script],
+                { windowsHide: true, timeout: 8000 },
+                (err, stdout) => {
+                    const text = String(stdout || "").trim();
+                    if (text) {
+                        console.log(`[SessionAudio] orphans --no-video tues: ${text}`);
+                    } else if (err) {
+                        console.warn(`[SessionAudio] orphan sweep:`, err.message || err);
+                    }
+                    resolve();
+                }
+            );
+        });
     }
 
     _buildArgs({ serial, displayId }) {
@@ -54,6 +114,9 @@ class SessionAudioProcessManager {
             if (entry?.child === child) {
                 this.processes.delete(sessionId);
             }
+            if (child.pid) {
+                this._knownPids.delete(child.pid);
+            }
             if (code && code !== 0) {
                 console.warn(`[SessionAudio ${sessionId}] processus termine (code ${code})`);
             }
@@ -67,22 +130,37 @@ class SessionAudioProcessManager {
 
     async stop(sessionId) {
         const entry = this.processes.get(sessionId);
-        if (!entry?.child || entry.child.killed) {
-            this.processes.delete(sessionId);
-            return;
-        }
+        const child = entry?.child || null;
+        const pid = entry?.pid || child?.pid || null;
 
-        const child = entry.child;
         this.processes.delete(sessionId);
 
+        if (!child && !pid) return;
+
+        console.log(`[SessionAudio ${sessionId}] arret (pid=${pid || "?"})`);
+
+        if (pid) {
+            this._killPidTree(pid);
+            this._knownPids.delete(pid);
+        }
+
         try {
-            child.kill("SIGTERM");
+            if (child && !child.killed) {
+                child.kill();
+            }
         } catch (_) {
             /* ignore */
         }
 
         await new Promise((resolve) => {
-            const timer = setTimeout(resolve, 2000);
+            if (!child) {
+                setTimeout(resolve, 150);
+                return;
+            }
+            const timer = setTimeout(() => {
+                if (pid) this._killPidTree(pid);
+                resolve();
+            }, 600);
             child.once("exit", () => {
                 clearTimeout(timer);
                 resolve();
@@ -117,15 +195,23 @@ class SessionAudioProcessManager {
 
         await this.stop(sessionId);
 
+        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
+            return { success: true, skipped: true, reason: "global-muted" };
+        }
+
         const args = this._buildArgs({ serial, displayId: normalizedDisplayId });
         console.log(`[SessionAudio ${sessionId}] demarrage scrcpy audio (${args.join(" ")})`);
 
         try {
             const child = this._spawnHidden(this.scrcpyBinaryPath, args);
+            const pid = child.pid || null;
+            if (pid) this._knownPids.add(pid);
+
             this.processes.set(sessionId, {
                 child,
                 serial,
-                displayId: normalizedDisplayId
+                displayId: normalizedDisplayId,
+                pid
             });
             this._attachLogging(sessionId, child);
             return { success: true };
@@ -190,7 +276,20 @@ class SessionAudioProcessManager {
 
     async stopAll() {
         const ids = [...this.processes.keys()];
+        console.log(`[SessionAudio] stopAll (${ids.length} tracked, ${this._knownPids.size} pids connus)`);
+
         await Promise.allSettled(ids.map((id) => this.stop(id)));
+
+        for (const pid of [...this._knownPids]) {
+            console.log(`[SessionAudio] kill orphelin pid=${pid}`);
+            this._killPidTree(pid);
+            this._knownPids.delete(pid);
+        }
+
+        this.processes.clear();
+        this._knownPids.clear();
+
+        await this._killOrphanScrcpyAudioProcesses();
     }
 }
 

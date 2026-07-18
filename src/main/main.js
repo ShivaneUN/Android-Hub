@@ -937,12 +937,20 @@ async function restartExternalScrcpyLaunchForAudio(launchId) {
     launch.restartingForAudio = true;
 
     if (previousChild && !previousChild.killed) {
+        const pid = previousChild.pid;
         try {
-            previousChild.kill("SIGTERM");
+            if (process.platform === "win32" && pid) {
+                spawnHiddenProcess("taskkill", ["/PID", String(pid), "/T", "/F"], {
+                    detached: true,
+                    stdio: "ignore"
+                });
+            } else {
+                previousChild.kill("SIGTERM");
+            }
         } catch (_) {
             /* ignore */
         }
-        await waitForChildExit(previousChild);
+        await waitForChildExit(previousChild, 3000);
     }
 
     const baseArgs = Number.isInteger(launch.displayId)
@@ -953,8 +961,9 @@ async function restartExternalScrcpyLaunchForAudio(launchId) {
     launch.child = child;
     launch.restartingForAudio = false;
 
-    const audioState = global.globalAudioOutputManager?.isGlobalMuted() ? "off" : "on";
-    console.log(`[GlobalAudio] scrcpy externe relancé (${launchId}) audio=${audioState} display=${launch.displayId ?? "?"}`);
+    console.log(
+        `[GlobalAudio] scrcpy externe relance (${launchId}) bootstrap --no-audio display=${launch.displayId ?? "?"}`
+    );
 }
 
 async function restartAllExternalScrcpyLaunchesForAudio() {
@@ -996,20 +1005,22 @@ global.stopSessionAudioPlayback = stopSessionAudioPlayback;
 
 async function applyGlobalAudioMuteSideEffects(globalMuted) {
     const audioState = globalMuted ? "off" : "on";
-    console.log(`[GlobalAudio] Toggle → audio=${audioState}, refresh sessions actives`);
-
-    if (global.streamParamsManager) {
-        await global.streamParamsManager.refreshAllSessionsForGlobalAudio();
-    }
-
-    if (!global.sessionAudioProcessManager) return;
+    console.log(`[GlobalAudio] Toggle → audio=${audioState}`);
 
     if (globalMuted) {
-        await global.sessionAudioProcessManager.stopAll();
+        // 1) Coupe tous les scrcpy --no-video (Type A/B session audio).
+        if (global.sessionAudioProcessManager) {
+            await global.sessionAudioProcessManager.stopAll();
+        }
+        // 2) Relance les scrcpy externes Type B en bootstrap sans audio
+        //    (corrige les launches déjà démarrés avec audio via applyScrcpyCliArgs).
+        await restartAllExternalScrcpyLaunchesForAudio();
         return;
     }
 
-    await global.sessionAudioProcessManager.syncAllActiveSessions();
+    if (global.sessionAudioProcessManager) {
+        await global.sessionAudioProcessManager.syncAllActiveSessions();
+    }
 }
 
 function launchCompanionScrcpyWindow(serial, packageName, options = {}) {
@@ -1831,7 +1842,9 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         const baseArgs = buildNewInstanceExternalBaseArgs(serial, packageName, normalizedUserId, {
             captureOrientationLock: launchOrient.captureOrientationLock || null
         });
-        const args = buildExternalScrcpyArgs(baseArgs);
+        // Toujours --no-audio/--no-playback : le son PC passe uniquement par SessionAudioProcessManager.
+        // buildExternalScrcpyArgs (applyScrcpyCliArgs) laissait l'audio ON si mute global OFF → OFF ne coupait plus.
+        const args = buildDisplayBootstrapScrcpyArgs(baseArgs);
         console.log(
             `[NewInstance] launch ${serial} capture-orientation:`,
             launchOrient.captureOrientationLock || "null",
