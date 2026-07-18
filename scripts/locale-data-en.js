@@ -329,6 +329,12 @@ module.exports = {
             slow: "Slow",
             seconds: "{value} s"
         },
+        videoCodec: {
+            label: "Video codec",
+            h264: "H264",
+            h265: "H265 (HEVC)",
+            lockedHint: "Stop all instances to change launch settings"
+        },
         validation: {
             selectBeforeApply: "Select an instance before applying settings.",
             selectBeforeReset: "Select an instance before resetting.",

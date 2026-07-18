@@ -29,6 +29,10 @@
                 { value: 3, label: t("controlPanel.gop.seconds", { value: 3 }) },
                 { value: 5, label: t("controlPanel.gop.seconds", { value: 5 }) },
                 { value: 10, label: t("controlPanel.gop.slow") }
+            ],
+            videoCodec: [
+                { value: "h264", label: t("controlPanel.videoCodec.h264") },
+                { value: "h265", label: t("controlPanel.videoCodec.h265") }
             ]
         };
     }
@@ -39,7 +43,8 @@
         dpi: 240,
         maxFps: 60,
         bitRateMbps: 8,
-        iFrameInterval: 1
+        iFrameInterval: 1,
+        videoCodec: "h264"
     };
 
     function getSP() {
@@ -57,13 +62,15 @@
                 ) || FALLBACK_OPTIONS.resolutions[0];
                 const snap = (val, list) => list.reduce((a, b) =>
                     Math.abs(b - val) < Math.abs(a - val) ? b : a);
+                const codecValues = FALLBACK_OPTIONS.videoCodec.map((c) => c.value);
                 return {
                     width: res.width,
                     height: res.height,
                     dpi: snap(base.dpi, FALLBACK_OPTIONS.dpi.map((d) => d.value)),
                     maxFps: snap(base.maxFps, FALLBACK_OPTIONS.fps),
                     bitRateMbps: snap(base.bitRateMbps, FALLBACK_OPTIONS.bitRateMbps),
-                    iFrameInterval: snap(base.iFrameInterval, FALLBACK_OPTIONS.iFrameInterval.map((g) => g.value))
+                    iFrameInterval: snap(base.iFrameInterval, FALLBACK_OPTIONS.iFrameInterval.map((g) => g.value)),
+                    videoCodec: codecValues.includes(base.videoCodec) ? base.videoCodec : DEFAULT_PARAMS.videoCodec
                 };
             },
             validateParams: (p) => ({ valid: true, params: p, errors: [] }),
@@ -134,6 +141,15 @@
         segmentGroups.dpi?.setActive(String(p.dpi));
         segmentGroups.bitrate?.setActive(String(p.bitRateMbps));
         segmentGroups.gop?.setActive(String(p.iFrameInterval));
+        segmentGroups.videoCodec?.setActive(String(p.videoCodec || "h264"));
+    }
+
+    function syncVideoCodecLock() {
+        const locked = state.sessions.length > 0;
+        segmentGroups.videoCodec?.setDisabled(
+            locked,
+            t("controlPanel.videoCodec.lockedHint")
+        );
     }
 
     function updateDirtyState() {
@@ -148,6 +164,7 @@
         if (draft.dpi !== reference.dpi) dirtyKeys.add("dpi");
         if (draft.bitRateMbps !== reference.bitRateMbps) dirtyKeys.add("bitrate");
         if (draft.iFrameInterval !== reference.iFrameInterval) dirtyKeys.add("gop");
+        if (draft.videoCodec !== reference.videoCodec) dirtyKeys.add("videoCodec");
 
         Object.entries(segmentGroups).forEach(([key, group]) => {
             group?.setDirty(dirtyKeys.has(key));
@@ -442,6 +459,7 @@
 
             btn.addEventListener("click", () => {
                 if (state.isApplying) return;
+                if (row.classList.contains("is-disabled")) return;
                 if (groupKey === "resolution") {
                     const [w, h] = opt.value.split("x").map(Number);
                     setDraftParam("resolution", { width: w, height: h });
@@ -453,6 +471,8 @@
                     setDraftParam("bitRateMbps", Number(opt.value));
                 } else if (groupKey === "gop") {
                     setDraftParam("iFrameInterval", Number(opt.value));
+                } else if (groupKey === "videoCodec") {
+                    setDraftParam("videoCodec", opt.value);
                 }
             });
 
@@ -471,6 +491,12 @@
             },
             setDirty(isDirty) {
                 wrap.classList.toggle("is-dirty", isDirty);
+            },
+            setDisabled(disabled, disabledTitle = "") {
+                row.classList.toggle("is-disabled", Boolean(disabled));
+                const hint = disabled ? disabledTitle : "";
+                wrap.title = hint;
+                row.title = hint;
             }
         };
     }
@@ -525,7 +551,22 @@
             }))
         );
 
+        const codecOptions = OPT.videoCodec || [
+            { value: "h264" },
+            { value: "h265" }
+        ];
+        segmentGroups.videoCodec = createSegmentGroup(
+            els.paramGroups,
+            "videoCodec",
+            t("controlPanel.videoCodec.label"),
+            codecOptions.map((c) => ({
+                value: String(c.value),
+                label: t(`controlPanel.videoCodec.${c.value}`)
+            }))
+        );
+
         syncSegmentUI();
+        syncVideoCodecLock();
     }
 
     function sessionsFromTabBar() {
@@ -639,6 +680,7 @@
     async function refreshSessions() {
         const previousSelection = state.selectedSessionId;
         state.sessions = await fetchSessions();
+        syncVideoCodecLock();
 
         if (state.sessions.length === 0) {
             state.selectedSessionId = null;
