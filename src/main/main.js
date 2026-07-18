@@ -2230,33 +2230,56 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 global.scrcpyStartProfiler?.begin?.(tabId, client, { dimsResolveMs });
                 await client.start(serverJarPath, primaryOptions);
             } catch (err) {
-                const canRetryWithNewDisplay = Number.isInteger(options.displayId);
-                if (!canRetryWithNewDisplay) {
-                    throw err;
+                if (options.videoCodec === "h265") {
+                    console.warn(`[Video] H265 non supporté par cet appareil — bascule sur H264 (${tabId})`);
+
+                    client.stop();
+                    delete videoClients[tabId];
+                    if (scrcpyClientsBySerial[serial] === client) {
+                        delete scrcpyClientsBySerial[serial];
+                    }
+
+                    const codecRetryClient = new ScrcpySocketClient(adbPath, serial);
+                    client = codecRetryClient;
+                    videoClients[tabId] = codecRetryClient;
+                    registerClientEvents(codecRetryClient);
+
+                    const codecRetryOptions = {
+                        ...options,
+                        audio: resolveHubSocketAudioEnabled(options),
+                        videoCodec: "h264"
+                    };
+
+                    await codecRetryClient.start(serverJarPath, codecRetryOptions);
+                } else {
+                    const canRetryWithNewDisplay = Number.isInteger(options.displayId);
+                    if (!canRetryWithNewDisplay) {
+                        throw err;
+                    }
+
+                    console.warn(`[Video] display_id=${options.displayId} indisponible pour ${tabId}, fallback en new_display.`);
+
+                    client.stop();
+                    delete videoClients[tabId];
+                    if (scrcpyClientsBySerial[serial] === client) {
+                        delete scrcpyClientsBySerial[serial];
+                    }
+
+                    const retryClient = new ScrcpySocketClient(adbPath, serial);
+                    client = retryClient;
+                    videoClients[tabId] = retryClient;
+                    registerClientEvents(retryClient);
+
+                    const retryOptions = {
+                        ...options,
+                        audio: resolveHubSocketAudioEnabled(options),
+                        newDisplay: options.newDisplay || "1920x1080"
+                    };
+                    delete retryOptions.displayId;
+                    delete retryOptions.startApp;
+
+                    await retryClient.start(serverJarPath, retryOptions);
                 }
-
-                console.warn(`[Video] display_id=${options.displayId} indisponible pour ${tabId}, fallback en new_display.`);
-
-                client.stop();
-                delete videoClients[tabId];
-                if (scrcpyClientsBySerial[serial] === client) {
-                    delete scrcpyClientsBySerial[serial];
-                }
-
-                const retryClient = new ScrcpySocketClient(adbPath, serial);
-                client = retryClient;
-                videoClients[tabId] = retryClient;
-                registerClientEvents(retryClient);
-
-                const retryOptions = {
-                    ...options,
-                    audio: resolveHubSocketAudioEnabled(options),
-                    newDisplay: options.newDisplay || "1920x1080"
-                };
-                delete retryOptions.displayId;
-                delete retryOptions.startApp;
-
-                await retryClient.start(serverJarPath, retryOptions);
             }
             scrcpyClientsBySerial[serial] = client;
 

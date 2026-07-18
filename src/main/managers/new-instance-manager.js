@@ -513,6 +513,46 @@ class NewInstanceManager extends EventEmitter {
         try {
             return await this._runClientStart(session, session.streamOptions || {});
         } catch (err) {
+            const launchOptions = session.streamOptions || {};
+            if (launchOptions.videoCodec === "h265") {
+                console.warn(
+                    `[NewInstance] H265 non supporté par cet appareil — bascule sur H264 (${sessionId})`
+                );
+                try {
+                    session.client?.stop();
+                } catch (_err) {
+                    // noop
+                }
+                session.client = null;
+                session.state = "starting";
+                this.emit("state", {
+                    sessionId,
+                    state: session.state,
+                    serial: session.serial,
+                    packageName: session.packageName
+                });
+
+                const fallbackOptions = {
+                    ...launchOptions,
+                    videoCodec: "h264"
+                };
+                session.streamOptions = fallbackOptions;
+
+                try {
+                    return await this._runClientStart(session, fallbackOptions);
+                } catch (fallbackErr) {
+                    session.state = "error";
+                    this.emit("state", { sessionId, state: session.state, error: fallbackErr.message });
+                    try {
+                        session.client?.stop();
+                    } catch (_err) {
+                        // noop
+                    }
+                    session.client = null;
+                    throw fallbackErr;
+                }
+            }
+
             session.state = "error";
             this.emit("state", { sessionId, state: session.state, error: err.message });
             try {
