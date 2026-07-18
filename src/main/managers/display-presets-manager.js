@@ -55,14 +55,16 @@ function sanitizePresetInput(input = {}) {
         maxFps: input.maxFps,
         bitRateMbps: input.bitRateMbps,
         dpi: DEFAULT_STREAM_PARAMS.dpi,
-        iFrameInterval: DEFAULT_STREAM_PARAMS.iFrameInterval
+        iFrameInterval: DEFAULT_STREAM_PARAMS.iFrameInterval,
+        videoCodec: input.videoCodec
     });
 
     return {
         width: normalized.width,
         height: normalized.height,
         maxFps: normalized.maxFps,
-        bitRateMbps: normalized.bitRateMbps
+        bitRateMbps: normalized.bitRateMbps,
+        videoCodec: normalized.videoCodec
     };
 }
 
@@ -169,7 +171,8 @@ class DisplayPresetsManager {
             width: preset.width,
             height: preset.height,
             maxFps: preset.maxFps,
-            bitRateMbps: preset.bitRateMbps
+            bitRateMbps: preset.bitRateMbps,
+            videoCodec: preset.videoCodec
         });
     }
 
