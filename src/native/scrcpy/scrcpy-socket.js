@@ -282,6 +282,7 @@ class ScrcpySocketClient extends EventEmitter {
             `max_size=${options.maxSize || 1920}`,
             `video_codec_options=i-frame-interval=${options.iFrameInterval || 1}`
         ];
+        if (options.videoCodec === "h265") args.push("video_codec=h265");
 
         if (options.control === false) {
             args.push("control=false");
