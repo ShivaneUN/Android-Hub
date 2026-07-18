@@ -9,7 +9,8 @@ const DEFAULT_STREAM_PARAMS = Object.freeze({
     dpi: 240,
     maxFps: 60,
     bitRateMbps: 8,
-    iFrameInterval: 1
+    iFrameInterval: 1,
+    videoCodec: "h264"
 });
 
 /** Options affichées dans le panneau de contrôle */
@@ -37,6 +38,10 @@ const CONTROL_OPTIONS = Object.freeze({
         { value: 3, label: "3 s" },
         { value: 5, label: "5 s" },
         { value: 10, label: "Lent" }
+    ],
+    videoCodec: [
+        { value: "h264", label: "H264" },
+        { value: "h265", label: "H265 (HEVC)" }
     ]
 });
 
@@ -122,7 +127,8 @@ function cloneParams(params = {}) {
         dpi: params.dpi ?? DEFAULT_STREAM_PARAMS.dpi,
         maxFps: params.maxFps ?? DEFAULT_STREAM_PARAMS.maxFps,
         bitRateMbps: params.bitRateMbps ?? DEFAULT_STREAM_PARAMS.bitRateMbps,
-        iFrameInterval: params.iFrameInterval ?? DEFAULT_STREAM_PARAMS.iFrameInterval
+        iFrameInterval: params.iFrameInterval ?? DEFAULT_STREAM_PARAMS.iFrameInterval,
+        videoCodec: params.videoCodec ?? DEFAULT_STREAM_PARAMS.videoCodec
     };
 }
 
@@ -166,6 +172,12 @@ function snapGop(value) {
     return snapToAllowed(value, allowed);
 }
 
+function snapVideoCodec(value) {
+    const allowed = CONTROL_OPTIONS.videoCodec.map((c) => c.value);
+    if (allowed.includes(value)) return value;
+    return DEFAULT_STREAM_PARAMS.videoCodec;
+}
+
 /** Normalise vers les valeurs autorisées du panneau */
 function normalizeParams(params = {}) {
     const res = snapResolution(params.width, params.height);
@@ -175,7 +187,8 @@ function normalizeParams(params = {}) {
         dpi: snapDpi(params.dpi),
         maxFps: snapToAllowed(params.maxFps, CONTROL_OPTIONS.fps),
         bitRateMbps: snapToAllowed(params.bitRateMbps, CONTROL_OPTIONS.bitRateMbps),
-        iFrameInterval: snapGop(params.iFrameInterval)
+        iFrameInterval: snapGop(params.iFrameInterval),
+        videoCodec: snapVideoCodec(params.videoCodec)
     });
 }
 
@@ -200,7 +213,8 @@ function toScrcpyOptions(params, sessionType = "A") {
     const options = {
         bitRate: Math.round(normalized.bitRateMbps * 1_000_000),
         maxFps: Math.round(normalized.maxFps),
-        iFrameInterval: Math.round(normalized.iFrameInterval)
+        iFrameInterval: Math.round(normalized.iFrameInterval),
+        videoCodec: normalized.videoCodec
     };
 
     if (sessionType === "B") {
@@ -253,6 +267,9 @@ function validateParams(params) {
     }
     if (!CONTROL_OPTIONS.iFrameInterval.some((g) => g.value === normalized.iFrameInterval)) {
         errors.push("Intervalle I-frame non supporté");
+    }
+    if (!CONTROL_OPTIONS.videoCodec.some((c) => c.value === normalized.videoCodec)) {
+        errors.push("Codec vidéo non supporté");
     }
 
     return { valid: errors.length === 0, errors, params: normalized };
