@@ -858,6 +858,21 @@ function activateNewInstanceSession(sessionId) {
 async function closeNewInstanceSession(sessionId) {
     const entry = newInstanceSessions.get(sessionId);
 
+    // Kill app AVANT tout teardown — serial/package connus côté renderer.
+    if (entry?.serial && entry?.packageName && window.electronAPI?.forceStopAppOnDevice) {
+        try {
+            await window.electronAPI.forceStopAppOnDevice({
+                serial: entry.serial,
+                packageName: entry.packageName,
+                userId: entry.userId ?? null,
+                stableDeviceId: entry.stableDeviceId || null,
+                sessionId
+            });
+        } catch (err) {
+            console.error(`[NewSession] force-stop app ${entry.packageName}:`, err);
+        }
+    }
+
     if (entry) {
         try {
             if (entry.player) {
@@ -1035,7 +1050,9 @@ async function launchTypeBSession({
         canvas,
         pipeline,
         serial,
-        packageName
+        packageName,
+        userId: normalizedUserId,
+        stableDeviceId: resolvedStableId
     });
 
     try {

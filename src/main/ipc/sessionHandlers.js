@@ -141,6 +141,15 @@ function registerSessionHandlers(adbPath, deps = {}) {
         const serial = entry?.deviceId || null;
         const wasPortrait = entry?.captureOrientation === "portrait";
 
+        // App Type B : tuer le package avant d'arrêter le flux / scrcpy.
+        if (manager && isAppInstance) {
+            try {
+                await manager.ensureAppStoppedForSessionClose(sessionId);
+            } catch (err) {
+                console.warn("[session:close] arret appareil:", err.message);
+            }
+        }
+
         if (getVideoClientRef?.(sessionId) && stopVideoStream) {
             try {
                 await stopVideoStream(sessionId);
@@ -154,14 +163,6 @@ function registerSessionHandlers(adbPath, deps = {}) {
                 await global.sessionAudioProcessManager.stop(sessionId);
             } catch (err) {
                 console.warn("[session:close] arret audio:", err?.message || err);
-            }
-        }
-
-        if (manager && isAppInstance) {
-            try {
-                await manager.ensureAppStoppedForSessionClose(sessionId);
-            } catch (err) {
-                console.warn("[session:close] arret appareil:", err.message);
             }
         }
 

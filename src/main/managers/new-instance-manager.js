@@ -1,5 +1,5 @@
 const { EventEmitter } = require("events");
-const { exec } = require("child_process");
+const { exec, spawn } = require("child_process");
 const { ScrcpySocketClient } = require("../../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../../native/scrcpy/control/adb-input-controller");
 const { DEFAULT_STREAM_PARAMS, toScrcpyOptions } = require("../../shared/stream-params");
@@ -7,6 +7,7 @@ const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const KEY_ACTION_DOWN = 0;
 const KEY_ACTION_UP = 1;
+const CREATE_NO_WINDOW = 0x08000000;
 const TOUCH_ACTION_MAP = {
     down: 0,
     up: 1,
@@ -43,6 +44,34 @@ function execPromise(command) {
         exec(command, { windowsHide: true }, (error, stdout, stderr) => {
             if (error) {
                 reject(new Error(stderr || error.message));
+                return;
+            }
+            resolve(stdout);
+        });
+    });
+}
+
+/** ADB shell via spawn (argv) — évite les bugs de quoting Windows de exec(). */
+function spawnAdbShell(adbPath, serial, shellArgs) {
+    return new Promise((resolve, reject) => {
+        if (!adbPath || !serial) {
+            reject(new Error("ADB ou serial manquant"));
+            return;
+        }
+        const args = ["-s", String(serial), "shell", ...shellArgs.map(String)];
+        const options = { windowsHide: true };
+        if (process.platform === "win32") {
+            options.creationFlags = CREATE_NO_WINDOW;
+        }
+        const child = spawn(adbPath, args, options);
+        let stdout = "";
+        let stderr = "";
+        child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+        child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+        child.on("error", reject);
+        child.on("close", (code) => {
+            if (code !== 0) {
+                reject(new Error(stderr.trim() || stdout.trim() || `adb shell exit ${code}`));
                 return;
             }
             resolve(stdout);
@@ -617,31 +646,144 @@ class NewInstanceManager extends EventEmitter {
         }
     }
 
-    async forceStopAppOnDevice({ serial, packageName, userId = null, sessionId = null }) {
-        if (!serial || !packageName) return;
+    async forceStopAppOnDevice({ serial, packageName, userId = null, sessionId = null, stableDeviceId = null }) {
+        if (!packageName) return;
 
-        const userArg = Number.isInteger(userId) ? ` --user ${userId}` : "";
-        const label = sessionId ? ` (${sessionId})` : "";
-
-        const commands = [
-            `"${this.adbPath}" -s ${adbSerialArg(serial)} shell am force-stop${userArg} ${packageName}`,
-            `"${this.adbPath}" -s ${adbSerialArg(serial)} shell am force-stop ${packageName}`
-        ];
-
-        for (const command of commands) {
+        let adbSerial = serial || null;
+        if (typeof global.resolveAdbSerialForDims === "function") {
             try {
-                await execPromise(command);
-                console.log(`[NewInstanceManager] Application force-stop: ${packageName}${label}`);
-                break;
+                const resolved = await global.resolveAdbSerialForDims(serial, stableDeviceId || null);
+                if (resolved) adbSerial = resolved;
+            } catch (_err) {
+                // garder serial fourni
+            }
+        }
+        if (!adbSerial && global.deviceRegistry?.resolveEffectiveAdbSerial) {
+            try {
+                adbSerial = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                    deviceId: stableDeviceId || null,
+                    serial: serial || null
+                });
+            } catch (_err) {
+                // garder serial fourni
+            }
+        }
+        if (!adbSerial) {
+            console.warn(`[NewInstanceManager] force-stop ignore — serial manquant (${packageName})`);
+            return;
+        }
+
+        const label = sessionId ? ` (${sessionId})` : "";
+        const userIds = await this._resolveForceStopUserIds(adbSerial, userId);
+        const attempts = [];
+
+        for (const uid of userIds) {
+            attempts.push(["am", "force-stop", "--user", String(uid), packageName]);
+            attempts.push(["am", "kill", "--user", String(uid), packageName]);
+            attempts.push(["cmd", "activity", "stop-app", "--user", String(uid), packageName]);
+        }
+        attempts.push(["am", "force-stop", packageName]);
+        attempts.push(["cmd", "activity", "stop-app", packageName]);
+
+        let stopped = false;
+        for (const shellArgs of attempts) {
+            try {
+                await spawnAdbShell(this.adbPath, adbSerial, shellArgs);
+                stopped = true;
+                console.log(`[NewInstanceManager] App stop OK: ${shellArgs.join(" ")}${label}`);
             } catch (err) {
-                console.warn(`[NewInstanceManager] force-stop echoue (${packageName}):`, err.message);
+                console.warn(`[NewInstanceManager] App stop echec (${shellArgs.join(" ")}):`, err.message);
             }
         }
 
+        await this._removeAppTasksFromRecents(adbSerial, packageName);
+
+        if (stopped) {
+            console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} users=[${userIds.join(",")}]`);
+        } else {
+            console.warn(`[NewInstanceManager] Impossible d'arreter ${packageName}${label} sur ${adbSerial}`);
+        }
+
         try {
-            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon false`);
+            await spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]);
         } catch (_err) {
             // noop
+        }
+    }
+
+    async _resolveForceStopUserIds(serial, preferredUserId = null) {
+        const ids = new Set();
+        if (Number.isInteger(preferredUserId)) ids.add(preferredUserId);
+        ids.add(0);
+
+        try {
+            const stdout = await spawnAdbShell(this.adbPath, serial, ["pm", "list", "users"]);
+            for (const match of String(stdout).matchAll(/UserInfo\{(\d+):/g)) {
+                ids.add(Number(match[1]));
+            }
+        } catch (_err) {
+            ids.add(10);
+            ids.add(999);
+        }
+
+        return Array.from(ids).filter((id) => Number.isInteger(id));
+    }
+
+    async _removeAppTasksFromRecents(serial, packageName) {
+        if (!serial || !packageName) return;
+        let dump = "";
+        try {
+            dump = await spawnAdbShell(this.adbPath, serial, ["dumpsys", "activity", "recents"]);
+        } catch (_err) {
+            try {
+                dump = await spawnAdbShell(this.adbPath, serial, ["dumpsys", "activity", "activities"]);
+            } catch (_err2) {
+                return;
+            }
+        }
+
+        const taskIds = new Set();
+        const lines = String(dump).split(/\r?\n/);
+        for (let i = 0; i < lines.length; i += 1) {
+            const line = lines[i];
+            if (!line.includes(packageName)) continue;
+            const window = lines.slice(Math.max(0, i - 4), i + 6).join("\n");
+            for (const match of window.matchAll(/\btaskId\s*=\s*(\d+)/gi)) {
+                taskIds.add(match[1]);
+            }
+            for (const match of window.matchAll(/\brootTaskId\s*=\s*(\d+)/gi)) {
+                taskIds.add(match[1]);
+            }
+            for (const match of window.matchAll(/Task\{[^\s]*\s+#(\d+)/g)) {
+                taskIds.add(match[1]);
+            }
+        }
+
+        // MIUI / Android moderne : `am stack remove` (pas `am task remove`).
+        const removeAttempts = (taskId) => ([
+            ["am", "stack", "remove", taskId],
+            ["am", "task", "remove", taskId],
+            ["cmd", "activity", "remove-task", taskId]
+        ]);
+
+        for (const taskId of taskIds) {
+            // Évite de casser le stack Home (souvent 1 / 2).
+            if (taskId === "1" || taskId === "2") continue;
+
+            let removed = false;
+            for (const shellArgs of removeAttempts(taskId)) {
+                try {
+                    await spawnAdbShell(this.adbPath, serial, shellArgs);
+                    removed = true;
+                    console.log(`[NewInstanceManager] Task/stack retire: ${shellArgs.join(" ")} (${packageName})`);
+                    break;
+                } catch (_err) {
+                    // essayer la commande suivante
+                }
+            }
+            if (!removed) {
+                console.warn(`[NewInstanceManager] Impossible de retirer task ${taskId} (${packageName})`);
+            }
         }
     }
 
@@ -651,7 +793,8 @@ class NewInstanceManager extends EventEmitter {
             serial: session.serial,
             packageName: session.packageName,
             userId: session.userId,
-            sessionId: session.sessionId
+            sessionId: session.sessionId,
+            stableDeviceId: session.stableDeviceId || null
         });
     }
 
@@ -671,8 +814,17 @@ class NewInstanceManager extends EventEmitter {
             serial: entry.deviceId,
             packageName: entry.packageName,
             userId: entry.userId,
-            sessionId
+            sessionId,
+            stableDeviceId: entry.stableDeviceId || null
         });
+
+        if (typeof global.killExternalScrcpyLaunchesForApp === "function") {
+            try {
+                await global.killExternalScrcpyLaunchesForApp(entry.deviceId, entry.packageName);
+            } catch (err) {
+                console.warn(`[NewInstanceManager] kill scrcpy externe (fallback):`, err?.message || err);
+            }
+        }
     }
 
     async stopNewInstanceSession(sessionId) {
@@ -682,6 +834,23 @@ class NewInstanceManager extends EventEmitter {
         session.state = "stopping";
         session._intentionalStop = true;
 
+        // 1) Force-stop l'app tant que le display existe encore
+        if (!session._appForceStopped) {
+            session._appForceStopped = true;
+            await this._killAppOnDevice(session);
+        }
+
+        // 2) Tuer le scrcpy.exe externe (propriétaire du display virtuel + --start-app)
+        if (session.externalLaunchId && typeof global.killExternalScrcpyLaunch === "function") {
+            try {
+                await global.killExternalScrcpyLaunch(session.externalLaunchId);
+            } catch (err) {
+                console.warn(`[NewInstanceManager] kill scrcpy externe:`, err?.message || err);
+            }
+            session.externalLaunchId = null;
+        }
+
+        // 3) Arrêter le client Hub
         if (session.client) {
             const client = session.client;
             session.client = null;
@@ -690,11 +859,6 @@ class NewInstanceManager extends EventEmitter {
             } catch (_err) {
                 // noop
             }
-        }
-
-        if (!session._appForceStopped) {
-            session._appForceStopped = true;
-            await this._killAppOnDevice(session);
         }
 
         if (session.inputController) {

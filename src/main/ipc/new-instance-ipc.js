@@ -171,6 +171,21 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
         }
     });
 
+    ipcMain.handle("new-instance:force-stop-app", async (_event, payload = {}) => {
+        try {
+            await manager.forceStopAppOnDevice({
+                serial: payload.serial || null,
+                packageName: payload.packageName || null,
+                userId: Number.isInteger(payload.userId) ? payload.userId : null,
+                sessionId: payload.sessionId || null,
+                stableDeviceId: payload.stableDeviceId || null
+            });
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle("new-instance:list", async () => {
         try {
             return { success: true, sessions: manager.listNewInstanceSessions() };

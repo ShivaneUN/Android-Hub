@@ -780,6 +780,57 @@ function handoffExternalScrcpyLaunch(launchId) {
 
 global.handoffExternalScrcpyLaunch = handoffExternalScrcpyLaunch;
 
+/**
+ * Tue le scrcpy.exe externe qui possède encore le display virtuel / l'app.
+ * Sans ça, fermer l'onglet Hub laisse le process externe (et souvent l'app) vivant.
+ */
+async function killExternalScrcpyLaunch(launchId) {
+    if (!launchId) return false;
+    const launch = externalLaunches[launchId];
+    if (!launch) return false;
+
+    launch.closingForHub = true;
+    const child = launch.child;
+    delete externalLaunches[launchId];
+
+    if (child && !child.killed && child.exitCode === null) {
+        const pid = child.pid;
+        try {
+            if (process.platform === "win32" && pid) {
+                spawnHiddenProcess("taskkill", ["/PID", String(pid), "/T", "/F"], {
+                    detached: true,
+                    stdio: "ignore"
+                });
+            } else {
+                child.kill("SIGTERM");
+            }
+        } catch (err) {
+            console.warn(`[NewInstance] kill scrcpy externe ${launchId}:`, err?.message || err);
+        }
+        await waitForChildExit(child, 3000);
+        console.log(`[NewInstance] scrcpy externe arrete (${launchId})`);
+    }
+
+    return true;
+}
+
+global.killExternalScrcpyLaunch = killExternalScrcpyLaunch;
+
+async function killExternalScrcpyLaunchesForApp(serial, packageName) {
+    if (!serial || !packageName) return;
+    const ids = Object.keys(externalLaunches).filter((launchId) => {
+        const launch = externalLaunches[launchId];
+        return launch
+            && launch.serial === serial
+            && launch.packageName === packageName;
+    });
+    for (const launchId of ids) {
+        await killExternalScrcpyLaunch(launchId);
+    }
+}
+
+global.killExternalScrcpyLaunchesForApp = killExternalScrcpyLaunchesForApp;
+
 function getExternalLaunchLaunchDims(launchId) {
     const dims = externalLaunches[launchId]?.launchDims;
     if (dims?.width > 0 && dims?.height > 0) {
@@ -893,6 +944,11 @@ function handleExternalLaunchChildExit(launchId, child) {
     if (!launch || launch.child !== child) return;
 
     if (launch.restartingForAudio) {
+        return;
+    }
+
+    if (launch.closingForHub) {
+        delete externalLaunches[launchId];
         return;
     }
 

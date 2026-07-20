@@ -174,9 +174,10 @@ function createNewInstanceVideoPipeline(sessionId, canvasElement) {
             return await window.electronAPI.newInstanceStart({ sessionId });
         },
         async stop() {
-            if (!state.started) return;
             state.started = false;
-            await window.electronAPI.newInstanceStop({ sessionId });
+            if (window.electronAPI?.newInstanceStop) {
+                await window.electronAPI.newInstanceStop({ sessionId });
+            }
             resetDecoder();
         },
         getFrameCount() {

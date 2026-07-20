@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     newInstanceCreate: (payload) => ipcRenderer.invoke("new-instance:create", payload),
     newInstanceStart: (payload) => ipcRenderer.invoke("new-instance:start", payload),
     newInstanceStop: (payload) => ipcRenderer.invoke("new-instance:stop", payload),
+    forceStopAppOnDevice: (payload) => ipcRenderer.invoke("new-instance:force-stop-app", payload),
     newInstanceList: () => ipcRenderer.invoke("new-instance:list"),
     newInstanceSendInput: (payload) => ipcRenderer.invoke("new-instance:send-input", payload),
     onNewInstanceVideoCodecMeta: (callback) => ipcRenderer.on("new-instance:video-codec-meta", (event, data) => callback(data)),
