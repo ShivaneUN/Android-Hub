@@ -140,16 +140,11 @@ function registerSessionHandlers(adbPath, deps = {}) {
         const isAppInstance = sessionId.startsWith("new-instance-") || entry?.type === "B";
         const serial = entry?.deviceId || null;
         const wasPortrait = entry?.captureOrientation === "portrait";
+        const packageName = entry?.packageName || null;
+        const userId = entry?.userId;
+        const stableDeviceId = entry?.stableDeviceId || null;
 
-        // App Type B : tuer le package avant d'arrêter le flux / scrcpy.
-        if (manager && isAppInstance) {
-            try {
-                await manager.ensureAppStoppedForSessionClose(sessionId);
-            } catch (err) {
-                console.warn("[session:close] arret appareil:", err.message);
-            }
-        }
-
+        // Fermeture UI immédiate (comme Type A) — cleanup device en arrière-plan.
         if (getVideoClientRef?.(sessionId) && stopVideoStream) {
             try {
                 await stopVideoStream(sessionId);
@@ -172,14 +167,40 @@ function registerSessionHandlers(adbPath, deps = {}) {
             global.streamParamsManager?.notifySessionListChanged();
         }
 
+        if (manager && isAppInstance) {
+            // Cleanup device hors chemin critique — l'onglet est déjà retiré.
+            void (async () => {
+                try {
+                    await manager.ensureAppStoppedForSessionClose(sessionId);
+                } catch (err) {
+                    console.warn("[session:close] arret appareil:", err?.message || err);
+                }
+                if (packageName && serial) {
+                    try {
+                        await manager.forceStopAppOnDevice({
+                            serial,
+                            packageName,
+                            userId: Number.isInteger(userId) ? userId : null,
+                            sessionId,
+                            stableDeviceId
+                        });
+                    } catch (_err) {
+                        // noop
+                    }
+                }
+            })();
+        }
+
         if (wasPortrait && serial && global.deviceOrientationManager) {
-            try {
-                const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
-                await global.deviceOrientationManager.applyOrientation(adbSerial, "landscape");
-                global.deviceOrientationManager.clearSavedState(adbSerial);
-            } catch (err) {
-                console.warn("[session:close] restauration orientation:", err?.message || err);
-            }
+            void (async () => {
+                try {
+                    const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
+                    await global.deviceOrientationManager.applyOrientation(adbSerial, "landscape");
+                    global.deviceOrientationManager.clearSavedState(adbSerial);
+                } catch (err) {
+                    console.warn("[session:close] restauration orientation:", err?.message || err);
+                }
+            })();
         }
 
         return result;

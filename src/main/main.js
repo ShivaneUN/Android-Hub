@@ -807,8 +807,8 @@ async function killExternalScrcpyLaunch(launchId) {
         } catch (err) {
             console.warn(`[NewInstance] kill scrcpy externe ${launchId}:`, err?.message || err);
         }
-        await waitForChildExit(child, 3000);
-        console.log(`[NewInstance] scrcpy externe arrete (${launchId})`);
+        // Ne pas attendre la fin du process — la fermeture d'onglet doit rester instantanée.
+        console.log(`[NewInstance] scrcpy externe kill envoye (${launchId})`);
     }
 
     return true;

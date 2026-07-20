@@ -650,7 +650,10 @@ class NewInstanceManager extends EventEmitter {
         if (!packageName) return;
 
         let adbSerial = serial || null;
-        if (typeof global.resolveAdbSerialForDims === "function") {
+        // Évite listUnifiedDevices (lent) si on a déjà un serial transport utilisable.
+        const looksLikeTransport = Boolean(adbSerial)
+            && (adbSerial.includes(":") || /^[A-Za-z0-9]+$/.test(adbSerial));
+        if (!looksLikeTransport && typeof global.resolveAdbSerialForDims === "function") {
             try {
                 const resolved = await global.resolveAdbSerialForDims(serial, stableDeviceId || null);
                 if (resolved) adbSerial = resolved;
@@ -674,59 +677,42 @@ class NewInstanceManager extends EventEmitter {
         }
 
         const label = sessionId ? ` (${sessionId})` : "";
-        const userIds = await this._resolveForceStopUserIds(adbSerial, userId);
-        const attempts = [];
+        // Pas de `pm list users` (lent) : user de la session + profils Xiaomi courants.
+        const userIds = this._resolveForceStopUserIdsFast(userId);
 
-        for (const uid of userIds) {
-            attempts.push(["am", "force-stop", "--user", String(uid), packageName]);
-            attempts.push(["am", "kill", "--user", String(uid), packageName]);
-            attempts.push(["cmd", "activity", "stop-app", "--user", String(uid), packageName]);
-        }
-        attempts.push(["am", "force-stop", packageName]);
-        attempts.push(["cmd", "activity", "stop-app", packageName]);
+        // Un seul force-stop par user, en parallèle — suffisant et bien plus rapide.
+        const stopResults = await Promise.allSettled(
+            userIds.map((uid) => spawnAdbShell(this.adbPath, adbSerial, [
+                "am", "force-stop", "--user", String(uid), packageName
+            ]))
+        );
+        const withoutUser = await Promise.allSettled([
+            spawnAdbShell(this.adbPath, adbSerial, ["am", "force-stop", packageName])
+        ]);
 
-        let stopped = false;
-        for (const shellArgs of attempts) {
-            try {
-                await spawnAdbShell(this.adbPath, adbSerial, shellArgs);
-                stopped = true;
-                console.log(`[NewInstanceManager] App stop OK: ${shellArgs.join(" ")}${label}`);
-            } catch (err) {
-                console.warn(`[NewInstanceManager] App stop echec (${shellArgs.join(" ")}):`, err.message);
+        const stopped = stopResults.some((r) => r.status === "fulfilled")
+            || withoutUser.some((r) => r.status === "fulfilled");
+
+        if (stopped) {
+            console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} users=[${userIds.join(",")}]`);
+        } else {
+            for (const result of [...stopResults, ...withoutUser]) {
+                if (result.status === "rejected") {
+                    console.warn(`[NewInstanceManager] App stop echec:`, result.reason?.message || result.reason);
+                }
             }
         }
 
         await this._removeAppTasksFromRecents(adbSerial, packageName);
 
-        if (stopped) {
-            console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} users=[${userIds.join(",")}]`);
-        } else {
-            console.warn(`[NewInstanceManager] Impossible d'arreter ${packageName}${label} sur ${adbSerial}`);
-        }
-
-        try {
-            await spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]);
-        } catch (_err) {
-            // noop
-        }
+        // stayon false en arrière-plan — ne bloque pas la fermeture
+        void spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]).catch(() => {});
     }
 
-    async _resolveForceStopUserIds(serial, preferredUserId = null) {
-        const ids = new Set();
+    _resolveForceStopUserIdsFast(preferredUserId = null) {
+        const ids = new Set([0, 10, 999]);
         if (Number.isInteger(preferredUserId)) ids.add(preferredUserId);
-        ids.add(0);
-
-        try {
-            const stdout = await spawnAdbShell(this.adbPath, serial, ["pm", "list", "users"]);
-            for (const match of String(stdout).matchAll(/UserInfo\{(\d+):/g)) {
-                ids.add(Number(match[1]));
-            }
-        } catch (_err) {
-            ids.add(10);
-            ids.add(999);
-        }
-
-        return Array.from(ids).filter((id) => Number.isInteger(id));
+        return Array.from(ids);
     }
 
     async _removeAppTasksFromRecents(serial, packageName) {
@@ -834,23 +820,16 @@ class NewInstanceManager extends EventEmitter {
         session.state = "stopping";
         session._intentionalStop = true;
 
-        // 1) Force-stop l'app tant que le display existe encore
-        if (!session._appForceStopped) {
-            session._appForceStopped = true;
-            await this._killAppOnDevice(session);
-        }
+        const killPayload = {
+            serial: session.serial,
+            packageName: session.packageName,
+            userId: session.userId,
+            sessionId: session.sessionId,
+            stableDeviceId: session.stableDeviceId || null
+        };
+        const externalLaunchId = session.externalLaunchId || null;
 
-        // 2) Tuer le scrcpy.exe externe (propriétaire du display virtuel + --start-app)
-        if (session.externalLaunchId && typeof global.killExternalScrcpyLaunch === "function") {
-            try {
-                await global.killExternalScrcpyLaunch(session.externalLaunchId);
-            } catch (err) {
-                console.warn(`[NewInstanceManager] kill scrcpy externe:`, err?.message || err);
-            }
-            session.externalLaunchId = null;
-        }
-
-        // 3) Arrêter le client Hub
+        // Arrêt Hub immédiat (comme Type A) — le kill device part en parallèle.
         if (session.client) {
             const client = session.client;
             session.client = null;
@@ -875,6 +854,20 @@ class NewInstanceManager extends EventEmitter {
         session.state = "stopped";
         this.emit("state", { sessionId, state: session.state });
         this.sessions.delete(sessionId);
+
+        // Cleanup device + scrcpy externe hors du chemin critique UI.
+        if (!session._appForceStopped && killPayload.packageName) {
+            session._appForceStopped = true;
+            void this.forceStopAppOnDevice(killPayload).catch((err) => {
+                console.warn(`[NewInstanceManager] force-stop background:`, err?.message || err);
+            });
+        }
+
+        if (externalLaunchId && typeof global.killExternalScrcpyLaunch === "function") {
+            void global.killExternalScrcpyLaunch(externalLaunchId).catch((err) => {
+                console.warn(`[NewInstanceManager] kill scrcpy externe:`, err?.message || err);
+            });
+        }
     }
 
     async routeInputToSession(sessionId, payload = {}) {

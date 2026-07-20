@@ -858,36 +858,36 @@ function activateNewInstanceSession(sessionId) {
 async function closeNewInstanceSession(sessionId) {
     const entry = newInstanceSessions.get(sessionId);
 
-    // Kill app AVANT tout teardown — serial/package connus côté renderer.
-    if (entry?.serial && entry?.packageName && window.electronAPI?.forceStopAppOnDevice) {
-        try {
-            await window.electronAPI.forceStopAppOnDevice({
-                serial: entry.serial,
-                packageName: entry.packageName,
-                userId: entry.userId ?? null,
-                stableDeviceId: entry.stableDeviceId || null,
-                sessionId
-            });
-        } catch (err) {
-            console.error(`[NewSession] force-stop app ${entry.packageName}:`, err);
-        }
-    }
-
+    // Teardown UI immédiat (même rythme que Type A) — kill device en arrière-plan.
     if (entry) {
+        const cleanup = {
+            serial: entry.serial,
+            packageName: entry.packageName,
+            userId: entry.userId ?? null,
+            stableDeviceId: entry.stableDeviceId || null,
+            sessionId
+        };
+
+        if (cleanup.serial && cleanup.packageName && window.electronAPI?.forceStopAppOnDevice) {
+            void window.electronAPI.forceStopAppOnDevice(cleanup).catch((err) => {
+                console.error(`[NewSession] force-stop app ${cleanup.packageName}:`, err);
+            });
+        }
+
         try {
             if (entry.player) {
                 try {
-                    await entry.player.stop();
+                    entry.player.stop();
                 } catch (_err) {
                     // noop
                 }
             }
 
             if (entry.pipeline) {
-                await entry.pipeline.stop();
+                void entry.pipeline.stop().catch(() => {});
                 entry.pipeline.dispose?.();
             } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
-                await window.electronAPI.newInstanceStop({ sessionId });
+                void window.electronAPI.newInstanceStop({ sessionId }).catch(() => {});
             }
         } catch (err) {
             console.error(`[NewSession] Erreur fermeture session ${sessionId}:`, err);
@@ -903,11 +903,9 @@ async function closeNewInstanceSession(sessionId) {
 
         newInstanceSessions.delete(sessionId);
     } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
-        try {
-            await window.electronAPI.newInstanceStop({ sessionId });
-        } catch (err) {
+        void window.electronAPI.newInstanceStop({ sessionId }).catch((err) => {
             console.error(`[NewSession] Erreur arret backend ${sessionId}:`, err);
-        }
+        });
     }
 
     if (window.sessionAPI) {
