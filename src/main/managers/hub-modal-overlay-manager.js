@@ -72,7 +72,7 @@ class HubModalOverlayManager {
             width: 460,
             height: 760,
             frame: false,
-            transparent: false,
+            transparent: true,
             resizable: false,
             movable: false,
             minimizable: false,
@@ -83,7 +83,7 @@ class HubModalOverlayManager {
             show: false,
             hasShadow: true,
             thickFrame: false,
-            backgroundColor: "#141820",
+            backgroundColor: "#00000000",
             parent: this.mainWindow,
             webPreferences: {
                 preload: this._preloadPath(),
@@ -111,11 +111,23 @@ class HubModalOverlayManager {
     async open(payload = {}) {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return false;
 
-        this.currentPanel = payload.panel || null;
+        const panel = payload.panel || null;
         const win = await this._ensureWindow();
-        this._syncBounds();
+        const alreadyOpen = this.isOpen() && this.currentPanel === panel;
+
+        // Reclic sur le même panneau : ne pas recentrer / redimensionner.
+        if (alreadyOpen) {
+            if (payload.tab != null) {
+                win.webContents.send("hub-modal:open", payload);
+            }
+            win.focus();
+            return true;
+        }
+
+        this.currentPanel = panel;
         win.webContents.send("hub-modal:open", payload);
         win.show();
+        this._syncBounds();
         win.focus();
         return true;
     }

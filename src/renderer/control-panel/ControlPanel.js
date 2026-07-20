@@ -437,14 +437,33 @@
         }
     }
 
-    function createSegmentGroup(container, groupKey, label, options) {
+    function createSegmentGroup(container, groupKey, label, options, tipText = "") {
         const wrap = document.createElement("div");
         wrap.className = "control-param-group";
         wrap.dataset.group = groupKey;
 
         const title = document.createElement("div");
         title.className = "control-param-label";
-        title.textContent = label;
+
+        const labelText = document.createElement("span");
+        labelText.className = "control-param-label-text";
+        labelText.textContent = label;
+        title.appendChild(labelText);
+
+        if (tipText) {
+            const help = document.createElement("button");
+            help.type = "button";
+            help.className = "control-param-help";
+            help.textContent = "?";
+            help.dataset.tip = tipText;
+            help.setAttribute("aria-label", tipText);
+            help.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            title.appendChild(help);
+        }
+
         wrap.appendChild(title);
 
         const row = document.createElement("div");
@@ -515,28 +534,32 @@
             OPT.resolutions.map((r) => ({
                 value: `${r.width}x${r.height}`,
                 label: r.label === "1600×900" ? "1600×900" : `${r.width}×${r.height}\n(${r.label})`
-            }))
+            })),
+            t("controlPanel.tips.resolution")
         );
 
         segmentGroups.fps = createSegmentGroup(
             els.paramGroups,
             "fps",
             t("controlPanel.fps"),
-            OPT.fps.map((v) => ({ value: String(v), label: String(v) }))
+            OPT.fps.map((v) => ({ value: String(v), label: String(v) })),
+            t("controlPanel.tips.fps")
         );
 
         segmentGroups.dpi = createSegmentGroup(
             els.paramGroups,
             "dpi",
             t("controlPanel.dpi.label"),
-            OPT.dpi.map((d) => ({ value: String(d.value), label: `${d.value}\n${d.label}` }))
+            OPT.dpi.map((d) => ({ value: String(d.value), label: `${d.value}\n${d.label}` })),
+            t("controlPanel.tips.dpi")
         );
 
         segmentGroups.bitrate = createSegmentGroup(
             els.paramGroups,
             "bitrate",
             t("controlPanel.bitrate"),
-            OPT.bitRateMbps.map((v) => ({ value: String(v), label: String(v) }))
+            OPT.bitRateMbps.map((v) => ({ value: String(v), label: String(v) })),
+            t("controlPanel.tips.bitrate")
         );
 
         segmentGroups.gop = createSegmentGroup(
@@ -550,7 +573,8 @@
                     : g.value === 10
                         ? `10 s\n(${t("controlPanel.gop.slow")})`
                         : t("controlPanel.gop.seconds", { value: g.value })
-            }))
+            })),
+            t("controlPanel.tips.gop")
         );
 
         const codecOptions = OPT.videoCodec || [
@@ -564,7 +588,8 @@
             codecOptions.map((c) => ({
                 value: String(c.value),
                 label: t(`controlPanel.videoCodec.${c.value}`)
-            }))
+            })),
+            t("controlPanel.tips.videoCodec")
         );
 
         syncSegmentUI();

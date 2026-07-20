@@ -41,12 +41,12 @@ html, body {
 
 .titlebar {
   -webkit-app-region: drag;
-  height: 40px;
+  height: 44px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px 0 12px;
+  padding: 2px 8px 0 12px;
   background: var(--bg-app);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -63,6 +63,7 @@ html, body {
   border-radius: 4px;
   object-fit: contain;
   flex-shrink: 0;
+  margin-top: 7px;
 }
 
 .titlebar-title {
@@ -102,7 +103,7 @@ html, body {
 
 .titlebar-controls button {
   width: 44px;
-  height: 40px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -159,12 +160,22 @@ html, body {
   padding: 0 14px;
   font-size: 12.5px;
   color: var(--text-primary);
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
   min-width: 120px;
   max-width: 220px;
   border-right: 1px solid var(--border-subtle);
+  -webkit-user-drag: element;
+  user-select: none;
+}
+
+.scrcpy-tab:active {
+  cursor: grabbing;
+}
+
+.scrcpy-tab.is-dragging {
+  opacity: 0.45;
 }
 
 .scrcpy-tab:hover {
@@ -263,6 +274,8 @@ html, body {
   color: var(--text-muted);
   opacity: 0;
   transition: opacity 0.15s;
+  -webkit-user-drag: none;
+  cursor: pointer;
 }
 
 .scrcpy-tab:hover .tab-close {
@@ -277,6 +290,15 @@ html, body {
 .main-layout {
   flex: 1;
   display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -723,6 +745,10 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   min-width: 0;
 }
 
+.sidebar-language-toggle .icon {
+  position: relative;
+}
+
 .sidebar-language-badge {
   flex-shrink: 0;
   font-size: 9px;
@@ -733,6 +759,23 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   background: rgba(107, 159, 255, 0.15);
   color: #6b9fff;
   line-height: 1.2;
+}
+
+.sidebar-language-toggle .icon .sidebar-language-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 14px;
+  height: 12px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  border-radius: 3px;
+  background: #243044;
+  color: #d7e0ef;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .content {
@@ -784,6 +827,17 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   height: 120px;
   margin-bottom: 28px;
   object-fit: contain;
+}
+
+.empty-state-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.empty-state-intro[hidden] {
+  display: none !important;
 }
 
 .empty-state h1 {
@@ -2287,4 +2341,61 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   margin: 0 0 16px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* --- Sélecteur de thème d'interface (écran d'accueil) --- */
+.ui-theme-switch {
+  display: flex;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.ui-theme-option {
+  position: relative;
+  width: 160px;
+  background: #161b24;
+  border: 1.5px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ui-theme-option:hover {
+  background: #1c2230;
+}
+
+.ui-theme-option.active {
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.ui-theme-option-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 8px;
+}
+
+.ui-theme-option-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.ui-theme-option-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #22c55e;
+  color: #0d1117;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 5px;
 }

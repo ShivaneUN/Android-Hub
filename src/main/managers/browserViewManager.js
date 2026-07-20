@@ -196,10 +196,21 @@ class BrowserViewManager {
         Object.keys(query).forEach((key) => {
             if (query[key] === undefined) delete query[key];
         });
-        view.webContents.loadFile(
-            path.join(__dirname, "../../renderer/session/session.html"),
-            { query }
-        );
+
+        const loadSessionPage = (uiTheme = "classic") => {
+            query.uiTheme = uiTheme === "tablet" ? "tablet" : "classic";
+            view.webContents.loadFile(
+                path.join(__dirname, "../../renderer/session/session.html"),
+                { query }
+            );
+        };
+
+        this.mainWindow.webContents
+            .executeJavaScript(
+                "(() => { try { return localStorage.getItem('androidHub.uiTheme') || 'classic'; } catch (_err) { return 'classic'; } })()"
+            )
+            .then((uiTheme) => loadSessionPage(uiTheme))
+            .catch(() => loadSessionPage(extraQuery.uiTheme || "classic"));
 
         console.log(`[BrowserViewManager] Session ${sessionId} (type ${type}) créée`);
         return view;
@@ -684,6 +695,40 @@ class BrowserViewManager {
             active: sessionId === this.activeSessionId,
             streamParams: cloneParams(entry.streamParams)
         }));
+    }
+
+    /**
+     * Réordonne les sessions (onglets / Ctrl+Tab / grille) selon orderedIds.
+     * Ne recrée pas les BrowserViews — reconstruit uniquement l'ordre de la Map.
+     */
+    reorderSessions(orderedIds = []) {
+        if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+            return { success: false, error: "orderedIds requis" };
+        }
+
+        const currentIds = Array.from(this.views.keys());
+        if (orderedIds.length !== currentIds.length) {
+            return { success: false, error: "nombre d'onglets incohérent" };
+        }
+
+        const currentSet = new Set(currentIds);
+        const nextSet = new Set(orderedIds);
+        if (nextSet.size !== orderedIds.length || orderedIds.some((id) => !currentSet.has(id))) {
+            return { success: false, error: "identifiants invalides" };
+        }
+
+        const unchanged = orderedIds.every((id, index) => id === currentIds[index]);
+        if (unchanged) {
+            return { success: true, changed: false };
+        }
+
+        const nextViews = new Map();
+        for (const sessionId of orderedIds) {
+            nextViews.set(sessionId, this.views.get(sessionId));
+        }
+        this.views = nextViews;
+        this._notifyMainWindowSessionUi();
+        return { success: true, changed: true };
     }
 
     async getFrameCountsForAllSessions() {

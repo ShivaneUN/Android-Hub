@@ -28,7 +28,7 @@ function measureContentBounds() {
     };
 }
 
-function measurePortraitContentBounds(ratio = PORTRAIT_WIDTH_RATIO) {
+function measureAspectFitContentBounds(ratio, { alignBottom = false } = {}) {
     const full = measureContentBounds();
     if (!full || full.width <= 0 || full.height <= 0) return full;
 
@@ -49,14 +49,21 @@ function measurePortraitContentBounds(ratio = PORTRAIT_WIDTH_RATIO) {
 
     return {
         x: full.x + Math.round((full.width - width) / 2),
-        y: full.y + Math.round((full.height - height) / 2),
+        y: alignBottom
+            ? full.y + (full.height - height)
+            : full.y + Math.round((full.height - height) / 2),
         width,
         height
     };
 }
 
+function measurePortraitContentBounds(ratio = PORTRAIT_WIDTH_RATIO) {
+    return measureAspectFitContentBounds(ratio, { alignBottom: false });
+}
+
 function resolveSessionLayoutBounds() {
-    return portraitLayoutActive ? measurePortraitContentBounds() : measureContentBounds();
+    if (portraitLayoutActive) return measurePortraitContentBounds();
+    return measureContentBounds();
 }
 
 function serializeBounds(bounds) {
@@ -81,6 +88,15 @@ function boundsMapsEqual(a = {}, b = {}) {
 async function syncVideoWithSidebarModals() {
     if (!window.sessionAPI?.setContentBounds) return;
 
+    // Accueil demandé : garder le flux masqué (ne pas restoreView).
+    if (window.__hubShowingHome) {
+        if (window.sessionAPI.suppressView) {
+            await window.sessionAPI.suppressView();
+        }
+        lastSingleBoundsKey = "";
+        return;
+    }
+
     if (window.sessionAPI.restoreView) {
         await window.sessionAPI.restoreView();
     }
@@ -100,6 +116,11 @@ async function syncVideoWithSidebarModals() {
 }
 
 async function syncVideoWithSidebarModalsOrStreamDeck() {
+    if (window.__hubShowingHome) {
+        await syncVideoWithSidebarModals();
+        return;
+    }
+
     if (window.getStreamDeckMode?.() === true && typeof window.syncStreamDeckLayout === "function") {
         await window.syncStreamDeckLayout();
         return;

@@ -20,8 +20,9 @@
 <link rel="stylesheet" href="styles/hub-panel.css">
 <link rel="stylesheet" href="help/help-panel.css">
 <link rel="stylesheet" href="stream-deck/stream-deck.css">
+<link rel="stylesheet" href="styles/tablet-theme.css">
 </head>
-<body>
+<body class="">
 
 <div class="app">
 
@@ -39,6 +40,9 @@
   </div>
 
   <div class="tabs-bar" id="tabs-bar">
+    <button type="button" class="tabs-new-instance tablet-only" id="tabs-new-instance" data-dock-tip="Nouvelle instance" aria-label="Nouvelle instance">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
     <div class="tabs-bar-track" id="tabs-bar-track"></div>
     <div class="stream-deck-tabs-rail hidden" id="stream-deck-tabs-rail" aria-hidden="true">
       <div class="stream-deck-tabs-separator" aria-hidden="true"></div>
@@ -67,52 +71,6 @@
 
       <div class="sidebar-spacer"></div>
 
-      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
-        <div class="icon">
-          <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
-        </div>
-        <div class="sidebar-screen-badge" id="sidebar-screen-badge">—</div>
-        <div class="label" data-i18n="sidebar.screen">Ecran</div>
-      </div>
-
-      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
-        <div class="icon">
-          <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
-        </div>
-        <div class="sidebar-orientation-badge" id="sidebar-orientation-badge">—</div>
-        <div class="label" data-i18n="sidebar.portrait">Portrait</div>
-      </div>
-
-      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
-        <div class="icon">
-          <svg id="sidebar-global-audio-icon-on" class="hidden" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-          <svg id="sidebar-global-audio-icon-off" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-        </div>
-        <div class="sidebar-global-audio-badge off" id="sidebar-global-audio-badge">OFF</div>
-        <div class="label" data-i18n="sidebar.audio">Audio</div>
-      </div>
-
-      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
-        <div class="icon">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        </div>
-        <div class="label" data-i18n="streamDeck.toggle">Mode Stream Deck</div>
-      </div>
-
-      <div class="sidebar-item" id="nav-aide" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
-        <div class="icon">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.8 1c0 1.5-1.5 2-2.5 2.5V14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none"/></svg>
-        </div>
-        <div class="label" data-i18n="sidebar.help">Aide</div>
-      </div>
-
-      <div class="sidebar-item" id="nav-settings" data-i18n-title="toggles.settingsTitle" title="Appareils, contrôle et nettoyage">
-        <div class="icon">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.41 1.15H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </div>
-        <div class="label" data-i18n="sidebar.settings">Paramètres</div>
-      </div>
-
     </div>
 
     <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-controls="sidebar" aria-expanded="true" data-i18n-title="sidebar.collapse" title="Réduire la barre latérale">
@@ -121,15 +79,123 @@
     </button>
     </div>
 
+    <div class="quick-actions-dock" id="quick-actions-dock">
+      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-dock-tip="Écran" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="7" y="2" width="10" height="20" rx="2.5"/>
+            <path d="M11 18h2"/>
+          </svg>
+        </div>
+        <div class="sidebar-screen-badge" id="sidebar-screen-badge">—</div>
+        <div class="label" data-i18n="sidebar.screen">Ecran</div>
+      </div>
+
+      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-dock-tip="Orientation" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="7" width="20" height="10" rx="2.5"/>
+            <path d="M12 11v2"/>
+          </svg>
+        </div>
+        <div class="sidebar-orientation-badge" id="sidebar-orientation-badge">—</div>
+        <div class="label" data-i18n="sidebar.portrait">Portrait</div>
+      </div>
+
+      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-dock-tip="Audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
+        <div class="icon">
+          <svg id="sidebar-global-audio-icon-on" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M11 5 6 9H2v6h4l5 4V5z"/>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+          </svg>
+          <svg id="sidebar-global-audio-icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M11 5 6 9H2v6h4l5 4V5z"/>
+            <path d="m23 9-6 6"/>
+            <path d="m17 9 6 6"/>
+          </svg>
+        </div>
+        <div class="sidebar-global-audio-badge off" id="sidebar-global-audio-badge">OFF</div>
+        <div class="label" data-i18n="sidebar.audio">Audio</div>
+      </div>
+
+      <div class="sidebar-item" id="nav-home" data-dock-tip="Accueil" aria-label="Accueil">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5"/>
+            <path d="M5 10v10h14V10"/>
+            <path d="M10 20v-6h4v6"/>
+          </svg>
+        </div>
+        <div class="label">Accueil</div>
+      </div>
+
+      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-dock-tip="Stream Deck" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+        </div>
+        <div class="label" data-i18n="streamDeck.toggle">Mode Stream Deck</div>
+      </div>
+
+      <div class="sidebar-item" id="nav-settings" data-dock-tip="Paramètres" data-i18n-title="toggles.settingsTitle" title="Appareils, contrôle et nettoyage">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.41 1.15H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </div>
+        <div class="label" data-i18n="sidebar.settings">Paramètres</div>
+      </div>
+
+      <div class="sidebar-item" id="nav-aide" data-dock-tip="Aide" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <path d="M12 17h.01"/>
+          </svg>
+        </div>
+        <div class="label" data-i18n="sidebar.help">Aide</div>
+      </div>
+    </div>
+
+    <div class="dock-battery-strip" id="dock-battery-strip" aria-live="polite"></div>
+
     <div class="workspace-main" id="workspace-main">
     <div class="content">
 
       <div class="page" id="page-new">
         <div class="empty-state">
+          <div class="home-dashboard-section home-devices-section tablet-only" hidden>
+            <p class="home-dashboard-label">Appareils connectés</p>
+            <div class="home-devices-panel" id="home-devices-panel"></div>
+          </div>
           <img class="empty-state-mascot" src="assets/android-hub-logo.png" alt="" width="120" height="120">
-          <h1 data-i18n="emptyState.title">Android Hub</h1>
-          <p class="subtitle" data-i18n="emptyState.subtitle">Affichage et contrôle multi-appareils Android</p>
-          <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
+          <div class="empty-state-intro" id="empty-state-intro">
+            <h1 data-i18n="emptyState.title">Android Hub</h1>
+            <p class="subtitle" data-i18n="emptyState.subtitle">Affichage et contrôle multi-appareils Android</p>
+            <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
+          </div>
+          <div class="home-dashboard-section home-apps-section tablet-only" hidden>
+            <p class="home-dashboard-label">Applications récentes</p>
+            <div class="home-apps-recent" id="home-apps-recent"></div>
+          </div>
+          <div class="ui-theme-switch">
+            <button type="button" class="ui-theme-option" data-theme="classic">
+              <span class="ui-theme-option-title">Interface classique</span>
+              <span class="ui-theme-option-desc">Rail complet, vue actuelle</span>
+            </button>
+            <button type="button" class="ui-theme-option" data-theme="tablet">
+              <span class="ui-theme-option-badge">NEW</span>
+              <span class="ui-theme-option-title">Nouvelle interface</span>
+              <span class="ui-theme-option-desc">Style tablette, plein écran</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -201,6 +267,25 @@
     "nav-settings": "page-settings-panel"
   };
 
+  document.getElementById("tabs-new-instance")?.addEventListener("click", async () => {
+    document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+    document.getElementById("nav-new-session")?.classList.add("active");
+    await openNewSessionPanelFromMain();
+  });
+
+  (function syncTabsNewInstanceTip() {
+    const btn = document.getElementById("tabs-new-instance");
+    if (!btn) return;
+    const apply = () => {
+      const label = globalThis.HubI18n?.t?.("sidebar.newInstance") || "Nouvelle instance";
+      btn.removeAttribute("title");
+      btn.dataset.dockTip = label;
+      btn.setAttribute("aria-label", label);
+    };
+    apply();
+    globalThis.HubI18n?.onChange?.(apply);
+  })();
+
   Object.keys(navButtons).forEach(navId => {
     document.getElementById(navId).addEventListener("click", async () => {
       document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
@@ -217,10 +302,57 @@
     });
   });
 
-  document.getElementById('nav-aide').addEventListener('click', () => {
+  document.getElementById("nav-aide")?.addEventListener("click", () => {
     document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
-    document.getElementById('nav-aide').classList.add("active");
+    document.getElementById("nav-aide")?.classList.add("active");
     openHelpPanel("shortcuts");
+  });
+
+  async function goToLaunchHome() {
+    window.__hubShowingHome = true;
+
+    try {
+      window.dockHoverAPI?.hide?.();
+      document.getElementById("quick-actions-dock")?.classList.remove("dock-covered");
+
+      if (window.getStreamDeckMode?.() === true && typeof window.setStreamDeckMode === "function") {
+        window.setStreamDeckMode(false);
+      }
+
+      document.querySelectorAll(".scrcpy-tab").forEach((tab) => tab.classList.remove("active"));
+      document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
+      document.getElementById("nav-home")?.classList.add("active");
+
+      const content = document.querySelector(".content");
+      if (content) {
+        content.classList.remove("content--session-view", "content--stream-deck", "content--portrait-view", "content--session-focused");
+      }
+
+      const streamDeckShell = document.getElementById("stream-deck-shell");
+      if (streamDeckShell) streamDeckShell.classList.add("hidden");
+
+      document.querySelectorAll(".content > .page").forEach((page) => page.classList.add("hidden"));
+      document.getElementById("page-new")?.classList.remove("hidden");
+
+      if (window.sessionAPI?.suppressView) {
+        await window.sessionAPI.suppressView();
+      }
+
+      if (typeof window.invalidateVideoLayoutBoundsCache === "function") {
+        window.invalidateVideoLayoutBoundsCache();
+      }
+      if (typeof window.syncDockBatteries === "function") {
+        void window.syncDockBatteries();
+      }
+    } catch (err) {
+      console.error("[goToLaunchHome]", err);
+    }
+  }
+
+  window.goToLaunchHome = goToLaunchHome;
+
+  document.getElementById("nav-home")?.addEventListener("click", () => {
+    void goToLaunchHome();
   });
 
 </script>
@@ -250,8 +382,123 @@
 <script src="devices-panel/DevicesPanel.js"></script>
 <script src="new-session.js"></script>
 <script src="session-stream-bridge.js"></script>
+<script src="home-dashboard.js"></script>
 <script>
   void globalThis.HubI18n?.init?.();
+</script>
+<script>
+  (function initUiThemeToggle() {
+    const STORAGE_KEY = "androidHub.uiTheme";
+    const body = document.body;
+
+    function placeDock(theme) {
+      const dock = document.getElementById("quick-actions-dock");
+      const aide = document.getElementById("nav-aide");
+      const lang = document.getElementById("nav-language");
+      const sidebar = document.getElementById("sidebar");
+      const shell = document.getElementById("sidebar-shell");
+      if (!dock || !sidebar || !shell) return;
+
+      if (theme === "tablet") {
+        shell.insertAdjacentElement("afterend", dock);
+        // Langue toujours dans le dock (jamais hors du rail / hors du dock).
+        if (lang && !dock.contains(lang)) {
+          const settings = document.getElementById("nav-settings");
+          if (settings && dock.contains(settings)) settings.insertAdjacentElement("afterend", lang);
+          else dock.appendChild(lang);
+        }
+        if (aide) dock.insertAdjacentElement("afterend", aide);
+      } else {
+        if (aide) {
+          if (lang && dock.contains(lang)) dock.insertBefore(aide, lang);
+          else if (!dock.contains(aide)) dock.appendChild(aide);
+        }
+        const spacer = sidebar.querySelector(".sidebar-spacer");
+        if (spacer) spacer.insertAdjacentElement("afterend", dock);
+        else sidebar.appendChild(dock);
+      }
+    }
+
+    function applyTheme(theme) {
+      body.classList.toggle("theme-tablet", theme === "tablet");
+      placeDock(theme);
+      document.querySelectorAll(".ui-theme-option").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.theme === theme);
+      });
+      if (theme !== "tablet") {
+        window.dockHoverAPI?.hide?.();
+        document.getElementById("quick-actions-dock")?.classList.remove("dock-covered");
+      }
+      if (typeof window.invalidateVideoLayoutBoundsCache === "function") {
+        window.invalidateVideoLayoutBoundsCache();
+      }
+      if (typeof window.reportContentBounds === "function") {
+        void window.reportContentBounds();
+      }
+      if (typeof window.syncDockBatteries === "function") {
+        void window.syncDockBatteries();
+      }
+    }
+
+    function getCurrentTheme() {
+      try {
+        return localStorage.getItem(STORAGE_KEY) === "tablet" ? "tablet" : "classic";
+      } catch (_err) {
+        return "classic";
+      }
+    }
+
+    applyTheme(getCurrentTheme());
+
+    // Re-place après création du bouton langue (DOMContentLoaded).
+    document.addEventListener("DOMContentLoaded", () => {
+      placeDock(getCurrentTheme());
+      const pageNew = document.getElementById("page-new");
+      if (pageNew && !document.querySelector(".content.content--session-view")) {
+        pageNew.classList.remove("hidden");
+      }
+    });
+
+    (function bindDockHoverOverlay() {
+      const dock = document.getElementById("quick-actions-dock");
+      if (!dock || dock.dataset.dockHoverBound === "1") return;
+      dock.dataset.dockHoverBound = "1";
+
+      const SCALE = 1.55;
+      const BASE_H = 36;
+      const TIP_SPACE = 34;
+
+      dock.addEventListener("mouseenter", () => {
+        if (!body.classList.contains("theme-tablet")) return;
+        if (!window.dockHoverAPI?.show) return;
+
+        const rect = dock.getBoundingClientRect();
+        const height = Math.round(BASE_H * SCALE) + TIP_SPACE;
+        const width = Math.round(Math.max(rect.width, 180) * SCALE);
+        const x = rect.left + (rect.width - width) / 2;
+        const y = Math.max(0, rect.bottom - height);
+
+        dock.classList.add("dock-covered");
+        const clone = dock.cloneNode(true);
+        clone.classList.remove("dock-covered");
+        void window.dockHoverAPI.show({
+          x,
+          y,
+          width,
+          height,
+          html: clone.outerHTML
+        });
+      });
+    })();
+
+    document.querySelectorAll(".ui-theme-option").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const theme = btn.dataset.theme;
+        try { localStorage.setItem(STORAGE_KEY, theme); } catch (_err) {}
+        applyTheme(theme);
+      });
+    });
+  })();
 </script>
 </body>
 </html>

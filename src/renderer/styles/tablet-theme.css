@@ -1,0 +1,736 @@
+/* ==========================================================================
+   THEME TABLETTE — couche additive, zéro impact si body n'a pas .theme-tablet
+   Fichier neuf : src/renderer/styles/tablet-theme.css
+   À charger APRÈS tous les autres <link> CSS dans index.html
+   ========================================================================== */
+
+body.theme-tablet {
+  --radius-card: 14px;
+  --radius-pill: 22px;
+  --radius-tile: 10px;
+  --dock-reserve: 56px;
+}
+
+body.theme-tablet .titlebar {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+body.theme-tablet .tabs-bar {
+  gap: 6px;
+  padding: 6px 10px;
+  align-items: center;
+  overflow: visible;
+}
+
+body.theme-tablet .tabs-bar-track {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+body.theme-tablet .tabs-bar::-webkit-scrollbar,
+body.theme-tablet .tabs-bar-track::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+body.theme-tablet .tabs-new-instance.tablet-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-tile, 10px);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  z-index: 5;
+}
+
+body.theme-tablet .tabs-new-instance:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.theme-tablet .tabs-new-instance svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+body.theme-tablet .scrcpy-tab {
+  border-radius: var(--radius-tile);
+  border-right: none;
+  min-width: 0;
+}
+
+body.theme-tablet .scrcpy-tab.active {
+  box-shadow: none;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+body.theme-tablet .sidebar-shell {
+  padding: 8px 0 8px 8px;
+}
+
+body.theme-tablet .sidebar {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+body.theme-tablet .sidebar-shell.is-collapsed {
+  padding-left: 8px;
+}
+
+body.theme-tablet #nav-toggle-screen .label,
+body.theme-tablet #nav-toggle-orientation .label,
+body.theme-tablet #nav-toggle-global-audio .label,
+body.theme-tablet #nav-toggle-stream-deck .label,
+body.theme-tablet #nav-home .label,
+body.theme-tablet #nav-aide .label,
+body.theme-tablet #nav-settings .label {
+  display: none;
+}
+
+body.theme-tablet #nav-toggle-screen,
+body.theme-tablet #nav-toggle-orientation,
+body.theme-tablet #nav-toggle-global-audio,
+body.theme-tablet #nav-toggle-stream-deck,
+body.theme-tablet #nav-home,
+body.theme-tablet #nav-aide,
+body.theme-tablet #nav-settings {
+  justify-content: center;
+}
+
+body.theme-tablet .quick-actions-dock #nav-toggle-screen,
+body.theme-tablet .quick-actions-dock #nav-toggle-orientation,
+body.theme-tablet .quick-actions-dock #nav-toggle-global-audio,
+body.theme-tablet .quick-actions-dock #nav-toggle-stream-deck,
+body.theme-tablet .quick-actions-dock #nav-home,
+body.theme-tablet .quick-actions-dock #nav-settings,
+body.theme-tablet .quick-actions-dock #nav-language {
+  padding: 6px;
+}
+
+body.theme-tablet #nav-toggle-screen .sidebar-screen-badge,
+body.theme-tablet #nav-toggle-orientation .sidebar-orientation-badge,
+body.theme-tablet #nav-toggle-global-audio .sidebar-global-audio-badge {
+  display: none;
+}
+
+body.theme-tablet .sidebar-collapse-btn {
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  top: 50%;
+}
+
+body.theme-tablet .video-stage canvas {
+  border-radius: 0;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+body.theme-tablet .content.content--session-view {
+  padding: 0 0 var(--dock-reserve);
+  background: #0a0e14;
+  box-sizing: border-box;
+}
+
+body.theme-tablet .content.content--stream-deck {
+  padding-bottom: var(--dock-reserve);
+  box-sizing: border-box;
+}
+
+/* Badge type A/B à droite de l'icône d'onglet — masqué en tablette. */
+body.theme-tablet .scrcpy-tab .session-type-badge {
+  display: none;
+}
+
+body.theme-tablet .modal-box {
+  border-radius: 18px;
+}
+
+body.theme-tablet .modal-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+body.theme-tablet .empty-state-mascot {
+  border-radius: 20px;
+}
+
+/* -- Commit 2 : dock d'actions rapides -- */
+
+/* Thème classique : le dock est replacé DANS .sidebar (JS placeDock).
+   display:contents = les boutons refluent dans le rail comme à l'origine. */
+body:not(.theme-tablet) .quick-actions-dock {
+  display: contents;
+}
+
+/* Thème tablette : pilule flottante centrée, au-dessus du contenu. */
+body.theme-tablet .quick-actions-dock {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  height: 36px;
+  width: auto;
+  transform: translateX(-50%);
+  z-index: 80;
+  gap: 2px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: rgba(22, 27, 36, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  color: #d5dde8;
+}
+
+/* Pendant l'overlay agrandi : le dock d'origine reste à sa place mais invisible. */
+body.theme-tablet .quick-actions-dock.dock-covered {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Aide : bas gauche, toujours visible (y compris pendant un flux). */
+body.theme-tablet #nav-aide {
+  position: fixed;
+  left: 14px;
+  bottom: 12px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(22, 27, 36, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  color: #d5dde8;
+  cursor: pointer;
+}
+
+body.theme-tablet #nav-aide:hover {
+  background: rgba(30, 36, 48, 0.96);
+  color: #fff;
+}
+
+body.theme-tablet #nav-aide.active {
+  background: rgba(79, 140, 255, 0.18);
+  color: #8eb6ff;
+}
+
+body.theme-tablet #nav-aide .icon {
+  width: 18px;
+  height: 18px;
+}
+
+body.theme-tablet #nav-aide .icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.theme-tablet #nav-aide[data-dock-tip]::after {
+  left: 0;
+  right: auto;
+  bottom: calc(100% + 8px);
+  transform: translateX(0) translateY(2px);
+}
+
+body.theme-tablet #nav-aide[data-dock-tip]:hover::after {
+  transform: translateX(0) translateY(0);
+}
+.dock-battery-strip {
+  display: none;
+}
+
+body.theme-tablet .dock-battery-strip {
+  display: flex;
+  position: fixed;
+  right: 22%;
+  bottom: 12px;
+  z-index: 80;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  pointer-events: auto;
+  overflow: visible;
+}
+
+body.theme-tablet .dock-battery-strip[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .dock-device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(22, 27, 36, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: visible;
+  position: relative;
+}
+
+body.theme-tablet .dock-device-chip.has-device-color {
+  border-color: var(--device-chip-color);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--device-chip-color) 35%, transparent);
+}
+
+body.theme-tablet .dock-battery-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #8b93a3;
+  line-height: 1;
+  cursor: default;
+  position: relative;
+  overflow: visible;
+}
+
+body.theme-tablet .dock-battery-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex-shrink: 0;
+}
+
+body.theme-tablet .dock-battery-item.dock-battery-good,
+body.theme-tablet .dock-battery-item.dock-battery-good .dock-battery-fill {
+  color: #3ecf6f;
+}
+
+body.theme-tablet .dock-battery-item.dock-battery-medium,
+body.theme-tablet .dock-battery-item.dock-battery-medium .dock-battery-fill {
+  color: #f5a623;
+}
+
+body.theme-tablet .dock-battery-item.dock-battery-low,
+body.theme-tablet .dock-battery-item.dock-battery-low .dock-battery-fill {
+  color: #e5484d;
+}
+
+body.theme-tablet .dock-battery-item.dock-battery-unknown {
+  color: #8b93a3;
+}
+
+body.theme-tablet .dock-device-audio-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  overflow: visible;
+}
+
+body.theme-tablet .dock-device-audio-btn .sidebar-device-audio-icon {
+  width: 14px;
+  height: 14px;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item {
+  margin-bottom: 0;
+  padding: 6px;
+  border-radius: 999px;
+  min-height: 0;
+  color: inherit;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item .icon {
+  width: 18px;
+  height: 18px;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item .icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.theme-tablet #nav-language .sidebar-language-label {
+  display: none;
+}
+
+body.theme-tablet #nav-language {
+  gap: 0;
+  padding: 6px;
+}
+
+body.theme-tablet #nav-language .icon {
+  position: relative;
+}
+
+body.theme-tablet #nav-language .sidebar-language-badge {
+  display: flex;
+  position: absolute;
+  right: -4px;
+  bottom: -5px;
+  min-width: 14px;
+  height: 12px;
+  padding: 0 3px;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  border-radius: 3px;
+  background: #2b3342;
+  color: #d7e0ef;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item {
+  position: relative;
+}
+
+/* Infobulles style dock (nouvelle instance, USB/Wi‑Fi, actions centrales). */
+body.theme-tablet [data-dock-tip] {
+  position: relative;
+}
+
+body.theme-tablet [data-dock-tip]::after {
+  content: attr(data-dock-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(12, 16, 22, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e8edf5;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 90;
+}
+
+body.theme-tablet [data-dock-tip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+body.theme-tablet .tabs-new-instance[data-dock-tip]::after {
+  left: 0;
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateX(0) translateY(-2px);
+  z-index: 200;
+}
+
+body.theme-tablet .tabs-new-instance[data-dock-tip]:hover::after {
+  opacity: 1;
+  transform: translateX(0) translateY(0);
+}
+
+body.theme-tablet .sidebar-wifi-toggle[data-dock-tip]::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+body.theme-tablet .sidebar-wifi-toggle[data-dock-tip]:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+body.theme-tablet .home-devices-panel .sidebar-device-audio-btn[data-dock-tip]::after,
+body.theme-tablet .sidebar-devices-panel .sidebar-device-audio-btn[data-dock-tip]::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+body.theme-tablet .home-devices-panel .sidebar-device-audio-btn[data-dock-tip]:hover::after,
+body.theme-tablet .sidebar-devices-panel .sidebar-device-audio-btn[data-dock-tip]:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Infobulles batterie/audio du bas : à gauche, dans la barre (pas sous le flux). */
+body.theme-tablet .dock-battery-strip .dock-battery-item[data-dock-tip]::after,
+body.theme-tablet .dock-battery-strip .dock-device-audio-btn[data-dock-tip]::after {
+  left: auto !important;
+  right: calc(100% + 8px) !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translateY(-50%) translateX(4px) !important;
+  z-index: 200;
+}
+
+body.theme-tablet .dock-battery-strip .dock-battery-item[data-dock-tip]:hover::after,
+body.theme-tablet .dock-battery-strip .dock-device-audio-btn[data-dock-tip]:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0) !important;
+}
+
+body.theme-tablet .home-devices-panel .sidebar-device-card,
+body.theme-tablet .home-devices-panel .sidebar-device-actions {
+  overflow: visible;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item.active {
+  background: rgba(79, 140, 255, 0.18);
+  color: #8eb6ff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-item.active .icon {
+  color: #8eb6ff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-screen-toggle.screen-on .icon {
+  color: #3ecf6f;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-screen-toggle.screen-off .icon {
+  color: #e5484d;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-orientation-toggle.portrait-on .icon {
+  color: #6b9fff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-orientation-toggle.portrait-off .icon {
+  color: #8b93a3;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-global-audio-toggle.audio-on .icon {
+  color: #6b9fff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-global-audio-toggle.audio-off .icon {
+  color: #e5484d;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-stream-deck-toggle.stream-deck-toggle-on {
+  background: rgba(79, 140, 255, 0.18);
+  color: #8eb6ff;
+}
+
+body.theme-tablet .quick-actions-dock .sidebar-stream-deck-toggle.stream-deck-toggle-on .icon {
+  color: #8eb6ff;
+}
+
+/* -- Commit 3 : Appareils connectés + Apps récentes dans l'accueil
+      (visible uniquement en thème tablette) -- */
+
+.tablet-only {
+  display: none;
+}
+
+body.theme-tablet .tablet-only {
+  display: block;
+}
+
+/* Accueil tablette : appareils en haut, logo clairement en dessous. */
+body.theme-tablet .empty-state {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  max-height: 100%;
+  justify-content: flex-start;
+  padding: 20px 0 96px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+body.theme-tablet .home-devices-section {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+  margin: 0 0 28px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+body.theme-tablet .home-devices-section[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-devices-section .home-dashboard-label {
+  text-align: center;
+}
+
+body.theme-tablet .home-devices-panel {
+  justify-content: center;
+}
+
+body.theme-tablet .home-apps-section {
+  width: 100%;
+  margin-top: 22px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+body.theme-tablet .home-apps-section[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-apps-section .home-dashboard-label {
+  text-align: center;
+}
+
+body.theme-tablet .home-apps-recent {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+body.theme-tablet .empty-state-mascot {
+  margin-top: 8px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.home-dashboard-section {
+  margin-bottom: 22px;
+}
+
+.home-dashboard-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+.home-devices-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.home-apps-recent {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.home-app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 72px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.home-app-tile:hover .home-app-tile-icon {
+  border-color: rgba(79, 140, 255, 0.45);
+  background: #1e2533;
+}
+
+.home-app-tile-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #1a1f29;
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.home-app-tile-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.home-app-tile-icon.is-placeholder {
+  color: var(--text-muted);
+}
+
+.home-app-tile-icon.is-placeholder svg {
+  width: 26px;
+  height: 26px;
+  opacity: 0.55;
+}
+
+.home-app-tile-name {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- Commit C : masquer le rail latéral en thème tablette.
+      Le dock (#quick-actions-dock) est un sibling de .sidebar-shell
+      (placé hors du rail via placeDock), donc il n'est pas affecté. -- */
+
+body.theme-tablet .sidebar-shell {
+  display: none !important;
+}
+
+/* Évite qu'un item orphelin (ex. langue) ne forme une fausse barre latérale. */
+body.theme-tablet .main-layout > .sidebar-item:not(#nav-aide) {
+  display: none !important;
+}
+
+body.theme-tablet .workspace-main {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}

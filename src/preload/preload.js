@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     switchTo: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId),
     cycleTab: (direction) => ipcRenderer.invoke("session:cycleTab", { direction }),
     close: (sessionId) => ipcRenderer.invoke("session:close", sessionId),
+    reorder: (orderedIds) => ipcRenderer.invoke("session:reorder", orderedIds),
     list: () => ipcRenderer.invoke("session:list"),
     onSessionActivated: (callback) => ipcRenderer.on("session:activated", (_event, data) => callback(data)),
     registerView: (sessionId, type, options = {}) =>
@@ -137,6 +138,11 @@ contextBridge.exposeInMainWorld("videoPreviewAPI", {
     setPosition: (payload) => ipcRenderer.invoke("video-preview:setPosition", payload),
     setState: (payload) => ipcRenderer.invoke("video-preview:setState", payload),
     setFrame: (payload) => ipcRenderer.invoke("video-preview:setFrame", payload)
+});
+
+contextBridge.exposeInMainWorld("dockHoverAPI", {
+    show: (payload) => ipcRenderer.invoke("dock-hover:show", payload),
+    hide: () => ipcRenderer.invoke("dock-hover:hide")
 });
 
 contextBridge.exposeInMainWorld("namesAPI", {

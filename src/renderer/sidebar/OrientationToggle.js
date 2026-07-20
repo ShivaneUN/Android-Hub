@@ -70,7 +70,9 @@
 
         if (!activeSessionId) {
             await updateOrientationToggle();
-            return;
+            if (!activeSessionId || button.classList.contains("disabled")) {
+                return;
+            }
         }
 
         button.classList.add("pending");

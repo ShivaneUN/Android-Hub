@@ -76,7 +76,8 @@
                  title="${escapeHtml(session.label || session.sessionId)}">
                 <div class="stream-deck-tile-accent"></div>
                 <div class="stream-deck-tile-body">
-                    <div class="stream-deck-tile-chrome">
+                    <div class="stream-deck-tile-chrome" title="Glisser pour réordonner">
+                        <span class="stream-deck-tile-grip" aria-hidden="true"></span>
                         <span class="stream-deck-tile-pill device-color-pill" style="background:${escapeHtml(color)}"></span>
                         <span class="stream-deck-tile-label">${escapeHtml(session.label || session.sessionId)}</span>
                         <span class="stream-deck-tile-badge">${escapeHtml(session.type || "")}</span>
@@ -362,12 +363,16 @@
     }
 
     function scheduleLayoutSync() {
+        const zone = getZone();
+        if (zone?.classList.contains("is-reordering")) return syncQueue;
+
         if (syncDebounceTimer) {
             clearTimeout(syncDebounceTimer);
         }
 
         syncDebounceTimer = setTimeout(() => {
             syncDebounceTimer = null;
+            if (getZone()?.classList.contains("is-reordering")) return;
             flushLayoutSync();
         }, SYNC_DEBOUNCE_MS);
 
@@ -408,6 +413,12 @@
         zone.dataset.clicksBound = "1";
 
         zone.addEventListener("click", (event) => {
+            if (ignoreNextTileActivate) {
+                ignoreNextTileActivate = false;
+                return;
+            }
+            if (draggingTile) return;
+
             const tile = event.target.closest(".stream-deck-tile[data-session-id]");
             if (!tile) return;
             const sessionId = tile.dataset.sessionId;
@@ -422,6 +433,311 @@
         });
     }
 
+    let draggingTile = null;
+    let dragTargetTile = null;
+    let dragContainer = null;
+    let dragLayout = null;
+    let ignoreNextTileActivate = false;
+    let viewsHiddenForDrag = false;
+    let dragPointerId = null;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragActivated = false;
+    let dragSourceId = null;
+    const DRAG_THRESHOLD_PX = 4;
+
+    function getDragContainer(layout) {
+        const zone = getZone();
+        if (!zone) return null;
+        if (layout === "grid") return zone.querySelector(".stream-deck-grid");
+        if (layout === "focus") return zone.querySelector(".stream-deck-focus-rail");
+        if (layout === "duo") return zone.querySelector(".stream-deck-duo-row");
+        return null;
+    }
+
+    function isTileDragHandle(target) {
+        return Boolean(
+            target?.closest?.(".stream-deck-tile-chrome")
+            || target?.closest?.(".stream-deck-tile-accent")
+            || target?.closest?.(".stream-deck-tile-grip")
+        );
+    }
+
+    let hideViewsPromise = null;
+
+    async function hideViewsForDrag() {
+        if (viewsHiddenForDrag) return;
+        if (hideViewsPromise) return hideViewsPromise;
+
+        hideViewsPromise = (async () => {
+            lastMultiBoundsKey = "";
+            try {
+                if (window.sessionAPI?.suppressView) {
+                    await window.sessionAPI.suppressView();
+                }
+                if (window.sessionAPI?.setLayoutBounds) {
+                    await window.sessionAPI.setLayoutBounds({});
+                }
+                viewsHiddenForDrag = true;
+            } catch (_err) {
+                viewsHiddenForDrag = true;
+            } finally {
+                hideViewsPromise = null;
+            }
+        })();
+
+        return hideViewsPromise;
+    }
+
+    async function restoreViewsAfterDrag() {
+        try {
+            if (hideViewsPromise) await hideViewsPromise;
+            if (window.sessionAPI?.restoreView) {
+                await window.sessionAPI.restoreView();
+            }
+        } catch (_err) {
+            // noop
+        }
+        viewsHiddenForDrag = false;
+        hideViewsPromise = null;
+    }
+
+    function collectContainerSessionIds(container) {
+        if (!container) return [];
+        return Array.from(container.querySelectorAll(".stream-deck-tile[data-session-id]"))
+            .map((tile) => tile.dataset.sessionId)
+            .filter(Boolean);
+    }
+
+    function findTileAtPoint(container, clientX, clientY, excludeTile = null) {
+        if (!container) return null;
+        const tiles = container.querySelectorAll(".stream-deck-tile[data-session-id]");
+        for (const tile of tiles) {
+            if (tile === excludeTile) continue;
+            const rect = tile.getBoundingClientRect();
+            if (
+                clientX >= rect.left
+                && clientX <= rect.right
+                && clientY >= rect.top
+                && clientY <= rect.bottom
+            ) {
+                return tile;
+            }
+        }
+        return null;
+    }
+
+    function setDropTarget(tile) {
+        if (dragTargetTile === tile) return;
+        if (dragTargetTile) dragTargetTile.classList.remove("is-drop-target");
+        dragTargetTile = tile || null;
+        if (dragTargetTile) dragTargetTile.classList.add("is-drop-target");
+    }
+
+    function swapIds(orderedIds, fromId, toId) {
+        const next = orderedIds.slice();
+        const fromIndex = next.indexOf(fromId);
+        const toIndex = next.indexOf(toId);
+        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return null;
+        const tmp = next[fromIndex];
+        next[fromIndex] = next[toIndex];
+        next[toIndex] = tmp;
+        return next;
+    }
+
+    async function commitTileSwap(layout, fromId, toId) {
+        if (!fromId || !toId || fromId === toId) {
+            lastSessionsKey = "";
+            lastMultiBoundsKey = "";
+            scheduleLayoutSync();
+            return;
+        }
+
+        if (layout === "duo") {
+            const ids = collectContainerSessionIds(dragContainer);
+            const swapped = swapIds(ids, fromId, toId);
+            if (swapped?.length >= 2 && typeof window.setDuoDeviceIds === "function") {
+                window.setDuoDeviceIds([swapped[0], swapped[1]], { persist: true, notify: true });
+            }
+            lastSessionsKey = "";
+            lastMultiBoundsKey = "";
+            scheduleLayoutSync();
+            return;
+        }
+
+        if (!window.sessionAPI?.reorder || !window.sessionAPI?.list) {
+            lastSessionsKey = "";
+            lastMultiBoundsKey = "";
+            scheduleLayoutSync();
+            return;
+        }
+
+        let orderedIds = null;
+        if (layout === "grid") {
+            const sessions = await window.sessionAPI.list();
+            orderedIds = swapIds(
+                sessions.map((session) => session.sessionId),
+                fromId,
+                toId
+            );
+        } else if (layout === "focus") {
+            const sessions = await window.sessionAPI.list();
+            const focusedId = window.getFocusedDeviceId?.()
+                || sessions.find((s) => s.active)?.sessionId
+                || sessions[0]?.sessionId
+                || null;
+            const railIds = collectContainerSessionIds(dragContainer);
+            const swappedRail = swapIds(railIds, fromId, toId) || railIds;
+            let railIndex = 0;
+            orderedIds = sessions.map((session) => {
+                if (session.sessionId === focusedId) return focusedId;
+                return swappedRail[railIndex++] || session.sessionId;
+            }).filter(Boolean);
+        }
+
+        if (!orderedIds?.length) {
+            lastSessionsKey = "";
+            lastMultiBoundsKey = "";
+            scheduleLayoutSync();
+            return;
+        }
+
+        try {
+            await window.sessionAPI.reorder(orderedIds);
+        } catch (err) {
+            console.error("[StreamDeckZone] swap tiles:", err);
+        }
+        lastSessionsKey = "";
+        lastMultiBoundsKey = "";
+        scheduleLayoutSync();
+    }
+
+    function bindTileDragReorder() {
+        const zone = getZone();
+        if (!zone || zone.dataset.tileDragBound === "1") return;
+        zone.dataset.tileDragBound = "1";
+
+        const onPointerMove = (event) => {
+            if (dragPointerId == null || event.pointerId !== dragPointerId || !draggingTile) return;
+            if (!viewsHiddenForDrag) return;
+
+            const dx = event.clientX - dragStartX;
+            const dy = event.clientY - dragStartY;
+            if (!dragActivated) {
+                if ((dx * dx) + (dy * dy) < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+                dragActivated = true;
+                ignoreNextTileActivate = true;
+                draggingTile.classList.add("is-dragging");
+                zone.classList.add("is-reordering");
+            }
+
+            event.preventDefault();
+            const over = findTileAtPoint(dragContainer, event.clientX, event.clientY, draggingTile);
+            setDropTarget(over);
+        };
+
+        const onPointerUp = async (event) => {
+            if (dragPointerId == null || event.pointerId !== dragPointerId) return;
+
+            document.removeEventListener("pointermove", onPointerMove, true);
+            document.removeEventListener("pointerup", onPointerUp, true);
+            document.removeEventListener("pointercancel", onPointerUp, true);
+
+            // Attendre que les BrowserViews soient bien masqués avant le hit-test final.
+            await hideViewsForDrag();
+
+            const layout = dragLayout || (window.getDisplayLayout?.() || "grid");
+            const fromId = dragSourceId;
+            const target = dragTargetTile || findTileAtPoint(
+                dragContainer,
+                event.clientX,
+                event.clientY,
+                draggingTile
+            );
+            const toId = target?.dataset?.sessionId || null;
+            const shouldSwap = Boolean(fromId && toId && fromId !== toId);
+
+            if (draggingTile) draggingTile.classList.remove("is-dragging");
+            setDropTarget(null);
+            zone.classList.remove("is-reordering");
+            draggingTile = null;
+            dragPointerId = null;
+            dragActivated = false;
+            dragSourceId = null;
+
+            if (!shouldSwap) {
+                dragContainer = null;
+                dragLayout = null;
+                await restoreViewsAfterDrag();
+                lastSessionsKey = "";
+                lastMultiBoundsKey = "";
+                scheduleLayoutSync();
+                return;
+            }
+
+            ignoreNextTileActivate = true;
+            try {
+                await commitTileSwap(layout, fromId, toId);
+                await restoreViewsAfterDrag();
+                lastSessionsKey = "";
+                lastMultiBoundsKey = "";
+                scheduleLayoutSync();
+            } finally {
+                dragContainer = null;
+                dragLayout = null;
+                window.setTimeout(() => {
+                    ignoreNextTileActivate = false;
+                }, 80);
+            }
+        };
+
+        zone.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0) return;
+            if (draggingTile) return;
+            if (!isTileDragHandle(event.target)) return;
+
+            const tile = event.target.closest(".stream-deck-tile[data-session-id]");
+            if (!tile || !zone.contains(tile)) return;
+
+            const layout = window.getDisplayLayout?.() || "grid";
+            if (layout === "focus" && tile.classList.contains("stream-deck-tile--focus-main")) return;
+            if (layout !== "grid" && layout !== "focus" && layout !== "duo") return;
+
+            const container = getDragContainer(layout);
+            if (!container || container.querySelectorAll(".stream-deck-tile[data-session-id]").length < 2) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            draggingTile = tile;
+            dragTargetTile = null;
+            dragContainer = container;
+            dragLayout = layout;
+            dragSourceId = tile.dataset.sessionId || null;
+            dragPointerId = event.pointerId;
+            dragStartX = event.clientX;
+            dragStartY = event.clientY;
+            dragActivated = false;
+            ignoreNextTileActivate = true;
+
+            zone.classList.add("is-reordering");
+            tile.classList.add("is-dragging");
+
+            document.addEventListener("pointermove", onPointerMove, true);
+            document.addEventListener("pointerup", onPointerUp, true);
+            document.addEventListener("pointercancel", onPointerUp, true);
+
+            // Masquer synchrone côté UX : dès le clic, les vues disparaissent
+            // pour que gauche↔droite / haut↔bas reçoivent bien les events.
+            void hideViewsForDrag().then(() => {
+                if (dragPointerId == null || !draggingTile) return;
+                dragActivated = true;
+            });
+        });
+    }
+
     function bindResizeObserver() {
         const zone = getZone();
         if (!zone || typeof ResizeObserver === "undefined") return;
@@ -429,6 +745,7 @@
 
         resizeObserver = new ResizeObserver(() => {
             if (!isStreamDeckActive() || isRenderingZone) return;
+            if (getZone()?.classList.contains("is-reordering")) return;
             scheduleLayoutSync();
         });
         resizeObserver.observe(zone);
@@ -436,6 +753,7 @@
 
     function init() {
         bindZoneClicks();
+        bindTileDragReorder();
         bindResizeObserver();
 
         window.onDisplayLayoutChange?.(() => {

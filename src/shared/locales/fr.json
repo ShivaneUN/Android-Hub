@@ -333,6 +333,14 @@
       "lockedHint": "Arrête toutes les instances pour changer les paramètres de lancement",
       "fallbackToast": "H265 non supporté par cet appareil — bascule sur H264"
     },
+    "tips": {
+      "resolution": "Définit la résolution du flux vidéo. Une valeur élevée améliore la netteté, au prix d’une charge CPU et d’un débit plus importants.",
+      "fps": "Fréquence d’images du flux. Une valeur élevée fluidifie l’affichage, mais augmente la consommation processeur et réseau.",
+      "dpi": "Densité d’affichage Android. Une valeur basse agrandit l’interface ; une valeur haute la compacte.",
+      "bitrate": "Débit binaire du flux (Mbps). Une valeur élevée améliore la qualité d’image et sollicite davantage la bande passante.",
+      "gop": "Intervalle entre images clés (I-frames). Un intervalle court améliore la résilience aux pertes réseau, avec un léger surcoût de débit.",
+      "videoCodec": "Codec de compression vidéo. H.265 offre une meilleure efficacité ; H.264 assure une compatibilité plus large."
+    },
     "validation": {
       "selectBeforeApply": "Sélectionnez une instance avant d'appliquer les paramètres.",
       "selectBeforeReset": "Sélectionnez une instance avant de réinitialiser.",

@@ -62,7 +62,7 @@
         if (!sidebar || sidebar.dataset.streamDeckToggleBound === "1") return;
         sidebar.dataset.streamDeckToggleBound = "1";
 
-        sidebar.addEventListener("click", (event) => {
+        document.addEventListener("click", (event) => {
             const btn = event.target.closest(`#${TOGGLE_ID}`);
             if (!btn) return;
             onToggleClick(event);

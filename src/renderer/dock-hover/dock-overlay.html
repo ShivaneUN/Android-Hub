@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #host {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-top: 34px;
+    box-sizing: border-box;
+  }
+  .quick-actions-dock {
+    display: flex !important;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    position: relative !important;
+    left: auto !important;
+    bottom: 0 !important;
+    transform: none !important;
+    height: 100% !important;
+    width: auto;
+    gap: 4px;
+    padding: 0 14px !important;
+    box-sizing: border-box;
+    background: rgba(22, 27, 36, 0.94) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    color: #e8edf5;
+  }
+  .quick-actions-dock .sidebar-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin: 0;
+    padding: 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    color: inherit;
+  }
+  .quick-actions-dock .sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+  .quick-actions-dock .sidebar-item.active {
+    background: rgba(79, 140, 255, 0.18);
+    color: #8eb6ff;
+  }
+  .quick-actions-dock .sidebar-item.active .icon {
+    color: #8eb6ff;
+  }
+  .quick-actions-dock .sidebar-screen-toggle.disabled,
+  .quick-actions-dock .sidebar-orientation-toggle.disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+  .quick-actions-dock .sidebar-screen-toggle.screen-on .icon {
+    color: #3ecf6f;
+  }
+  .quick-actions-dock .sidebar-screen-toggle.screen-off .icon {
+    color: #e5484d;
+  }
+  .quick-actions-dock .sidebar-orientation-toggle.portrait-on .icon {
+    color: #6b9fff;
+  }
+  .quick-actions-dock .sidebar-orientation-toggle.portrait-off .icon {
+    color: #8b93a3;
+  }
+  .quick-actions-dock .sidebar-global-audio-toggle.audio-on .icon {
+    color: #6b9fff;
+  }
+  .quick-actions-dock .sidebar-global-audio-toggle.audio-off .icon {
+    color: #e5484d;
+  }
+  .quick-actions-dock .sidebar-stream-deck-toggle.stream-deck-toggle-on {
+    background: rgba(79, 140, 255, 0.18);
+    color: #8eb6ff;
+  }
+  .quick-actions-dock .sidebar-stream-deck-toggle.stream-deck-toggle-on .icon {
+    color: #8eb6ff;
+  }
+  .quick-actions-dock .sidebar-item .icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    color: inherit;
+  }
+  .quick-actions-dock .sidebar-item .icon svg {
+    width: 24px;
+    height: 24px;
+    display: block;
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .quick-actions-dock .sidebar-global-audio-toggle .icon svg.hidden {
+    display: none !important;
+  }
+  .quick-actions-dock .label,
+  .quick-actions-dock .sidebar-screen-badge,
+  .quick-actions-dock .sidebar-orientation-badge,
+  .quick-actions-dock .sidebar-global-audio-badge,
+  .quick-actions-dock .sidebar-language-label {
+    display: none !important;
+  }
+  .quick-actions-dock #nav-language .sidebar-language-badge {
+    display: flex !important;
+    position: absolute;
+    right: -4px;
+    bottom: -5px;
+    min-width: 14px;
+    height: 12px;
+    padding: 0 3px;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    border-radius: 3px;
+    background: #2b3342;
+    color: #d7e0ef;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .quick-actions-dock .sidebar-item[data-dock-tip]::after {
+    content: attr(data-dock-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%) translateY(2px);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(12, 16, 22, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e8edf5;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 5;
+  }
+  .quick-actions-dock .sidebar-item[data-dock-tip]:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="host"></div>
+  <script>
+    const host = document.getElementById("host");
+
+    function bindClicks(root) {
+      root.querySelectorAll(".sidebar-item[id]").forEach((el) => {
+        el.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (el.classList.contains("disabled")) return;
+          window.dockOverlayAPI?.invokeClick?.(el.id);
+        });
+      });
+    }
+
+    window.dockOverlayAPI?.onRender?.((payload) => {
+      host.innerHTML = payload?.html || "";
+      const dock = host.querySelector(".quick-actions-dock") || host.firstElementChild;
+      if (dock) bindClicks(dock);
+    });
+
+    document.addEventListener("mouseleave", () => {
+      window.dockOverlayAPI?.hide?.();
+    });
+  </script>
+</body>
+</html>

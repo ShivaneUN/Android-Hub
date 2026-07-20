@@ -6,6 +6,11 @@ const canvas = document.getElementById("video-canvas");
 /** "A" | "B" — une BrowserView = un type fixe (URL query). */
 const sessionViewType = type ? String(type).toUpperCase() : "A";
 
+window.addEventListener("storage", (event) => {
+    if (event.key !== "androidHub.uiTheme") return;
+    document.documentElement.dataset.videoFit = "contain";
+});
+
 function isOrientationManagedSession() {
     return sessionViewType === "A";
 }

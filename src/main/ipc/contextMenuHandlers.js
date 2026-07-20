@@ -118,6 +118,25 @@ function registerContextMenuHandlers(deps) {
             return { success: false, error: t("contextMenu.invalidTarget") };
         }
 
+        // Menu couleurs seul (ex. pastille batterie du dock tablette).
+        if (target.colorsOnly && target.kind === "device" && target.serial && getDeviceColorsManager) {
+            const colorMenu = buildDeviceColorSubmenu(target, {
+                getDeviceColorsManager,
+                getMainWindow,
+                getConnectedDeviceIds,
+                getUiPreferencesManager
+            });
+            if (!colorMenu) {
+                return { success: false, error: t("contextMenu.invalidTarget") };
+            }
+            colorMenu.popup({
+                window: popupWindow,
+                x: Math.round(x),
+                y: Math.round(y)
+            });
+            return { success: true };
+        }
+
         const menu = new Menu();
 
         menu.append(new MenuItem({

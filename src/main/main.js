@@ -44,6 +44,7 @@ const {
 } = require("../shared/stream-params");
 const { SessionStreamRegistry } = require("./managers/session-stream-registry");
 const { VideoPreviewTooltipManager } = require("./managers/video-preview-tooltip-manager");
+const { DockHoverOverlayManager } = require("./managers/dock-hover-overlay-manager");
 const { registerVideoPreviewHandlers } = require("./ipc/videoPreviewHandlers");
 const { CustomNamesManager } = require("./managers/custom-names-manager");
 const { registerNamesHandlers } = require("./ipc/namesHandlers");
@@ -2553,6 +2554,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     createWindow();
     global.browserViewManager = new BrowserViewManager(win);
     global.videoPreviewTooltipManager = new VideoPreviewTooltipManager(win);
+    global.dockHoverOverlayManager = new DockHoverOverlayManager(win);
     global.renameDialogManager = new RenameDialogManager(win);
     global.streamDeckDuoPopupManager = new StreamDeckDuoPopupManager(win);
     global.hubModalOverlayManager = new HubModalOverlayManager(win);

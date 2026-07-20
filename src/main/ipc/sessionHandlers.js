@@ -126,6 +126,14 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return result;
     });
 
+    ipcMain.handle("session:reorder", async (_event, orderedIds) => {
+        const manager = global.browserViewManager;
+        if (!manager?.reorderSessions) {
+            return { success: false, error: "BrowserViewManager indisponible" };
+        }
+        return manager.reorderSessions(orderedIds);
+    });
+
     ipcMain.handle("session:close", async (_event, sessionId) => {
         const manager = getNewInstanceManager?.();
         const entry = global.browserViewManager?.getSessionEntry(sessionId);

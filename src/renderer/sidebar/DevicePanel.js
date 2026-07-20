@@ -190,20 +190,8 @@ async function handleWifiToggle(device, enabled, toggleInput) {
     }
 }
 
-function renderDevicePanel(devices) {
-    const container = document.getElementById("sidebar-devices-panel");
-    if (!container) return;
-
-    const connected = getConnectedOnly(devices);
-
-    if (connected.length === 0) {
-        container.innerHTML = `
-            <div class="sidebar-devices-empty">${dt("sidebar.devicePanel.empty")}</div>
-        `;
-        return;
-    }
-
-    container.innerHTML = connected.map((device) => {
+function buildDeviceCardsHtml(connected) {
+    return connected.map((device) => {
         const name = device.name || device.serial || dt("sidebar.devicePanel.deviceFallback");
         const originalName = device.originalName || name;
         const battery = formatBattery(device.battery);
@@ -235,11 +223,11 @@ function renderDevicePanel(devices) {
                     <span class="sidebar-device-status ${statusDot}"></span>
                     <span class="sidebar-device-name">${name}</span>
                     <div class="sidebar-device-actions">
-                        <button type="button" class="sidebar-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${audioKey}" title="${dt("sidebar.devicePanel.audioToggle")}" aria-label="${dt("sidebar.devicePanel.audioToggle")}">
+                        <button type="button" class="sidebar-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${audioKey}" data-dock-tip="Audio" aria-label="${dt("sidebar.devicePanel.audioToggle")}">
                             ${audioOn ? AUDIO_ICON_ON : AUDIO_ICON_OFF}
                         </button>
                         ${canToggleWifi ? `
-                        <label class="sidebar-wifi-toggle" title="${dt("sidebar.devicePanel.wifiToggle")}">
+                        <label class="sidebar-wifi-toggle" data-dock-tip="${dt("sidebar.devicePanel.wifiToggle")}" aria-label="${dt("sidebar.devicePanel.wifiToggle")}">
                             <input type="checkbox" class="sidebar-wifi-toggle-input" data-device-id="${device.deviceId || ""}" ${wifiChecked ? "checked" : ""}>
                             <span class="sidebar-wifi-toggle-ui"></span>
                         </label>` : ""}
@@ -255,6 +243,10 @@ function renderDevicePanel(devices) {
             </div>
         `;
     }).join("");
+}
+
+function bindDeviceCards(container, connected) {
+    if (!container) return;
 
     container.querySelectorAll(".sidebar-device-card").forEach((card) => {
         const deviceId = card.dataset.deviceId;
@@ -309,6 +301,30 @@ function renderDevicePanel(devices) {
     });
 }
 
+function getDevicePanelContainers() {
+    return [
+        document.getElementById("sidebar-devices-panel"),
+        document.getElementById("home-devices-panel")
+    ].filter(Boolean);
+}
+
+function renderDevicePanel(devices) {
+    const containers = getDevicePanelContainers();
+    if (!containers.length) return;
+
+    const connected = getConnectedOnly(devices);
+    const html = connected.length === 0
+        ? `<div class="sidebar-devices-empty">${dt("sidebar.devicePanel.empty")}</div>`
+        : buildDeviceCardsHtml(connected);
+
+    for (const container of containers) {
+        container.innerHTML = html;
+        if (connected.length > 0) {
+            bindDeviceCards(container, connected);
+        }
+    }
+}
+
 async function handleDeviceAudioToggle(device, button) {
     const key = deviceAudioKey(device);
     if (!key || !window.audioAPI?.toggleDeviceMuted || button?.classList.contains("pending")) {
@@ -330,6 +346,9 @@ async function handleDeviceAudioToggle(device, button) {
         button.innerHTML = on ? AUDIO_ICON_ON : AUDIO_ICON_OFF;
         if (typeof window.refreshGlobalAudioToggle === "function") {
             window.refreshGlobalAudioToggle();
+        }
+        if (typeof window.syncDockBatteries === "function") {
+            void window.syncDockBatteries();
         }
     } catch (err) {
         console.error("[DevicePanel] audio toggle:", err);
@@ -388,3 +407,11 @@ if (document.readyState === "loading") {
 }
 
 window.renderDevicePanel = renderDevicePanel;
+
+window.__deviceAudioUi = {
+    iconOn: AUDIO_ICON_ON,
+    iconOff: AUDIO_ICON_OFF,
+    isOn: isDeviceAudioOn,
+    toggle: handleDeviceAudioToggle,
+    refreshState: refreshCachedAudioState
+};

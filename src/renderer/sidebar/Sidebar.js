@@ -2,6 +2,94 @@ function getSessionTabsContainer() {
     return document.getElementById("tabs-bar-track") || document.getElementById("tabs-bar");
 }
 
+let ignoreNextTabActivate = false;
+let draggingSessionTab = null;
+
+function getOrderedSessionTabIds(tabsBar = getSessionTabsContainer()) {
+    if (!tabsBar) return [];
+    return Array.from(tabsBar.querySelectorAll(".scrcpy-tab"))
+        .map((tab) => tab.dataset.tabId)
+        .filter(Boolean);
+}
+
+function initSessionTabDragReorder() {
+    const tabsBar = getSessionTabsContainer();
+    if (!tabsBar || tabsBar.dataset.tabDragBound === "1") return;
+    tabsBar.dataset.tabDragBound = "1";
+
+    tabsBar.addEventListener("dragstart", (event) => {
+        const tab = event.target.closest(".scrcpy-tab");
+        if (!tab || !tabsBar.contains(tab)) return;
+        if (event.target.closest(".tab-close")) {
+            event.preventDefault();
+            return;
+        }
+
+        draggingSessionTab = tab;
+        tab.classList.add("is-dragging");
+        ignoreNextTabActivate = false;
+
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", tab.dataset.tabId || "");
+            try {
+                event.dataTransfer.setDragImage(tab, Math.min(40, tab.offsetWidth / 2), tab.offsetHeight / 2);
+            } catch (_err) {
+                // noop
+            }
+        }
+    });
+
+    tabsBar.addEventListener("dragover", (event) => {
+        if (!draggingSessionTab) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+
+        const over = event.target.closest(".scrcpy-tab");
+        if (!over || over === draggingSessionTab || !tabsBar.contains(over)) return;
+
+        const rect = over.getBoundingClientRect();
+        const placeBefore = event.clientX < rect.left + rect.width / 2;
+        const reference = placeBefore ? over : over.nextSibling;
+        if (reference === draggingSessionTab || draggingSessionTab.nextSibling === reference) return;
+        tabsBar.insertBefore(draggingSessionTab, reference);
+    });
+
+    tabsBar.addEventListener("drop", (event) => {
+        if (!draggingSessionTab) return;
+        event.preventDefault();
+    });
+
+    tabsBar.addEventListener("dragend", async () => {
+        const tab = draggingSessionTab;
+        draggingSessionTab = null;
+        if (!tab) return;
+
+        tab.classList.remove("is-dragging");
+        ignoreNextTabActivate = true;
+
+        const orderedIds = getOrderedSessionTabIds(tabsBar);
+        if (!orderedIds.length || !window.sessionAPI?.reorder) {
+            ignoreNextTabActivate = false;
+            return;
+        }
+
+        try {
+            const result = await window.sessionAPI.reorder(orderedIds);
+            if (!result?.success) {
+                await renderSidebar();
+            }
+        } catch (err) {
+            console.error("[Sidebar] reorder tabs:", err);
+            await renderSidebar();
+        }
+
+        window.setTimeout(() => {
+            ignoreNextTabActivate = false;
+        }, 50);
+    });
+}
+
 function isTypingTarget(element) {
     if (!element) return false;
     const tag = element.tagName;
@@ -102,6 +190,7 @@ async function resolveSessionTabIcon(session = {}) {
 function createSessionTabElement({ sessionId, type, active, label, hasCustomName, deviceColor, packageName, userId, deviceId, stableDeviceId }) {
     const tab = document.createElement("div");
     tab.className = `scrcpy-tab ${active ? "active" : ""}`;
+    tab.draggable = true;
     tab.dataset.tabId = sessionId;
     tab.dataset.sessionType = type;
     const iconKey = buildSessionIconKey({ stableDeviceId, deviceId, packageName, userId });
@@ -125,6 +214,10 @@ function createSessionTabElement({ sessionId, type, active, label, hasCustomName
 
     tab.addEventListener("click", async (e) => {
         if (e.target.classList.contains("tab-close")) return;
+        if (ignoreNextTabActivate || draggingSessionTab) {
+            ignoreNextTabActivate = false;
+            return;
+        }
         await activateSessionTab(sessionId);
     });
 
@@ -267,6 +360,7 @@ function scheduleSessionOrientationApply() {
 }
 
 async function activateSessionTab(sessionId) {
+    window.__hubShowingHome = false;
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
 
@@ -354,16 +448,22 @@ async function renderSidebar() {
 
     const content = document.querySelector(".content");
     if (content) {
-        content.classList.toggle("content--session-view", sessions.length > 0);
+        const showSessionView = sessions.length > 0 && !window.__hubShowingHome;
+        content.classList.toggle("content--session-view", showSessionView);
         const activeSession = sessions.find((session) => session.active);
-        updateSessionFocusChrome(activeSession?.sessionId || null);
-        if (typeof reportContentBounds === "function") reportContentBounds();
+        updateSessionFocusChrome(showSessionView ? (activeSession?.sessionId || null) : null);
+        if (window.__hubShowingHome && window.sessionAPI?.suppressView) {
+            void window.sessionAPI.suppressView();
+        } else if (typeof reportContentBounds === "function") {
+            reportContentBounds();
+        }
     }
 }
 
 async function finalizeSessionUI(sessionId, options = {}) {
     if (!sessionId || !window.sessionAPI) return;
 
+    window.__hubShowingHome = false;
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
 
@@ -415,6 +515,7 @@ window.onSessionLaunched = onSessionLaunched;
 window.activateSessionTab = activateSessionTab;
 
 initSessionTabShortcuts();
+initSessionTabDragReorder();
 
 if (window.sessionAPI?.onSessionListChanged) {
     window.sessionAPI.onSessionListChanged(() => {

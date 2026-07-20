@@ -65,7 +65,9 @@
 
         if (!activeTypeASessionId) {
             await updateScreenToggle();
-            return;
+            if (!activeTypeASessionId || button.classList.contains("disabled")) {
+                return;
+            }
         }
 
         button.classList.add("pending");

@@ -27,9 +27,29 @@
 
         if (!window.namesAPI?.showContextMenu) return;
 
+        // menu.popup x/y = coords relatives à la fenêtre (pas screenX/Y).
+        let x = Math.round(event.clientX);
+        let y = Math.round(event.clientY);
+
+        if (target?.kind === "device") {
+            const card = event.currentTarget?.closest?.(".sidebar-device-card")
+                || event.target?.closest?.(".sidebar-device-card")
+                || event.currentTarget?.closest?.(".dock-device-chip")
+                || event.target?.closest?.(".dock-device-chip")
+                || event.currentTarget;
+            if (card?.getBoundingClientRect) {
+                const rect = card.getBoundingClientRect();
+                const menuWidth = target.colorsOnly ? 160 : 180;
+                x = Math.round(rect.left + (rect.width / 2) - (menuWidth / 2));
+                y = Math.round(rect.bottom + 6);
+                x = Math.max(8, Math.min(x, Math.round(window.innerWidth - menuWidth - 8)));
+                y = Math.max(8, Math.min(y, Math.round(window.innerHeight - 8)));
+            }
+        }
+
         void window.namesAPI.showContextMenu({
-            x: event.screenX,
-            y: event.screenY,
+            x,
+            y,
             target
         });
     }

@@ -334,6 +334,14 @@
       "lockedHint": "Stop all instances to change launch settings",
       "fallbackToast": "H265 not supported on this device — switched to H264"
     },
+    "tips": {
+      "resolution": "Sets the video stream resolution. Higher values improve sharpness, at the cost of increased CPU load and bandwidth.",
+      "fps": "Frame rate of the stream. Higher values improve fluidity, but increase processor and network usage.",
+      "dpi": "Android display density. Lower values enlarge the interface; higher values make it more compact.",
+      "bitrate": "Stream bitrate (Mbps). Higher values improve image quality and require more bandwidth.",
+      "gop": "Interval between keyframes (I-frames). A shorter interval improves resilience to packet loss, with a slight bitrate overhead.",
+      "videoCodec": "Video compression codec. H.265 is more efficient; H.264 offers broader device compatibility."
+    },
     "validation": {
       "selectBeforeApply": "Select an instance before applying settings.",
       "selectBeforeReset": "Select an instance before resetting.",
