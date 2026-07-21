@@ -79,6 +79,11 @@ function spawnAdbShell(adbPath, serial, shellArgs) {
     });
 }
 
+/**
+ * Session Type B — `session.state` possible values:
+ * "created" | "starting" | "display-ready" | "started" | "stopping" | "stopped" | "error"
+ * | "reconnecting" (transport USB↔WiFi reattach — set only via beginTransportReconnect; unused until orchestration)
+ */
 class NewInstanceManager extends EventEmitter {
     constructor({ adbPath, serverJarPath, scrcpyBinaryPath, launchPackageOnDisplay, onStreamMeta }) {
         super();
@@ -383,6 +388,11 @@ class NewInstanceManager extends EventEmitter {
     async _onScrcpyClosed(session) {
         if (!session) return;
 
+        // Transport reattach (USB↔WiFi) : ne pas force-stop / delete / emit pendant reconnecting.
+        if (session.state === "reconnecting") {
+            return;
+        }
+
         if (session._intentionalStop || session._appForceStopped) {
             if (session.state !== "stopped" && session.state !== "stopping") {
                 session.state = "stopped";
@@ -424,6 +434,52 @@ class NewInstanceManager extends EventEmitter {
         this.sessions.delete(session.sessionId);
         this.emit("state", { sessionId: session.sessionId, state: session.state });
         this.emit("scrcpy-closed", { sessionId: session.sessionId });
+    }
+
+    /**
+     * Pose l'état "reconnecting" pour un reattach USB↔WiFi (Option A).
+     * Non branché dans ce commit — prêt pour l'orchestration future.
+     * @param {object} session
+     */
+    beginTransportReconnect(session) {
+        if (!session) return;
+        if (session.state !== "reconnecting") {
+            session._preReconnectState = session.state;
+        }
+        session.state = "reconnecting";
+        this.emit("state", { sessionId: session.sessionId, state: "reconnecting" });
+    }
+
+    /**
+     * Sort de "reconnecting" après rebind (succès) ou échec.
+     * Sortie échec simplifiée ici — affinera dans le commit d'orchestration.
+     * @param {object} session
+     * @param {{ success?: boolean }} [options]
+     */
+    endTransportReconnect(session, { success } = {}) {
+        if (!session) return;
+        const previous = session._preReconnectState;
+        delete session._preReconnectState;
+
+        if (success) {
+            session.state = "started";
+        } else if (
+            previous
+            && previous !== "reconnecting"
+            && previous !== "stopping"
+            && previous !== "stopped"
+        ) {
+            session.state = previous;
+        } else {
+            session.state = "stopped";
+        }
+
+        this.emit("state", {
+            sessionId: session.sessionId,
+            state: session.state,
+            serial: session.serial,
+            packageName: session.packageName
+        });
     }
 
     async _runClientStart(session, scrcpyOptions = {}) {

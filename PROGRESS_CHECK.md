@@ -1,6 +1,26 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-12
+Dernière mise à jour : 2026-07-21
+
+---
+
+## Reattach USB/WiFi Option A — Commit 1/4 (2026-07-21)
+
+**Statut : implémenté, non commité — en attente review diff + approbation.**
+
+**Objectif :** poser l'infrastructure `reconnecting` sans changer le comportement runtime (helpers non branchés).
+
+| Élément | Détail |
+|---------|--------|
+| Fichier | `src/main/managers/new-instance-manager.js` **uniquement** |
+| État | `"reconnecting"` documenté (JSDoc `session.state`) |
+| Garde | `_onScrcpyClosed` : early return si `state === "reconnecting"` — pas de force-stop, delete, ni emit |
+| Helpers | `beginTransportReconnect` / `endTransportReconnect` — définis, **aucun appelant** |
+| No-op | Aucun branchement `wifi:toggle` / DevicePanel ; zéro changement observable tant que les helpers ne sont pas appelés |
+
+**Hors scope (commits suivants) :** rebind serial/scrcpy (2/3), orchestration entrée/sortie + timeout (4).
+
+**LOCK :** createSession, input/gesture, `--new-display`, `stopNewInstanceSession`, `restartWithStreamOptions`, `_intentionalStop` / `_appForceStopped` — inchangés.
 
 ---
 
@@ -4896,6 +4916,7 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
+- **2026-07-21** — **Reattach USB/WiFi — Commit 1/4** — état `reconnecting` + garde `_onScrcpyClosed` + helpers non branchés (`new-instance-manager.js`). No-op runtime. LOCK createSession/input/`--new-display` intact.
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
