@@ -4,9 +4,31 @@ Dernière mise à jour : 2026-07-21
 
 ---
 
-## Reattach USB/WiFi Option A — Commit 2/4 (2026-07-21)
+## Reattach USB/WiFi Option A — Commit 3/4 (2026-07-21)
 
 **Statut : implémenté, non commité — en attente review diff + approbation.**
+
+**Objectif :** poser `AdbInputController.rebind(newSerial)` sans branchement runtime.
+
+| Élément | Détail |
+|---------|--------|
+| Fichier | `src/native/scrcpy/control/adb-input-controller.js` **uniquement** |
+| Méthode | `rebind()` : `_clearPersistentShell()` → `this.serial = newSerial` ; shell **lazy** (pas de respawn) |
+| Invariants | ACK / `_writePersistentMotionEvent` / retry / `_getOrCreatePersistentShell` / `dispose` **inchangés** |
+| No-op | **Aucun appelant** |
+
+**Briques rebind maintenant en place (non branchées) :**
+1. État `reconnecting` — `new-instance-manager.js` (Commit 1)
+2. `ScrcpySocketClient.rebind` — `scrcpy-socket.js` (Commit 2)
+3. `AdbInputController.rebind` — `adb-input-controller.js` (Commit 3)
+
+**Hors scope :** Commit 4 — orchestration (`wifi:toggle`, `videoClients`, notifications renderer, timeout).
+
+---
+
+## Reattach USB/WiFi Option A — Commit 2/4 (2026-07-21)
+
+**Statut : commité (`fc8a742`) — `ScrcpySocketClient.rebind()` posé, non branché.**
 
 **Objectif :** poser `ScrcpySocketClient.rebind(newSerial, options)` sans branchement runtime.
 
@@ -4935,6 +4957,7 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
+- **2026-07-21** — **Reattach USB/WiFi — Commit 3/4** — `AdbInputController.rebind()` posé, non branché (`adb-input-controller.js`). ACK/backpressure inchangés. Briques 1–3 prêtes pour orchestration Commit 4.
 - **2026-07-21** — **Reattach USB/WiFi — Commit 2/4** — `ScrcpySocketClient.rebind()` posé, non branché (`scrcpy-socket.js`). `start()`/`stop()` inchangés. LOCK intact hors méthode neuve.
 - **2026-07-21** — **Reattach USB/WiFi — Commit 1/4** — état `reconnecting` + garde `_onScrcpyClosed` + helpers non branchés (`new-instance-manager.js`, `d8be5f1`). No-op runtime. LOCK createSession/input/`--new-display` intact.
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.

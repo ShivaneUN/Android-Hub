@@ -341,6 +341,23 @@ class AdbInputController {
         }
     }
 
+    /**
+     * Rebind USB↔WiFi sur la même instance (shell lazy au prochain input).
+     * Non branché — prêt pour l'orchestration future.
+     * @param {string} newSerial
+     */
+    rebind(newSerial) {
+        if (!newSerial) {
+            throw new Error("serial manquant pour rebind");
+        }
+        const oldSerial = this.serial;
+        this._clearPersistentShell();
+        this.serial = newSerial;
+        console.log(
+            `[AdbInputController][rebind] serial ${oldSerial} → ${this.serial}`
+        );
+    }
+
     async init() {
         const { width, height } = await getDeviceSize(this.adbPath, this.serial);
         this.deviceWidth = width;
