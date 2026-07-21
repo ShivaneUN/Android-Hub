@@ -4,9 +4,28 @@ Dernière mise à jour : 2026-07-21
 
 ---
 
-## Reattach USB/WiFi Option A — Commit 1/4 (2026-07-21)
+## Reattach USB/WiFi Option A — Commit 2/4 (2026-07-21)
 
 **Statut : implémenté, non commité — en attente review diff + approbation.**
+
+**Objectif :** poser `ScrcpySocketClient.rebind(newSerial, options)` sans branchement runtime.
+
+| Élément | Détail |
+|---------|--------|
+| Fichier | `src/native/scrcpy/scrcpy-socket.js` **uniquement** |
+| Méthode | `rebind()` : cleanup ancien serial → `this.serial = newSerial` → resets start → push/tunnel/server/sockets |
+| Invariants | `scid`/`socketName` inchangés ; nouveau `localPort` via `_setupTunnel` ; `start()`/`stop()` non modifiés |
+| No-op | **Aucun appelant** ; zéro changement observable tant que `rebind()` n'est pas appelée |
+
+**Hors scope :** orchestration `main.js` / `videoClients` / renderer (Commit 4) ; Type B session rebind wiring.
+
+**LOCK :** `start()`, `stop()`, `_connectSockets`, `_setupTunnel`, `_startServerProcess`, `_pushServer` — comportement inchangé.
+
+---
+
+## Reattach USB/WiFi Option A — Commit 1/4 (2026-07-21)
+
+**Statut : commité (`d8be5f1`) — état `reconnecting` + garde `_onScrcpyClosed` + helpers non branchés.**
 
 **Objectif :** poser l'infrastructure `reconnecting` sans changer le comportement runtime (helpers non branchés).
 
@@ -4916,7 +4935,8 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
-- **2026-07-21** — **Reattach USB/WiFi — Commit 1/4** — état `reconnecting` + garde `_onScrcpyClosed` + helpers non branchés (`new-instance-manager.js`). No-op runtime. LOCK createSession/input/`--new-display` intact.
+- **2026-07-21** — **Reattach USB/WiFi — Commit 2/4** — `ScrcpySocketClient.rebind()` posé, non branché (`scrcpy-socket.js`). `start()`/`stop()` inchangés. LOCK intact hors méthode neuve.
+- **2026-07-21** — **Reattach USB/WiFi — Commit 1/4** — état `reconnecting` + garde `_onScrcpyClosed` + helpers non branchés (`new-instance-manager.js`, `d8be5f1`). No-op runtime. LOCK createSession/input/`--new-display` intact.
 - **2026-07-12** — **Diagnostic I/O sync metadata/icônes** — prefetch worker OK ; main : resolve + historique. LOCK intact.
 - **2026-07-12** — **Overlay switch poll transport** — confirmation transport réel post-toggle. LOCK intact.
 - **2026-07-12** — **Diagnostic wifi:toggle** — garanties `success` vs transport UI réel ; cache 10 s. LOCK intact.
