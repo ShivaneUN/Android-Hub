@@ -20,6 +20,10 @@ let connectedDevicesCache = [];
 const DEFAULT_APP_ICON_SVG = globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
     || `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="#3d4f6f"/></svg>`;
 const DELETE_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+const DEVICE_USB_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 17h6"/></svg>`;
+const DEVICE_WIFI_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`;
+let historyExpanded = false;
+const RECENTS_STRIP_LIMIT = 3;
 
 const newInstanceSessions = new Map();
 let activeNewInstanceSessionId = null;
@@ -150,13 +154,17 @@ function getNewInstanceElements() {
         deviceList: document.getElementById("new-instance-device-list"),
         historyList: document.getElementById("new-instance-history-list"),
         historySearchInput: document.getElementById("new-instance-history-search-input"),
+        recentsStrip: document.getElementById("new-instance-recents-strip"),
+        historyExpandedPanel: document.getElementById("new-instance-history-expanded"),
+        historyToggle: document.getElementById("new-instance-history-toggle"),
         appLauncherHint: document.getElementById("new-instance-app-launcher-hint"),
         appSearchInput: document.getElementById("new-instance-app-search-input"),
         appResults: document.getElementById("new-instance-app-results"),
         launchBtn: document.getElementById("new-instance-launch-btn"),
         launchHint: document.getElementById("new-instance-launch-hint"),
         status: document.getElementById("new-instance-status"),
-        commandPreview: document.getElementById("new-instance-command-preview")
+        commandPreview: document.getElementById("new-instance-command-preview"),
+        body: document.querySelector("#panel-new-session .new-instance-body")
     };
 }
 
@@ -175,6 +183,32 @@ function formatHistoryDate(timestamp) {
     if (isToday) return t("newSession.today", { time });
     if (isYesterday) return t("newSession.yesterday", { time });
     return date.toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatRelativeTime(timestamp) {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 60_000) return t("newSession.justNow");
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 60) return t("newSession.minutesAgo", { count: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t("newSession.hoursAgo", { count: hours });
+    return formatHistoryDate(timestamp);
+}
+
+function getHistoryAppLabel(entry) {
+    const raw = String(entry?.appName || "").trim();
+    const pkg = String(entry?.packageName || "").trim();
+    const deviceLabel = resolveDeviceName(entry?.deviceId);
+    if (!raw || raw === deviceLabel || raw.startsWith(`${deviceLabel} —`) || raw.startsWith(`${deviceLabel} -`)) {
+        if (pkg) {
+            const shortPkg = pkg.includes(".") ? pkg.split(".").pop() : pkg;
+            return shortPkg || pkg;
+        }
+    }
+    return raw || pkg || "—";
 }
 
 function resolveDeviceName(historyDeviceId, devices = connectedDevicesCache) {
@@ -321,6 +355,24 @@ function normalizeLauncherApps(apps = []) {
     }));
 }
 
+function formatLauncherAppMeta(app = {}) {
+    const isVariant = app.variantType === "clone" || app.variantType === "duplicate";
+    const userId = app.userId === undefined || app.userId === null ? null : Number(app.userId);
+    const hasProfile = userId !== null && (isVariant || userId !== 0);
+    if (!isVariant && !hasProfile) return "";
+
+    const parts = [];
+    if (userId !== null && (isVariant || userId !== 0)) {
+        parts.push(t("newSession.profile", { userId }));
+    } else if (app.variantType === "clone") {
+        parts.push(t("newSession.cloneLabel"));
+    } else if (app.variantType === "duplicate") {
+        parts.push(t("newSession.duplicateLabel"));
+    }
+    if (app.package) parts.push(String(app.package));
+    return parts.join(" · ");
+}
+
 function renderLauncherAppsList(apps) {
     const { appResults } = getNewInstanceElements();
     if (!appResults) return;
@@ -339,12 +391,16 @@ function renderLauncherAppsList(apps) {
         const label = getAppLabel(app);
         const variantClass = getAppVariantClass(app);
         const isSelected = selectedApp && buildAppKey(app) === selectedApp.appKey;
+        const meta = formatLauncherAppMeta(app);
+        const metaHtml = meta
+            ? `<span class="new-instance-app-package">${escapeHtml(meta)}</span>`
+            : "";
         return `
         <button type="button" class="new-instance-app-item ${variantClass}${isSelected ? " selected" : ""}" data-app-key="${buildAppKey(app)}">
             ${renderLauncherAppIcon(app)}
             <span class="new-instance-app-main">
                 <span class="new-instance-app-name">${escapeHtml(label)}</span>
-                <span class="new-instance-app-package">${escapeHtml(app.package)}${app.userId !== undefined && app.userId !== null ? ` (${t("newSession.profile", { userId: app.userId })})` : ""}</span>
+                ${metaHtml}
             </span>
         </button>
     `;
@@ -398,10 +454,17 @@ function filterLauncherAppsAndRender(query) {
 
 function createHistoryAppList() {
     const { historyList, historySearchInput } = getNewInstanceElements();
-    if (!historyList || historyAppList) return historyAppList;
+    if (!historyList) return null;
+    if (historyAppList) return historyAppList;
+
+    const ListCtor = typeof AppList !== "undefined" ? AppList : window.AppList;
+    if (!ListCtor) {
+        console.error("[NewSession] AppList unavailable");
+        return null;
+    }
 
     historyList.classList.add("app-list");
-    historyAppList = new AppList(historyList, {
+    historyAppList = new ListCtor(historyList, {
         mode: "history",
         emptyMessage: t("newSession.noHistory"),
         noResultsMessage: t("newSession.noSearchResults"),
@@ -410,17 +473,19 @@ function createHistoryAppList() {
         itemClassName: "app-list-item new-instance-history-item",
         itemTag: "div",
         getItemKey: (entry) => entry.key || buildAppKey({ package: entry.packageName, userId: entry.userId }),
-        getAppName: (entry) => entry.appName || entry.packageName,
+        getAppName: (entry) => getHistoryAppLabel(entry),
         getPackageName: (entry) => entry.packageName,
         getIconSrc: (entry) => entry.iconUrl || entry.iconPath || null,
         renderMeta: (entry) => {
-            const deviceLabel = escapeHtml(resolveDeviceName(entry.deviceId));
-            const dateLabel = formatHistoryDate(entry.lastLaunchedAt);
-            const countLabel = entry.launchCount > 1 ? ` · ${entry.launchCount} lancements` : "";
-            const userLabel = Number.isInteger(entry.userId) && entry.userId !== 0
-                ? ` · ${t("newSession.profile", { userId: entry.userId })}`
-                : "";
-            return `<span class="app-list-item-meta">${deviceLabel}${userLabel} · ${dateLabel}${countLabel}</span>`;
+            const parts = [escapeHtml(resolveDeviceName(entry.deviceId))];
+            if (Number.isInteger(entry.userId) && entry.userId !== 0) {
+                parts.push(escapeHtml(t("newSession.profile", { userId: entry.userId })));
+            }
+            parts.push(escapeHtml(formatHistoryDate(entry.lastLaunchedAt)));
+            if (entry.launchCount > 1) {
+                parts.push(escapeHtml(t("newSession.launchCount", { count: entry.launchCount })));
+            }
+            return `<span class="app-list-item-meta">${parts.join(" • ")}</span>`;
         },
         renderActions: (entry) => `
             <button type="button" class="app-list-action-btn new-instance-history-delete" data-app-list-action="delete" title="${t("newSession.delete")}" data-history-key="${escapeHtml(entry.key || "")}" data-device-id="${escapeHtml(entry.deviceId)}" data-package="${escapeHtml(entry.packageName)}" data-user-id="${entry.userId ?? ""}" aria-label="${t("newSession.delete")}">${DELETE_ICON_SVG}</button>
@@ -597,10 +662,119 @@ function scheduleLaunchHistoryRefresh() {
 }
 
 function renderHistoryList() {
+    renderRecentsStrip();
+    syncHistoryExpandedUi();
     const list = createHistoryAppList();
     if (!list) return;
     list.setItems(historyEntries);
     list.syncSearchFromInput();
+}
+
+function setHistoryExpanded(next) {
+    historyExpanded = Boolean(next);
+    syncHistoryExpandedUi();
+    if (!historyExpanded) return;
+    try {
+        const list = createHistoryAppList();
+        if (!list) {
+            const { historyList } = getNewInstanceElements();
+            if (historyList) {
+                historyList.innerHTML = `<p class="apps-loading">${escapeHtml(t("newSession.noHistory"))}</p>`;
+            }
+            return;
+        }
+        list.setItems(historyEntries);
+        list.syncSearchFromInput();
+    } catch (err) {
+        console.error("[NewSession] setHistoryExpanded:", err);
+        const { historyList } = getNewInstanceElements();
+        if (historyList) {
+            historyList.innerHTML = `<p class="apps-loading">${escapeHtml(err.message || t("newSession.noHistory"))}</p>`;
+        }
+    }
+}
+
+function formatHistoryEntryMeta(entry = {}, { includeTime = true, forceProfile = false } = {}) {
+    const parts = [];
+    if (Number.isInteger(entry.userId) && (forceProfile || entry.userId !== 0)) {
+        parts.push(t("newSession.profile", { userId: entry.userId }));
+    }
+    if (includeTime) {
+        const timeLabel = formatRelativeTime(entry.lastLaunchedAt);
+        if (timeLabel) parts.push(timeLabel);
+    }
+    return parts.join(" · ");
+}
+
+function renderRecentsStrip() {
+    const { recentsStrip, historyToggle } = getNewInstanceElements();
+    if (!recentsStrip) return;
+
+    const entries = Array.isArray(historyEntries) ? historyEntries : [];
+    if (historyToggle) {
+        historyToggle.hidden = entries.length === 0;
+    }
+
+    if (!entries.length) {
+        recentsStrip.innerHTML = "";
+        recentsStrip.dataset.empty = t("newSession.noHistory");
+        return;
+    }
+
+    delete recentsStrip.dataset.empty;
+    const visible = entries.slice(0, RECENTS_STRIP_LIMIT);
+    const labelCounts = visible.reduce((acc, entry) => {
+        const label = getHistoryAppLabel(entry);
+        acc[label] = (acc[label] || 0) + 1;
+        return acc;
+    }, {});
+
+    recentsStrip.innerHTML = visible.map((entry, index) => {
+        const name = getHistoryAppLabel(entry);
+        const forceProfile = (labelCounts[name] || 0) > 1;
+        const meta = escapeHtml(formatHistoryEntryMeta(entry, { forceProfile }));
+        const safeName = escapeHtml(name);
+        const iconSrc = entry.iconUrl || entry.iconPath;
+        const icon = iconSrc
+            ? `<span class="ni-recent-card-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`
+            : `<span class="ni-recent-card-icon">${DEFAULT_APP_ICON_SVG}</span>`;
+        const profileClass = Number.isInteger(entry.userId) && (forceProfile || entry.userId !== 0)
+            ? " ni-recent-card--profile"
+            : "";
+        return `
+            <button type="button" class="ni-recent-card${profileClass}" data-recent-index="${index}" title="${safeName}${meta ? ` — ${meta}` : ""}">
+                ${icon}
+                <span class="ni-recent-card-name">${safeName}</span>
+                <span class="ni-recent-card-meta">${meta}</span>
+            </button>
+        `;
+    }).join("");
+
+    recentsStrip.querySelectorAll(".ni-recent-card").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const entry = visible[Number(btn.dataset.recentIndex)];
+            if (!entry) return;
+            selectFromHistory({
+                deviceId: entry.deviceId,
+                packageName: entry.packageName,
+                appName: entry.appName,
+                userId: entry.userId ?? null,
+                iconPath: entry.iconPath || null,
+                iconUrl: entry.iconUrl || null
+            });
+        });
+    });
+}
+
+function syncHistoryExpandedUi() {
+    const { body, historyExpandedPanel, historyToggle, recentsStrip } = getNewInstanceElements();
+    if (body) body.classList.toggle("is-history-expanded", historyExpanded);
+    if (historyExpandedPanel) historyExpandedPanel.hidden = !historyExpanded;
+    if (recentsStrip) recentsStrip.hidden = historyExpanded;
+    if (historyToggle) {
+        const label = historyToggle.querySelector("span") || historyToggle;
+        label.textContent = historyExpanded ? t("newSession.showLess") : t("newSession.showAll");
+    }
 }
 
 async function removeHistoryEntry({ key, deviceId, packageName, userId = null }) {
@@ -714,19 +888,28 @@ function renderDeviceList(devices) {
             selectedDevice.deviceId === d.deviceId
             || selectedDevice.serial === d.serial
         );
-        const transport = d.transportLabel || (d.transport === "wifi" ? t("devicesPanel.wifi") : t("devicesPanel.usb"));
+        const isWifi = d.transport === "wifi" || String(d.transportLabel || "").toLowerCase().includes("wifi");
+        const transport = d.transportLabel || (isWifi ? t("devicesPanel.wifi") : t("devicesPanel.usb"));
+        const metaParts = [];
+        if (d.androidVersion && d.androidVersion !== "unknown") {
+            metaParts.push(`Android ${escapeHtml(d.androidVersion)}`);
+        }
+        metaParts.push(escapeHtml(transport));
+        const actionLabel = isSelected ? t("newSession.connected") : t("newSession.select");
         return `
-        <button type="button" class="new-instance-device-item ${isSelected ? "selected" : ""}" data-serial="${d.serial}" data-device-id="${d.deviceId || d.serial}" data-name="${d.name}">
-            <span class="status-dot status-${d.status}"></span>
-            <span class="new-instance-device-main">
-                <span class="new-instance-device-name">${d.name}</span>
-                <span class="new-instance-device-serial">${d.serial} · ${transport}</span>
+        <button type="button" class="ni-device-card ${isSelected ? "selected" : ""}" data-serial="${escapeHtml(d.serial)}" data-device-id="${escapeHtml(d.deviceId || d.serial)}" data-name="${escapeHtml(d.name)}">
+            <span class="ni-device-card-icon" aria-hidden="true">${isWifi ? DEVICE_WIFI_ICON : DEVICE_USB_ICON}</span>
+            <span class="ni-device-card-main">
+                <span class="ni-device-card-name">${escapeHtml(d.name)}</span>
+                <span class="ni-device-card-meta">${metaParts.join(" • ")}</span>
+                <span class="ni-device-card-status"><span class="status-dot"></span>${t("newSession.online")}</span>
             </span>
+            <span class="ni-device-card-action">${actionLabel}</span>
         </button>
     `;
     }).join("");
 
-    deviceList.querySelectorAll(".new-instance-device-item").forEach((btn) => {
+    deviceList.querySelectorAll(".ni-device-card").forEach((btn) => {
         btn.addEventListener("click", () => {
             selectDevice(btn.dataset.serial, btn.dataset.name, btn.dataset.deviceId);
         });
@@ -1291,9 +1474,11 @@ async function openNewSessionPanel(options = {}) {
     selectedDevice = null;
     selectedApp = null;
     launchPipeline = null;
+    historyExpanded = false;
     resetLauncherApps();
     historyAppList?.resetSearch();
     setStatus("");
+    syncHistoryExpandedUi();
     updateLaunchState();
     await Promise.all([loadConnectedDevices(), loadLaunchHistory()]);
 }
@@ -1336,6 +1521,13 @@ document.addEventListener("DOMContentLoaded", () => {
             launchNewInstanceSession().catch((err) => {
                 setStatus(`Erreur lancement: ${err.message}`, true);
             });
+        });
+    }
+
+    const historyToggle = document.getElementById("new-instance-history-toggle");
+    if (historyToggle) {
+        historyToggle.addEventListener("click", () => {
+            setHistoryExpanded(!historyExpanded);
         });
     }
 

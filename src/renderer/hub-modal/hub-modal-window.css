@@ -42,10 +42,20 @@ html, body {
   min-height: 0;
 }
 
-.hub-modal-panel .hub-modal--settings .hub-panel-body {
+.hub-modal-panel .hub-modal--session {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.hub-modal-panel .hub-modal--settings .hub-panel-body,
+.hub-modal-panel .hub-modal--session .hub-panel-body,
+.hub-modal-panel .hub-modal--session .new-instance-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Scrollbars fines, assorties au thème sombre */

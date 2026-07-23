@@ -27,8 +27,8 @@
 }
 
 .hub-modal--session {
-  width: min(460px, calc(100vw - var(--sidebar-width, 208px) - 24px));
-  max-height: min(760px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
+  width: min(980px, calc(100vw - var(--sidebar-width, 208px) - 24px));
+  max-height: min(700px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
 }
 
 .hub-modal--control {

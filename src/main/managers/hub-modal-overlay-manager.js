@@ -2,7 +2,7 @@ const { BrowserWindow } = require("electron");
 const path = require("path");
 
 const PANEL_SIZES = {
-    "new-session": { width: 460, height: 760 },
+    "new-session": { width: 980, height: 700 },
     settings: { width: 500, height: 700 },
     help: { width: 920, height: 680 }
 };
