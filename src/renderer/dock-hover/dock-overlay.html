@@ -18,8 +18,9 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    padding-top: 34px;
+    padding-top: 52px;
     box-sizing: border-box;
+    overflow: visible;
   }
   .quick-actions-dock {
     display: flex !important;
@@ -141,29 +142,6 @@
     color: #d7e0ef;
     border: 1px solid rgba(255, 255, 255, 0.14);
   }
-  .quick-actions-dock .sidebar-item[data-dock-tip]::after {
-    content: attr(data-dock-tip);
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 8px);
-    transform: translateX(-50%) translateY(2px);
-    padding: 4px 8px;
-    border-radius: 6px;
-    background: rgba(12, 16, 22, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #e8edf5;
-    font-size: 11px;
-    font-weight: 500;
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.12s ease, transform 0.12s ease;
-    z-index: 5;
-  }
-  .quick-actions-dock .sidebar-item[data-dock-tip]:hover::after {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -171,25 +149,63 @@
   <div id="host"></div>
   <script>
     const host = document.getElementById("host");
+    let tipHideTimer = null;
 
-    function bindClicks(root) {
+    function clearTipHideTimer() {
+      if (tipHideTimer) {
+        clearTimeout(tipHideTimer);
+        tipHideTimer = null;
+      }
+    }
+
+    function showItemTip(el) {
+      const text = el?.getAttribute?.("data-dock-tip");
+      if (!text) return;
+      const rect = el.getBoundingClientRect();
+      clearTipHideTimer();
+      void window.dockOverlayAPI?.showTip?.({
+        text,
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+        placement: "above"
+      });
+    }
+
+    function scheduleHideTip() {
+      clearTipHideTimer();
+      tipHideTimer = setTimeout(() => {
+        window.dockOverlayAPI?.hideTip?.();
+      }, 80);
+    }
+
+    function bindInteractions(root) {
       root.querySelectorAll(".sidebar-item[id]").forEach((el) => {
+        el.removeAttribute("title");
         el.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
           if (el.classList.contains("disabled")) return;
+          window.dockOverlayAPI?.hideTip?.();
           window.dockOverlayAPI?.invokeClick?.(el.id);
         });
+        el.addEventListener("pointerenter", () => showItemTip(el));
+        el.addEventListener("pointerleave", () => scheduleHideTip());
       });
     }
 
     window.dockOverlayAPI?.onRender?.((payload) => {
       host.innerHTML = payload?.html || "";
       const dock = host.querySelector(".quick-actions-dock") || host.firstElementChild;
-      if (dock) bindClicks(dock);
+      if (dock) {
+        dock.querySelectorAll("[title]").forEach((el) => el.removeAttribute("title"));
+        bindInteractions(dock);
+      }
     });
 
     document.addEventListener("mouseleave", () => {
+      window.dockOverlayAPI?.hideTip?.();
       window.dockOverlayAPI?.hide?.();
     });
   </script>

@@ -274,7 +274,7 @@ body.theme-tablet .dock-battery-strip {
   z-index: 80;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
   pointer-events: auto;
   overflow: visible;
 }
@@ -293,11 +293,66 @@ body.theme-tablet .dock-device-chip {
   border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: visible;
   position: relative;
+  transition: padding 0.12s ease, gap 0.12s ease;
 }
 
 body.theme-tablet .dock-device-chip.has-device-color {
   border-color: var(--device-chip-color);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--device-chip-color) 35%, transparent);
+}
+
+/* Compact : pastille batterie ; détail via overlay always-on-top. */
+body.theme-tablet .dock-device-chip--compact {
+  padding: 4px 7px;
+  gap: 0;
+}
+
+body.theme-tablet .dock-device-chip--menu {
+  width: 100%;
+  border-radius: 10px;
+  padding: 6px 8px;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+body.theme-tablet .dock-device-chip--menu .dock-device-chip-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+body.theme-tablet .dock-device-chip-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: #c5cdd9;
+}
+
+body.theme-tablet .dock-device-chip .dock-device-wifi-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  position: relative;
+}
+
+body.theme-tablet .dock-device-chip .sidebar-wifi-toggle-ui {
+  width: 28px;
+  height: 14px;
+}
+
+body.theme-tablet .dock-device-chip .sidebar-wifi-toggle-ui::after {
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+}
+
+body.theme-tablet .dock-device-chip .sidebar-wifi-toggle-input:checked + .sidebar-wifi-toggle-ui::after {
+  transform: translateX(14px);
 }
 
 body.theme-tablet .dock-battery-item {
@@ -358,6 +413,57 @@ body.theme-tablet .dock-device-audio-btn {
 body.theme-tablet .dock-device-audio-btn .sidebar-device-audio-icon {
   width: 14px;
   height: 14px;
+}
+
+body.theme-tablet .dock-battery-more-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+body.theme-tablet .dock-battery-more {
+  min-width: 34px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 27, 36, 0.92);
+  color: #d7e0ef;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  line-height: 1;
+}
+
+body.theme-tablet .dock-battery-more:hover,
+body.theme-tablet .dock-battery-strip.is-more-open .dock-battery-more {
+  border-color: rgba(79, 140, 255, 0.45);
+  background: rgba(79, 140, 255, 0.14);
+  color: #8eb6ff;
+}
+
+body.theme-tablet .dock-battery-more-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 220px;
+  max-width: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #1e2430;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 90;
+}
+
+body.theme-tablet .dock-battery-more-panel[hidden] {
+  display: none !important;
 }
 
 body.theme-tablet .quick-actions-dock .sidebar-item {
@@ -426,88 +532,15 @@ body.theme-tablet .quick-actions-dock .sidebar-item {
   position: relative;
 }
 
-/* Infobulles style dock (nouvelle instance, USB/Wi‑Fi, actions centrales). */
+/* Infobulles : rendues via hub-bubble overlay (style toast, au-dessus des BrowserViews).
+   Les tips CSS du dock restent uniquement dans dock-overlay.html (fenêtre always-on-top). */
 body.theme-tablet [data-dock-tip] {
   position: relative;
 }
 
 body.theme-tablet [data-dock-tip]::after {
-  content: attr(data-dock-tip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%) translateY(2px);
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(12, 16, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e8edf5;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 90;
-}
-
-body.theme-tablet [data-dock-tip]:hover::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-body.theme-tablet .tabs-new-instance[data-dock-tip]::after {
-  left: 0;
-  bottom: auto;
-  top: calc(100% + 8px);
-  transform: translateX(0) translateY(-2px);
-  z-index: 200;
-}
-
-body.theme-tablet .tabs-new-instance[data-dock-tip]:hover::after {
-  opacity: 1;
-  transform: translateX(0) translateY(0);
-}
-
-body.theme-tablet .sidebar-wifi-toggle[data-dock-tip]::after {
-  bottom: auto;
-  top: calc(100% + 6px);
-  transform: translateX(-50%) translateY(-2px);
-}
-
-body.theme-tablet .sidebar-wifi-toggle[data-dock-tip]:hover::after {
-  transform: translateX(-50%) translateY(0);
-}
-
-body.theme-tablet .home-devices-panel .sidebar-device-audio-btn[data-dock-tip]::after,
-body.theme-tablet .sidebar-devices-panel .sidebar-device-audio-btn[data-dock-tip]::after {
-  bottom: auto;
-  top: calc(100% + 6px);
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%) translateY(-2px);
-}
-
-body.theme-tablet .home-devices-panel .sidebar-device-audio-btn[data-dock-tip]:hover::after,
-body.theme-tablet .sidebar-devices-panel .sidebar-device-audio-btn[data-dock-tip]:hover::after {
-  transform: translateX(-50%) translateY(0);
-}
-
-/* Infobulles batterie/audio du bas : à gauche, dans la barre (pas sous le flux). */
-body.theme-tablet .dock-battery-strip .dock-battery-item[data-dock-tip]::after,
-body.theme-tablet .dock-battery-strip .dock-device-audio-btn[data-dock-tip]::after {
-  left: auto !important;
-  right: calc(100% + 8px) !important;
-  top: 50% !important;
-  bottom: auto !important;
-  transform: translateY(-50%) translateX(4px) !important;
-  z-index: 200;
-}
-
-body.theme-tablet .dock-battery-strip .dock-battery-item[data-dock-tip]:hover::after,
-body.theme-tablet .dock-battery-strip .dock-device-audio-btn[data-dock-tip]:hover::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0) !important;
+  content: none !important;
+  display: none !important;
 }
 
 body.theme-tablet .home-devices-panel .sidebar-device-card,

@@ -18,7 +18,8 @@
         button.classList.remove("portrait-on", "portrait-off");
         badge.textContent = "—";
         badge.classList.remove("on", "off");
-        button.title = t("toggles.portraitTitle");
+        button.title = "";
+        button.removeAttribute("title");
         activeSessionId = null;
     }
 
@@ -34,7 +35,8 @@
         badge.classList.toggle("on", portraitOn);
         badge.classList.toggle("off", !portraitOn);
 
-        button.title = t("toggles.portraitTitle");
+        button.title = "";
+        button.removeAttribute("title");
     }
 
     async function updateOrientationToggle() {
@@ -105,6 +107,18 @@
         if (window.sessionAPI?.onSessionActivated) {
             window.sessionAPI.onSessionActivated(() => {
                 updateOrientationToggle();
+            });
+        }
+
+        if (window.sessionAPI?.onOrientationChanged) {
+            window.sessionAPI.onOrientationChanged((data) => {
+                if (!data?.sessionId) return;
+                if (activeSessionId && data.sessionId !== activeSessionId) return;
+                if (data.orientation === "portrait" || data.orientation === "landscape") {
+                    setOrientationToggleState(data.orientation === "portrait", data.sessionId);
+                } else {
+                    void updateOrientationToggle();
+                }
             });
         }
 

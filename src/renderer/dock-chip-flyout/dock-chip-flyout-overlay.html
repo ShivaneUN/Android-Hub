@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+
+  #host {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding-bottom: 20px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  .flyout {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 168px;
+    padding: 4px 0;
+    border-radius: 14px;
+    background: rgba(28, 32, 40, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    color: #f2f5fa;
+    overflow: visible;
+  }
+
+  .flyout::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translateX(-50%);
+    border: 7px solid transparent;
+    border-top-color: rgba(28, 32, 40, 0.96);
+  }
+
+  .flyout-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 8px 14px;
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+    text-align: left;
+  }
+
+  .flyout-row + .flyout-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .flyout-row-battery {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .flyout-row-battery .dock-battery-icon {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+
+  .flyout-pct {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    color: #f2f5fa;
+  }
+
+  .flyout-row-battery.dock-battery-good,
+  .flyout-row-battery.dock-battery-good .dock-battery-icon {
+    color: #3ecf6f;
+  }
+
+  .flyout-row-battery.dock-battery-medium,
+  .flyout-row-battery.dock-battery-medium .dock-battery-icon {
+    color: #f5a623;
+  }
+
+  .flyout-row-battery.dock-battery-low,
+  .flyout-row-battery.dock-battery-low .dock-battery-icon {
+    color: #e5484d;
+  }
+
+  .flyout-row-battery.dock-battery-unknown,
+  .flyout-row-battery.dock-battery-unknown .dock-battery-icon {
+    color: #8b93a3;
+  }
+
+  .flyout-row-audio {
+    cursor: pointer;
+    border-radius: 0;
+  }
+
+  .flyout-row-audio:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .flyout-row-audio.audio-on {
+    color: #d7e0ef;
+  }
+
+  .flyout-row-audio.audio-off {
+    color: #d7e0ef;
+  }
+
+  .flyout-row-audio .sidebar-device-audio-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: #c5cdd9;
+  }
+
+  .flyout-row-audio.audio-off .sidebar-device-audio-icon {
+    color: #e5484d;
+  }
+
+  .flyout-row-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #e8ecf4;
+  }
+
+  .flyout-row-wifi {
+    justify-content: space-between;
+  }
+
+  .flyout-row-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .flyout-wifi-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: #c5cdd9;
+  }
+
+  .sidebar-wifi-toggle {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .sidebar-wifi-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .sidebar-wifi-toggle-ui {
+    display: block;
+    width: 34px;
+    height: 18px;
+    border-radius: 999px;
+    background: #3a4150;
+    position: relative;
+  }
+
+  .sidebar-wifi-toggle-ui::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #c8ceda;
+    transition: transform 0.18s ease, background 0.18s ease;
+  }
+
+  .sidebar-wifi-toggle-input:checked + .sidebar-wifi-toggle-ui {
+    background: #3d6df0;
+  }
+
+  .sidebar-wifi-toggle-input:checked + .sidebar-wifi-toggle-ui::after {
+    transform: translateX(16px);
+    background: #fff;
+  }
+
+  .sidebar-wifi-toggle-input:disabled + .sidebar-wifi-toggle-ui {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+  <div id="host"></div>
+  <script>
+    const host = document.getElementById("host");
+    let reportTimer = null;
+    let deviceId = "";
+    let serial = "";
+
+    function reportSize() {
+      const flyout = host.querySelector(".flyout");
+      if (!flyout) return;
+      const rect = flyout.getBoundingClientRect();
+      window.dockChipFlyoutOverlayAPI?.reportSize?.({
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height)
+      });
+    }
+
+    function bind(root) {
+      const audioBtn = root.querySelector(".dock-device-audio-btn");
+      if (audioBtn) {
+        audioBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void window.dockChipFlyoutOverlayAPI?.toggleAudio?.({ deviceId, serial });
+        });
+      }
+
+      const wifiInput = root.querySelector(".sidebar-wifi-toggle-input");
+      if (wifiInput) {
+        wifiInput.addEventListener("click", (event) => event.stopPropagation());
+        wifiInput.addEventListener("change", (event) => {
+          event.stopPropagation();
+          void window.dockChipFlyoutOverlayAPI?.toggleWifi?.({
+            deviceId,
+            serial,
+            checked: Boolean(wifiInput.checked)
+          });
+        });
+      }
+    }
+
+    window.dockChipFlyoutOverlayAPI?.onRender?.((payload = {}) => {
+      if (!payload.visible) {
+        host.innerHTML = "";
+        return;
+      }
+      deviceId = String(payload.deviceId || "");
+      serial = String(payload.serial || "");
+      host.innerHTML = `<div class="flyout">${payload.html || ""}</div>`;
+      const flyout = host.querySelector(".flyout");
+      if (flyout) {
+        deviceId = flyout.dataset.deviceId || deviceId;
+        serial = flyout.dataset.serial || serial;
+        bind(flyout);
+      }
+      if (reportTimer) clearTimeout(reportTimer);
+      reportTimer = setTimeout(reportSize, 16);
+    });
+
+    document.addEventListener("mouseenter", () => {
+      window.dockChipFlyoutOverlayAPI?.keepOpen?.();
+    });
+
+    document.addEventListener("mouseleave", () => {
+      window.dockChipFlyoutOverlayAPI?.hide?.();
+    });
+  </script>
+</body>
+</html>

@@ -24,7 +24,7 @@
         if (iconOn) iconOn.classList.toggle("hidden", !audioOn);
         if (iconOff) iconOff.classList.toggle("hidden", audioOn);
 
-        button.title = t("toggles.audioTitle");
+        button.removeAttribute("title");
     }
 
     async function refreshGlobalAudioToggle() {

@@ -43,17 +43,28 @@ class DockHoverOverlayManager {
                         await new Promise((r) => setTimeout(r, 20));
                         const dock = document.getElementById("quick-actions-dock");
                         if (!dock) return { ok: true, html: "" };
-                        dock.classList.add("dock-covered");
                         const clone = dock.cloneNode(true);
                         clone.classList.remove("dock-covered");
+                        clone.querySelectorAll("[title]").forEach((node) => node.removeAttribute("title"));
                         return { ok: true, html: clone.outerHTML };
                     })()
                 `);
-                if (result?.html && this.overlayWindow && !this.overlayWindow.isDestroyed() && this.visible) {
+
+                // Un clic (ex. Accueil) peut avoir fermé l'overlay : ne pas re-couvrir le dock.
+                if (!this.visible) {
+                    this._uncoverMainDock();
+                    return result || { ok: false };
+                }
+
+                if (result?.html && this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+                    await this.mainWindow.webContents.executeJavaScript(
+                        `document.getElementById("quick-actions-dock")?.classList.add("dock-covered")`
+                    );
                     this.overlayWindow.webContents.send("dock-hover:render", { html: result.html });
                 }
                 return result || { ok: false };
             } catch (_err) {
+                this._uncoverMainDock();
                 return { ok: false };
             }
         });
@@ -61,6 +72,15 @@ class DockHoverOverlayManager {
         ipcMain.removeHandler("dock-hover:hide");
         ipcMain.handle("dock-hover:hide", async () => {
             this.hide();
+            return true;
+        });
+
+        ipcMain.removeHandler("dock-hover:show-tip");
+        ipcMain.handle("dock-hover:show-tip", async (_event, payload = {}) => this.showTip(payload));
+
+        ipcMain.removeHandler("dock-hover:hide-tip");
+        ipcMain.handle("dock-hover:hide-tip", async () => {
+            this.hideTip();
             return true;
         });
     }
@@ -95,6 +115,7 @@ class DockHoverOverlayManager {
             thickFrame: false,
             backgroundColor: "#00000000",
             parent: this.mainWindow,
+            modal: false,
             webPreferences: {
                 preload: path.join(__dirname, "../../preload/dockOverlayPreload.js"),
                 contextIsolation: true,
@@ -103,7 +124,7 @@ class DockHoverOverlayManager {
             }
         });
 
-        this.overlayWindow.setAlwaysOnTop(true, "screen-saver");
+        // Enfant de la fenêtre principale uniquement (reste dans l'app, pas above other Windows apps).
         await this.overlayWindow.loadFile(
             path.join(__dirname, "../../renderer/dock-hover/dock-overlay.html")
         );
@@ -146,20 +167,49 @@ class DockHoverOverlayManager {
         win.webContents.send("dock-hover:render", { html: String(html || "") });
 
         if (!win.isVisible()) win.showInactive();
-        win.setAlwaysOnTop(true, "screen-saver");
         return true;
     }
 
     hide() {
-        if (!this.visible) return;
+        const wasVisible = this.visible;
         this.visible = false;
+        this.hideTip();
         this._uncoverMainDock();
         const win = this.overlayWindow;
-        if (win && !win.isDestroyed()) win.hide();
+        if (wasVisible && win && !win.isDestroyed()) win.hide();
+    }
+
+    async showTip(payload = {}) {
+        const bubble = global.hubBubbleOverlayManager;
+        if (!bubble || !this.visible || !this.overlayWindow || this.overlayWindow.isDestroyed()) {
+            return false;
+        }
+        if (!this.mainWindow || this.mainWindow.isDestroyed()) return false;
+
+        const overlayBounds = this.overlayWindow.getBounds();
+        const contentBounds = this.mainWindow.getContentBounds();
+        const localX = Number(payload.x) || 0;
+        const localY = Number(payload.y) || 0;
+        return bubble.showTip({
+            text: payload.text,
+            placement: payload.placement || "above",
+            width: Number(payload.width) || 0,
+            height: Number(payload.height) || 0,
+            x: overlayBounds.x - contentBounds.x + localX,
+            y: overlayBounds.y - contentBounds.y + localY
+        });
+    }
+
+    hideTip() {
+        const bubble = global.hubBubbleOverlayManager;
+        if (bubble && bubble.mode === "tip") {
+            bubble.hide();
+        }
     }
 
     destroy() {
         this.visible = false;
+        this.hideTip();
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             this.mainWindow.removeListener("move", this._onMainMove);
             this.mainWindow.removeListener("resize", this._onMainResize);
@@ -169,6 +219,8 @@ class DockHoverOverlayManager {
         ipcMain.removeHandler("dock-hover:show");
         ipcMain.removeHandler("dock-hover:invoke-click");
         ipcMain.removeHandler("dock-hover:hide");
+        ipcMain.removeHandler("dock-hover:show-tip");
+        ipcMain.removeHandler("dock-hover:hide-tip");
         if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
             this.overlayWindow.destroy();
         }

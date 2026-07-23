@@ -80,7 +80,7 @@
     </div>
 
     <div class="quick-actions-dock" id="quick-actions-dock">
-      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-i18n-dock-tip="sidebar.screen" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
+      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-i18n-dock-tip="sidebar.screen">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="7" y="2" width="10" height="20" rx="2.5"/>
@@ -91,7 +91,7 @@
         <div class="label" data-i18n="sidebar.screen">Ecran</div>
       </div>
 
-      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-i18n-dock-tip="sidebar.portrait" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
+      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-i18n-dock-tip="sidebar.portrait">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="2" y="7" width="20" height="10" rx="2.5"/>
@@ -102,7 +102,7 @@
         <div class="label" data-i18n="sidebar.portrait">Portrait</div>
       </div>
 
-      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-dock-tip="sidebar.audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
+      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-dock-tip="sidebar.audio">
         <div class="icon">
           <svg id="sidebar-global-audio-icon-on" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M11 5 6 9H2v6h4l5 4V5z"/>
@@ -130,7 +130,7 @@
         <div class="label" data-i18n="sidebar.home">Accueil</div>
       </div>
 
-      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-i18n-dock-tip="streamDeck.toggle" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
+      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-i18n-dock-tip="streamDeck.toggle">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="7" height="7" rx="1.5"/>
@@ -142,7 +142,7 @@
         <div class="label" data-i18n="streamDeck.toggle">Mode Stream Deck</div>
       </div>
 
-      <div class="sidebar-item" id="nav-settings" data-i18n-dock-tip="sidebar.settings" data-i18n-title="toggles.settingsTitle" title="Appareils, contrôle et nettoyage">
+      <div class="sidebar-item" id="nav-settings" data-i18n-dock-tip="sidebar.settings">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3"/>
@@ -152,7 +152,7 @@
         <div class="label" data-i18n="sidebar.settings">Paramètres</div>
       </div>
 
-      <div class="sidebar-item" id="nav-aide" data-i18n-dock-tip="sidebar.help" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
+      <div class="sidebar-item" id="nav-aide" data-i18n-dock-tip="sidebar.help">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
@@ -315,6 +315,11 @@
       window.dockHoverAPI?.hide?.();
       document.getElementById("quick-actions-dock")?.classList.remove("dock-covered");
 
+      // Sécurité : le dock ne doit jamais rester invisible après Accueil.
+      requestAnimationFrame(() => {
+        document.getElementById("quick-actions-dock")?.classList.remove("dock-covered");
+      });
+
       if (window.getStreamDeckMode?.() === true && typeof window.setStreamDeckMode === "function") {
         window.setStreamDeckMode(false);
       }
@@ -358,6 +363,7 @@
 </script>
 
 <script src="toast.js"></script>
+<script src="dock-tip.js"></script>
 <script src="hub-loading-overlay.js"></script>
 <script src="devices.js"></script>
 <script src="rename/RenameDialog.js"></script>
@@ -466,7 +472,7 @@
 
       const SCALE = 1.55;
       const BASE_H = 36;
-      const TIP_SPACE = 34;
+      const TIP_SPACE = 52;
 
       dock.addEventListener("mouseenter", () => {
         if (!body.classList.contains("theme-tablet")) return;
@@ -481,6 +487,7 @@
         dock.classList.add("dock-covered");
         const clone = dock.cloneNode(true);
         clone.classList.remove("dock-covered");
+        clone.querySelectorAll("[title]").forEach((el) => el.removeAttribute("title"));
         void window.dockHoverAPI.show({
           x,
           y,

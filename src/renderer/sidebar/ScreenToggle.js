@@ -18,7 +18,7 @@
         button.classList.remove("screen-on", "screen-off");
         badge.textContent = "—";
         badge.classList.remove("on", "off");
-        button.title = t("toggles.screenTitle");
+        button.removeAttribute("title");
         activeTypeASessionId = null;
     }
 
@@ -34,7 +34,7 @@
         badge.classList.toggle("on", !screenOff);
         badge.classList.toggle("off", screenOff);
 
-        button.title = t("toggles.screenTitle");
+        button.removeAttribute("title");
     }
 
     async function updateScreenToggle() {

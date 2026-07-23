@@ -45,6 +45,8 @@ const {
 const { SessionStreamRegistry } = require("./managers/session-stream-registry");
 const { VideoPreviewTooltipManager } = require("./managers/video-preview-tooltip-manager");
 const { DockHoverOverlayManager } = require("./managers/dock-hover-overlay-manager");
+const { HubBubbleOverlayManager } = require("./managers/hub-bubble-overlay-manager");
+const { DockChipFlyoutOverlayManager } = require("./managers/dock-chip-flyout-overlay-manager");
 const { registerVideoPreviewHandlers } = require("./ipc/videoPreviewHandlers");
 const { CustomNamesManager } = require("./managers/custom-names-manager");
 const { registerNamesHandlers } = require("./ipc/namesHandlers");
@@ -2709,7 +2711,9 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     createWindow();
     global.browserViewManager = new BrowserViewManager(win);
     global.videoPreviewTooltipManager = new VideoPreviewTooltipManager(win);
+    global.hubBubbleOverlayManager = new HubBubbleOverlayManager(win);
     global.dockHoverOverlayManager = new DockHoverOverlayManager(win);
+    global.dockChipFlyoutOverlayManager = new DockChipFlyoutOverlayManager(win);
     global.renameDialogManager = new RenameDialogManager(win);
     global.streamDeckDuoPopupManager = new StreamDeckDuoPopupManager(win);
     global.hubModalOverlayManager = new HubModalOverlayManager(win);

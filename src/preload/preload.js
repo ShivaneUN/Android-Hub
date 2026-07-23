@@ -146,6 +146,18 @@ contextBridge.exposeInMainWorld("dockHoverAPI", {
     hide: () => ipcRenderer.invoke("dock-hover:hide")
 });
 
+contextBridge.exposeInMainWorld("hubBubbleAPI", {
+    showToast: (payload) => ipcRenderer.invoke("hub-bubble:show-toast", payload),
+    showTip: (payload) => ipcRenderer.invoke("hub-bubble:show-tip", payload),
+    hide: () => ipcRenderer.invoke("hub-bubble:hide")
+});
+
+contextBridge.exposeInMainWorld("dockChipFlyoutAPI", {
+    show: (payload) => ipcRenderer.invoke("dock-chip-flyout:show", payload),
+    update: (payload) => ipcRenderer.invoke("dock-chip-flyout:update", payload),
+    hide: () => ipcRenderer.invoke("dock-chip-flyout:hide")
+});
+
 contextBridge.exposeInMainWorld("namesAPI", {
     renameDevice: (payload) => ipcRenderer.invoke("names:renameDevice", payload),
     resetDevice: (payload) => ipcRenderer.invoke("names:resetDevice", payload),

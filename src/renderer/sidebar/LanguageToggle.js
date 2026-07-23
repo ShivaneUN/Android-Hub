@@ -10,7 +10,6 @@
         const item = document.createElement("div");
         item.className = "sidebar-item sidebar-language-toggle";
         item.id = "nav-language";
-        item.title = t("sidebar.language");
         item.innerHTML = `
             <div class="icon sidebar-language-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -34,8 +33,14 @@
             dock.appendChild(item);
         }
 
-        item.addEventListener("click", () => {
-            void globalThis.HubI18n?.toggleLocale?.();
+        item.addEventListener("click", async () => {
+            if (item.classList.contains("pending")) return;
+            item.classList.add("pending");
+            try {
+                await globalThis.HubI18n?.toggleLocale?.();
+            } finally {
+                item.classList.remove("pending");
+            }
         });
     }
 
@@ -47,7 +52,7 @@
         const item = document.getElementById("nav-language");
         if (item) {
             const tipKey = locale === "en" ? "sidebar.languageEn" : "sidebar.languageFr";
-            item.title = t(tipKey);
+            item.removeAttribute("title");
             item.dataset.dockTip = t(tipKey);
             item.setAttribute("data-i18n-dock-tip", tipKey);
         }

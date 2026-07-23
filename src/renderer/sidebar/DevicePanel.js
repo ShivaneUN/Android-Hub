@@ -77,6 +77,9 @@ function setWifiTogglesDisabled(deviceId, disabled) {
             input.disabled = Boolean(disabled);
         }
     }
+    if (typeof window.refreshOpenDockFlyout === "function") {
+        window.refreshOpenDockFlyout();
+    }
 }
 
 function syncWifiToggleChecked(deviceId, checked) {
@@ -86,6 +89,23 @@ function syncWifiToggleChecked(deviceId, checked) {
             input.checked = Boolean(checked);
         }
     }
+    if (typeof window.refreshOpenDockFlyout === "function") {
+        window.refreshOpenDockFlyout();
+    }
+}
+
+function syncDeviceAudioButtons(device) {
+    const key = deviceAudioKey(device);
+    if (!key) return;
+    const on = isDeviceAudioOn(device);
+    document.querySelectorAll(".sidebar-device-audio-btn[data-device-key]").forEach((btn) => {
+        if (btn.dataset.deviceKey !== key) return;
+        btn.classList.toggle("audio-on", on);
+        btn.classList.toggle("audio-off", !on);
+        if (!btn.classList.contains("flyout-row-audio")) {
+            btn.innerHTML = on ? AUDIO_ICON_ON : AUDIO_ICON_OFF;
+        }
+    });
 }
 
 function normalizeDeviceListResponse(response) {
@@ -145,6 +165,13 @@ async function handleWifiToggle(device, enabled, toggleInput) {
     if (deviceId && wifiToggleInFlightIds.has(deviceId)) {
         // Restaurer l'état visuel (changement déjà en cours via l'autre panneau).
         if (toggleInput) toggleInput.checked = !enabled;
+        syncWifiToggleChecked(
+            deviceId,
+            Boolean(
+                device?.wifiActive
+                ?? (device?.wifiEnabled && device?.transport === "wifi" && device?.connected !== false)
+            )
+        );
         return;
     }
     if (deviceId) wifiToggleInFlightIds.add(deviceId);
@@ -360,11 +387,14 @@ function renderDevicePanel(devices) {
 
 async function handleDeviceAudioToggle(device, button) {
     const key = deviceAudioKey(device);
-    if (!key || !window.audioAPI?.toggleDeviceMuted || button?.classList.contains("pending")) {
+    if (!key || !window.audioAPI?.toggleDeviceMuted) {
+        return;
+    }
+    if (button?.classList?.contains("pending")) {
         return;
     }
 
-    button.classList.add("pending");
+    button?.classList?.add("pending");
     try {
         const result = await window.audioAPI.toggleDeviceMuted(key);
         if (result?.globalMuted !== undefined || result?.devices) {
@@ -374,9 +404,14 @@ async function handleDeviceAudioToggle(device, button) {
             };
         }
         const on = isDeviceAudioOn(device);
-        button.classList.toggle("audio-on", on);
-        button.classList.toggle("audio-off", !on);
-        button.innerHTML = on ? AUDIO_ICON_ON : AUDIO_ICON_OFF;
+        syncDeviceAudioButtons(device);
+        if (button) {
+            button.classList.toggle("audio-on", on);
+            button.classList.toggle("audio-off", !on);
+            if (!button.classList.contains("flyout-row-audio")) {
+                button.innerHTML = on ? AUDIO_ICON_ON : AUDIO_ICON_OFF;
+            }
+        }
         if (typeof window.refreshGlobalAudioToggle === "function") {
             window.refreshGlobalAudioToggle();
         }
@@ -386,7 +421,7 @@ async function handleDeviceAudioToggle(device, button) {
     } catch (err) {
         console.error("[DevicePanel] audio toggle:", err);
     } finally {
-        button.classList.remove("pending");
+        button?.classList?.remove("pending");
     }
 }
 
@@ -471,4 +506,9 @@ window.__deviceAudioUi = {
     isOn: isDeviceAudioOn,
     toggle: handleDeviceAudioToggle,
     refreshState: refreshCachedAudioState
+};
+
+window.__deviceWifiUi = {
+    toggle: handleWifiToggle,
+    isInFlight: (deviceId) => Boolean(deviceId && wifiToggleInFlightIds.has(deviceId))
 };

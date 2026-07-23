@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+
+  #bubble {
+    display: inline-block;
+    box-sizing: border-box;
+    min-width: 160px;
+    max-width: 360px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #1e2430;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e8ecf4;
+    font-size: 13px;
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none;
+  }
+
+  #bubble.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  #bubble.hub-toast-success { border-color: rgba(62, 207, 111, 0.45); }
+  #bubble.hub-toast-error { border-color: rgba(229, 72, 77, 0.5); color: #ffd5d7; }
+  #bubble.hub-toast-info { border-color: rgba(79, 140, 255, 0.35); }
+</style>
+</head>
+<body>
+  <div id="bubble" aria-live="polite"></div>
+  <script>
+    const bubble = document.getElementById("bubble");
+    let reportTimer = null;
+
+    function reportSize() {
+      if (!bubble.classList.contains("visible")) return;
+      const rect = bubble.getBoundingClientRect();
+      const width = Math.ceil(rect.width);
+      const height = Math.ceil(rect.height);
+      window.hubBubbleOverlayAPI?.reportSize?.({ width, height });
+    }
+
+    window.hubBubbleOverlayAPI?.onRender?.((payload = {}) => {
+      if (!payload.visible) {
+        bubble.classList.remove("visible");
+        bubble.textContent = "";
+        return;
+      }
+
+      bubble.className = "";
+      bubble.id = "bubble";
+      bubble.classList.add(`hub-toast-${payload.type || "info"}`);
+      bubble.textContent = String(payload.text || "");
+      requestAnimationFrame(() => {
+        bubble.classList.add("visible");
+        if (reportTimer) clearTimeout(reportTimer);
+        reportTimer = setTimeout(reportSize, 16);
+      });
+    });
+  </script>
+</body>
+</html>

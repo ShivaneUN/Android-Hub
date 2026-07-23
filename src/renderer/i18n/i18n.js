@@ -64,6 +64,11 @@
         root.querySelectorAll("[data-i18n-title]").forEach((el) => {
             const key = el.getAttribute("data-i18n-title");
             if (!key) return;
+            // Les éléments avec infobulle dock utilisent hubBubble, pas le title natif OS.
+            if (el.hasAttribute("data-i18n-dock-tip") || el.hasAttribute("data-dock-tip") || el.dataset.dockTip) {
+                el.removeAttribute("title");
+                return;
+            }
             let vars = {};
             const varsRaw = el.getAttribute("data-i18n-vars");
             if (varsRaw) {
@@ -80,6 +85,7 @@
             if (!key) return;
             const label = t(key);
             el.dataset.dockTip = label;
+            el.removeAttribute("title");
             if (!el.hasAttribute("data-i18n-aria-label") && !el.getAttribute("aria-label")) {
                 el.setAttribute("aria-label", label);
             }
