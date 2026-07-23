@@ -1,6 +1,14 @@
 # Android Hub — État d'avancement
 
-Dernière mise à jour : 2026-07-22
+Dernière mise à jour : 2026-07-23
+
+---
+
+## Audit catégorie (b) — point 1 : vestige preferredNewDisplay (2026-07-23)
+
+**Statut : nettoyage effectué (pas encore commité — review requise).**
+
+Retrait de `preferredNewDisplay` (session) et de `resolveTypeBNewDisplay` (`new-instance-manager.js`), orphelins depuis le retrait de la catégorie (a) — aucun lecteur restant, aucun effet runtime.
 
 ---
 
@@ -4936,6 +4944,7 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
+- **2026-07-23** — **Audit catégorie (b) point 1** — Retrait vestige `preferredNewDisplay` / `resolveTypeBNewDisplay` (`new-instance-manager.js`), orphelin depuis retrait catégorie (a) — aucun effet runtime.
 - **2026-07-22** — **Reattach USB/WiFi — nettoyage rebind in-place** — Retrait de `ScrcpySocketClient.rebind()` / `rebindTransportOnly()` (`scrcpy-socket.js`) et `AdbInputController.rebind()` (`adb-input-controller.js`). Approche rebind in-place abandonnée après test réel (flux vidéo cassé + décalage input). Suite : `switchSessionTransport` (destroy+recreate orchestré), commit séparé à venir.
 - **2026-07-21** — **Reattach USB/WiFi — Commit 3/4** — `AdbInputController.rebind()` — **abandonné / retiré** (voir nettoyage 2026-07-22).
 - **2026-07-21** — **Reattach USB/WiFi — Commit 2/4** — `ScrcpySocketClient.rebind()` — **abandonné / retiré** (voir nettoyage 2026-07-22).

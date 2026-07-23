@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { exec, spawn } = require("child_process");
 const { ScrcpySocketClient } = require("../../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../../native/scrcpy/control/adb-input-controller");
-const { DEFAULT_STREAM_PARAMS, toScrcpyOptions, formatNewDisplay } = require("../../shared/stream-params");
+const { DEFAULT_STREAM_PARAMS, toScrcpyOptions } = require("../../shared/stream-params");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
 
 const KEY_ACTION_DOWN = 0;
@@ -42,48 +42,6 @@ function mergeTypeBScrcpyOptions(scrcpyOptions = {}, session = null) {
         ? false
         : true;
     return merged;
-}
-
-/** Conserve les dimensions/DPI du display Type B pour les handoffs USB↔WiFi. */
-function resolveTypeBNewDisplay(session) {
-    if (!session) {
-        return toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
-    }
-    if (session.preferredNewDisplay) {
-        return session.preferredNewDisplay;
-    }
-    if (session.streamOptions?.newDisplay) {
-        return session.streamOptions.newDisplay;
-    }
-
-    const entry = global.browserViewManager?.getSessionEntry?.(session.sessionId);
-    const params = entry?.streamParams || null;
-    if (params?.width > 0 && params?.height > 0) {
-        return formatNewDisplay(params);
-    }
-
-    const w = session.streamSize?.width;
-    const h = session.streamSize?.height;
-    if (w > 0 && h > 0) {
-        // Ne pas figer un ratio inversé (ex. 1080x1920 après un mauvais capture_orientation).
-        const configured = session.streamOptions?.newDisplay || session.preferredNewDisplay;
-        const parsed = configured ? String(configured).match(/^(\d+)x(\d+)/i) : null;
-        if (parsed) {
-            const cw = Number(parsed[1]);
-            const ch = Number(parsed[2]);
-            const configLandscape = cw >= ch;
-            const liveLandscape = w >= h;
-            if (configLandscape !== liveLandscape) {
-                return configured.includes("/")
-                    ? configured
-                    : `${cw}x${ch}/${DEFAULT_STREAM_PARAMS.dpi}`;
-            }
-        }
-        const dpi = Number.isFinite(params?.dpi) ? params.dpi : DEFAULT_STREAM_PARAMS.dpi;
-        return `${w}x${h}/${dpi}`;
-    }
-
-    return toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
 }
 
 function execPromise(command) {
@@ -179,8 +137,7 @@ class NewInstanceManager extends EventEmitter {
             client: null,
             inputController: null,
             streamSize: null,
-            streamOptions: initialOptions,
-            preferredNewDisplay: initialOptions.newDisplay || null
+            streamOptions: initialOptions
         };
 
         this.sessions.set(sessionId, session);
@@ -609,13 +566,6 @@ class NewInstanceManager extends EventEmitter {
         const recreateDisplay = Boolean(mergedOptions.newDisplay && mergedOptions.displayId === undefined);
 
         session.streamOptions = mergedOptions;
-        if (mergedOptions.newDisplay) {
-            session.preferredNewDisplay = mergedOptions.newDisplay;
-        }
-        // Garder la géométrie préférée même en mode display_id (pour handoffs ultérieurs).
-        if (!session.preferredNewDisplay && requestedNewDisplay) {
-            session.preferredNewDisplay = requestedNewDisplay;
-        }
 
         console.log(
             `[NewInstance] ${sessionId} scrcpy-server:`,
