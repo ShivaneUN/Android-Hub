@@ -29,6 +29,30 @@ const prefetchedAppKeys = new Set();
 const VISIBLE_PREFETCH_COUNT = 10;
 const SCROLL_PREFETCH_ROOT_MARGIN = "120px 0px";
 
+/** sessionId → timestamp : ignore scrcpy-closed pendant/après reattach USB↔WiFi. */
+const scrcpyClosedGraceUntilBySession = new Map();
+
+function markScrcpyClosedGrace(sessionId, ms = 25000) {
+    if (!sessionId) return;
+    const until = Date.now() + ms;
+    const prev = scrcpyClosedGraceUntilBySession.get(sessionId) || 0;
+    if (until > prev) scrcpyClosedGraceUntilBySession.set(sessionId, until);
+}
+
+function markAllTypeBScrcpyClosedGrace(ms = 25000) {
+    for (const sessionId of newInstanceSessions.keys()) {
+        markScrcpyClosedGrace(sessionId, ms);
+    }
+}
+
+function shouldIgnoreScrcpyClosedLocally(sessionId) {
+    if (!sessionId) return false;
+    const until = scrcpyClosedGraceUntilBySession.get(sessionId) || 0;
+    if (Date.now() < until) return true;
+    scrcpyClosedGraceUntilBySession.delete(sessionId);
+    return false;
+}
+
 function isHubModalChildWindow() {
     return /hub-modal-window\.html$/i.test(location.pathname.replace(/\\/g, "/"));
 }
@@ -1371,10 +1395,54 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (window.electronAPI?.onNewInstanceScrcpyClosed && !isHubModalChildWindow()) {
-        window.electronAPI.onNewInstanceScrcpyClosed(async ({ sessionId } = {}) => {
+        window.electronAPI.onNewInstanceScrcpyClosed(async ({ sessionId, ignoreScrcpyClosed } = {}) => {
             if (!sessionId) return;
+            // Ne pas fermer l'onglet pendant / juste après un reattach USB↔WiFi.
+            if (ignoreScrcpyClosed || shouldIgnoreScrcpyClosedLocally(sessionId)) {
+                console.warn(
+                    `[NewSession] scrcpy-closed ignoré (grace locale) ${sessionId}`
+                );
+                return;
+            }
+            try {
+                const listed = await window.electronAPI?.newInstanceList?.();
+                const sessions = listed?.sessions || listed || [];
+                const summary = Array.isArray(sessions)
+                    ? sessions.find((s) => s?.sessionId === sessionId)
+                    : null;
+                if (summary?.state === "reconnecting" || summary?.ignoreScrcpyClosed) {
+                    markScrcpyClosedGrace(sessionId);
+                    console.warn(
+                        `[NewSession] scrcpy-closed ignoré (reattach/grace) ${sessionId} state=${summary?.state}`
+                    );
+                    return;
+                }
+                // Session toujours vivante côté main → closed parasite (pas une vraie mort).
+                if (summary && summary.state !== "stopped" && summary.state !== "error") {
+                    console.warn(
+                        `[NewSession] scrcpy-closed ignoré — session vivante state=${summary.state} ${sessionId}`
+                    );
+                    return;
+                }
+            } catch (_err) {
+                // noop — fallback fermeture classique
+            }
             console.log(`[NewSession] Scrcpy ferme, fermeture session ${sessionId}`);
-            await closeNewInstanceSession(sessionId);
+            await closeNewInstanceSession(sessionId, "scrcpy-closed");
+        });
+    }
+
+    if (window.wifiAPI?.onTransportReattachState && !isHubModalChildWindow()) {
+        window.wifiAPI.onTransportReattachState(({ phase } = {}) => {
+            if (phase === "start" || phase === "end") {
+                markAllTypeBScrcpyClosedGrace(25000);
+            }
+        });
+    }
+
+    if (window.electronAPI?.onStreamRestarting && !isHubModalChildWindow()) {
+        window.electronAPI.onStreamRestarting(({ sessionId } = {}) => {
+            markScrcpyClosedGrace(sessionId, 25000);
         });
     }
 

@@ -169,7 +169,12 @@ contextBridge.exposeInMainWorld("wifiAPI", {
     removeFromPanel: (payload) => ipcRenderer.invoke("devices:panel-remove", payload),
     reconnect: (payload) => ipcRenderer.invoke("wifi:reconnect", payload),
     resolveSerial: (payload) => ipcRenderer.invoke("device:resolve-serial", payload),
-    discoverDevices: () => ipcRenderer.invoke("devices:discover")
+    discoverDevices: () => ipcRenderer.invoke("devices:discover"),
+    onTransportReattachState: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("transport:reattach-state", handler);
+        return () => ipcRenderer.removeListener("transport:reattach-state", handler);
+    }
 });
 
 contextBridge.exposeInMainWorld("launchHistoryAPI", {

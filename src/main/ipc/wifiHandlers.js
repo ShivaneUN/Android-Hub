@@ -23,6 +23,278 @@ function enrichPanelEntries(entries, { namesManager, colorsManager } = {}) {
     return list;
 }
 
+function notifyTransportReattachState(getMainWindow, payload) {
+    try {
+        const win = typeof getMainWindow === "function" ? getMainWindow() : null;
+        if (win && !win.isDestroyed()) {
+            win.webContents.send("transport:reattach-state", payload);
+        }
+    } catch (_err) {
+        // noop
+    }
+}
+
+/**
+ * Pose state=reconnecting sur les sessions Type B du device (garde Commit 1).
+ */
+function markTypeBSessionsReconnecting(getNewInstanceManager, deviceId) {
+    if (!deviceId || typeof getNewInstanceManager !== "function") return;
+
+    const manager = getNewInstanceManager();
+    if (!manager?.listNewInstanceSessions || !manager?.beginTransportReconnect) return;
+
+    const summaries = manager.listNewInstanceSessions() || [];
+    for (const summary of summaries) {
+        if (!summary?.sessionId) continue;
+        if (summary.state === "stopped" || summary.state === "stopping") continue;
+
+        const matches = summary.stableDeviceId === deviceId || summary.serial === deviceId;
+        if (!matches) continue;
+
+        const session = manager.getNewInstanceSession(summary.sessionId);
+        if (!session) continue;
+
+        manager.beginTransportReconnect(session);
+        console.log(
+            `[wifi][reattach] beginTransportReconnect session=${session.sessionId} device=${deviceId}`
+        );
+    }
+}
+
+function markAllSessionsReconnecting(deps, deviceId) {
+    if (!deviceId) return;
+    markTypeBSessionsReconnecting(deps.getNewInstanceManager, deviceId);
+    if (typeof global.markTypeASessionsReconnecting === "function") {
+        global.markTypeASessionsReconnecting(deviceId);
+    }
+    notifyTransportReattachState(deps.getMainWindow, {
+        deviceId,
+        phase: "start"
+    });
+}
+
+function failAllSessionsReconnecting(deps, deviceId) {
+    if (!deviceId) return;
+    failTypeBSessionsReconnecting(deps.getNewInstanceManager, deviceId);
+    if (typeof global.failTypeASessionsReconnecting === "function") {
+        global.failTypeASessionsReconnecting(deviceId);
+    }
+    notifyTransportReattachState(deps.getMainWindow, {
+        deviceId,
+        phase: "error"
+    });
+}
+
+async function reattachAllSessionsAfterTransportSwitch(deps, deviceId, options = {}) {
+    if (!deviceId) return;
+    await reattachTypeBSessionsAfterTransportSwitch(
+        deps.getNewInstanceManager,
+        deps.getDeviceRegistry,
+        deviceId,
+        {
+            ...options,
+            getWifiDevicesManager: deps.getWifiDevicesManager
+        }
+    );
+    if (typeof global.reattachTypeASessionsAfterTransportSwitch === "function") {
+        await global.reattachTypeASessionsAfterTransportSwitch(deviceId, options);
+    }
+    if (!options.deferEndReconnect) {
+        notifyTransportReattachState(deps.getMainWindow, {
+            deviceId,
+            phase: "end"
+        });
+    }
+}
+
+function listReconnectingTypeBSessions(manager, deviceId) {
+    if (!manager?.listNewInstanceSessions || !deviceId) return [];
+
+    const out = [];
+    for (const summary of manager.listNewInstanceSessions() || []) {
+        if (!summary?.sessionId) continue;
+        if (summary.state !== "reconnecting") continue;
+        if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+        const session = manager.getNewInstanceSession(summary.sessionId);
+        if (session) out.push(session);
+    }
+    return out;
+}
+
+function failTypeBSessionsReconnecting(getNewInstanceManager, deviceId) {
+    if (!deviceId || typeof getNewInstanceManager !== "function") return;
+    const manager = getNewInstanceManager();
+    if (!manager?.endTransportReconnect) return;
+
+    for (const session of listReconnectingTypeBSessions(manager, deviceId)) {
+        manager.endTransportReconnect(session, { success: false });
+        console.warn(
+            `[wifi][reattach] endTransportReconnect fail session=${session.sessionId} device=${deviceId}`
+        );
+    }
+}
+
+/**
+ * Commit 4b — après switch transport : résoudre le serial live, rebind client + input, endTransportReconnect.
+ */
+async function reattachTypeBSessionsAfterTransportSwitch(
+    getNewInstanceManager,
+    getDeviceRegistry,
+    deviceId,
+    { forceMigrate = false, preferUsb = false, deferEndReconnect = false, getWifiDevicesManager = null } = {}
+) {
+    if (!deviceId || typeof getNewInstanceManager !== "function") return;
+
+    const manager = getNewInstanceManager();
+    if (!manager?.endTransportReconnect) return;
+
+    const sessions = listReconnectingTypeBSessions(manager, deviceId);
+    if (sessions.length === 0) return;
+
+    // Garde anti-rebond : après WiFi OFF (ou toggle concurrent), ne jamais cibler le shell WiFi.
+    let effectivePreferUsb = Boolean(preferUsb);
+    try {
+        const wifiManager = typeof getWifiDevicesManager === "function"
+            ? getWifiDevicesManager()
+            : (global.wifiDevicesManager || null);
+        const wifiEnabled = Boolean(wifiManager?.getByDeviceId?.(deviceId)?.wifiEnabled);
+        if (!wifiEnabled && !effectivePreferUsb) {
+            effectivePreferUsb = true;
+            console.warn(
+                `[wifi][reattach] wifiEnabled=false — force preferUsb device=${deviceId}`
+            );
+        }
+    } catch (_err) {
+        // noop
+    }
+
+    let newSerial = null;
+    try {
+        const registry = typeof getDeviceRegistry === "function" ? getDeviceRegistry() : null;
+        // WiFi OFF : forcer le serial USB (sinon on reste soft sur WiFi puis disconnect = écran noir).
+        if (effectivePreferUsb && registry?.resolveLiveUsbSerial) {
+            newSerial = await registry.resolveLiveUsbSerial({ deviceId });
+            if (newSerial) {
+                console.log(`[wifi][reattach] preferUsb → ${newSerial} device=${deviceId}`);
+            }
+        }
+        if (!newSerial && registry?.resolveEffectiveAdbSerial) {
+            newSerial = await registry.resolveEffectiveAdbSerial({
+                deviceId,
+                forceFresh: true
+            });
+        }
+        // Si wifi désactivé, refuser un serial WiFi même si ADB TCP est encore listé.
+        if (
+            effectivePreferUsb
+            && newSerial
+            && typeof newSerial === "string"
+            && newSerial.includes(":")
+            && registry?.resolveLiveUsbSerial
+        ) {
+            const usbSerial = await registry.resolveLiveUsbSerial({ deviceId });
+            if (usbSerial) {
+                console.warn(
+                    `[wifi][reattach] refuse WiFi serial ${newSerial} (wifi off) → ${usbSerial}`
+                );
+                newSerial = usbSerial;
+            }
+        }
+    } catch (err) {
+        console.warn(`[wifi][reattach] resolve serial failed device=${deviceId}:`, err?.message || err);
+    }
+
+    if (!newSerial) {
+        console.warn(`[wifi][reattach] no live serial for device=${deviceId} — abort rebind`);
+        for (const session of sessions) {
+            manager.endTransportReconnect(session, { success: false });
+        }
+        return;
+    }
+
+    const shouldDeferEnd = Boolean(deferEndReconnect);
+    console.log(
+        `[wifi][reattach] rebind device=${deviceId} newSerial=${newSerial} sessions=${sessions.length} preferUsb=${effectivePreferUsb} deferEnd=${shouldDeferEnd}`
+    );
+
+    for (const session of sessions) {
+        try {
+            let mode = "soft";
+            if (typeof manager.reattachSessionTransport === "function") {
+                const result = await manager.reattachSessionTransport(session, newSerial, {
+                    notifyStreamRestarting: notifySessionStreamRestarting,
+                    forceMigrate,
+                    deferEndReconnect: shouldDeferEnd
+                });
+                mode = result?.mode || "soft";
+            } else {
+                throw new Error("reattachSessionTransport indisponible");
+            }
+
+            console.log(
+                `[wifi][reattach] Type B OK mode=${mode} session=${session.sessionId} serial=${newSerial} displayId=${session.displayId} shell=${session.client?.shellSerial}`
+            );
+        } catch (err) {
+            console.error(
+                `[wifi][reattach] Type B failed session=${session.sessionId}:`,
+                err?.message || err
+            );
+            if (session.state === "reconnecting") {
+                manager.endTransportReconnect(session, { success: false });
+            }
+        }
+    }
+}
+
+let streamRestartGeneration = 0;
+
+function notifySessionStreamRestarting(sessionId) {
+    if (!sessionId) return;
+    streamRestartGeneration += 1;
+    const generation = streamRestartGeneration;
+    try {
+        global.browserViewManager?.sendToSessionView?.(sessionId, "stream-restarting", {
+            sessionId,
+            generation
+        });
+        const mainWin = global.browserViewManager?.mainWindow;
+        if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send("stream-restarting", { sessionId, generation });
+        }
+    } catch (_err) {
+        // noop
+    }
+}
+
+/** USB débranché en mode WiFi → reattach sur le shell WiFi si besoin. */
+function handleTopologyChangeForWifiSessions(deps, unified, previousUnified = []) {
+    if (!Array.isArray(unified) || unified.length === 0) return;
+
+    const prevById = new Map(
+        (previousUnified || []).map((d) => [d.deviceId, d])
+    );
+
+    for (const device of unified) {
+        if (!device?.deviceId || !device.wifiEnabled || !device.wifiAvailable) continue;
+
+        const prev = prevById.get(device.deviceId);
+        const usbLost = Boolean(prev?.usbAvailable) && !device.usbAvailable;
+        if (!usbLost) continue;
+
+        console.log(
+            `[wifi][topology] USB débranché device=${device.deviceId} — reattach WiFi`
+        );
+        markAllSessionsReconnecting(deps, device.deviceId);
+        void reattachAllSessionsAfterTransportSwitch(deps, device.deviceId).catch((err) => {
+            console.warn(
+                `[wifi][topology] reattach failed device=${device.deviceId}:`,
+                err?.message || err
+            );
+            failAllSessionsReconnecting(deps, device.deviceId);
+        });
+    }
+}
+
 function registerWifiHandlers(deps) {
     const {
         ipcMain,
@@ -31,11 +303,35 @@ function registerWifiHandlers(deps) {
         getWifiDevicesManager,
         getCustomNamesManager,
         getMainWindow,
+        getNewInstanceManager,
         loadHistory,
         removeDeviceFromHistory,
         refreshDeviceList,
         syncDevicesForUi
     } = deps;
+
+    const reattachDeps = {
+        getNewInstanceManager,
+        getDeviceRegistry,
+        getMainWindow,
+        getWifiDevicesManager
+    };
+
+    /** Évite ON/OFF concurrents (double toggle home+sidebar, IPC en vol). */
+    const wifiToggleInFlight = new Map();
+    /** Anti-rebond : ignore un WiFi ON immédiat après un OFF réussi. */
+    const wifiOffCooldownUntil = new Map();
+
+    const registry = typeof getDeviceRegistry === "function" ? getDeviceRegistry() : null;
+    if (registry) {
+        let topologyTimer = null;
+        registry.onTopologyChange = (unified, previousUnified) => {
+            if (topologyTimer) clearTimeout(topologyTimer);
+            topologyTimer = setTimeout(() => {
+                handleTopologyChangeForWifiSessions(reattachDeps, unified, previousUnified);
+            }, 400);
+        };
+    }
 
     ipcMain.handle("wifi:list-config", async () => {
         const manager = getWifiDevicesManager();
@@ -136,6 +432,33 @@ function registerWifiHandlers(deps) {
             return { success: false, error: "Appareil introuvable.", step: "init" };
         }
 
+        const lockKey = String(deviceId || usbSerial || "").trim();
+        if (lockKey && wifiToggleInFlight.has(lockKey)) {
+            console.warn(
+                `[wifi:toggle] ignored (in-flight) device=${lockKey} enabled=${Boolean(enabled)}`
+            );
+            return {
+                success: false,
+                error: "Basculement WiFi déjà en cours.",
+                step: "busy"
+            };
+        }
+        if (enabled && lockKey) {
+            const coolUntil = wifiOffCooldownUntil.get(lockKey) || 0;
+            if (Date.now() < coolUntil) {
+                console.warn(
+                    `[wifi:toggle] ignored (post-OFF cooldown) device=${lockKey}`
+                );
+                return {
+                    success: false,
+                    error: "Basculement WiFi trop rapide après coupure.",
+                    step: "cooldown"
+                };
+            }
+        }
+        if (lockKey) wifiToggleInFlight.set(lockKey, Boolean(enabled));
+        console.log(`[wifi:toggle] start device=${lockKey || "?"} enabled=${Boolean(enabled)}`);
+
         const progress = [];
 
         try {
@@ -203,19 +526,68 @@ function registerWifiHandlers(deps) {
                 });
 
                 wifiManager.setWifiEnabled(targetDeviceId, true);
-                await wifiService.reconnectSaved(targetDeviceId, {
-                    usbSerial: liveUsbSerial || undefined
-                });
-                wifiManager.touchLastSeen(targetDeviceId);
-                await refreshDeviceList();
+                try {
+                    await wifiService.reconnectSaved(targetDeviceId, {
+                        usbSerial: liveUsbSerial || undefined
+                    });
+                    // Course OFF concurrent : abandonner le retour WiFi.
+                    if (!wifiManager.getByDeviceId(targetDeviceId)?.wifiEnabled) {
+                        console.warn(
+                            `[wifi:toggle] ON annulé (wifiEnabled=false) device=${targetDeviceId}`
+                        );
+                        if (config.ip || wifiManager.getByDeviceId(targetDeviceId)?.ip) {
+                            const ip = wifiManager.getByDeviceId(targetDeviceId)?.ip || config.ip;
+                            const port = wifiManager.getByDeviceId(targetDeviceId)?.port || config.port || 5555;
+                            await wifiService.disconnect(wifiService.buildWifiSerial(ip, port));
+                        }
+                        await refreshDeviceList();
+                        return {
+                            success: false,
+                            error: "Basculement WiFi annulé.",
+                            step: "cancelled",
+                            deviceId: targetDeviceId
+                        };
+                    }
+                    wifiManager.touchLastSeen(targetDeviceId);
+                    await refreshDeviceList();
+
+                    // USB encore branché : ne pas basculer les sessions sur WiFi.
+                    // Le stream reste USB ; le reattach WiFi se fait au débranchement (topology).
+                    const usbStillPlugged = Boolean(
+                        liveUsbSerial
+                        || (await registry.resolveLiveUsbSerial?.({ deviceId: targetDeviceId }))
+                    );
+                    if (usbStillPlugged) {
+                        console.log(
+                            `[wifi:toggle] USB branché — WiFi armé, sessions restent sur USB device=${targetDeviceId}`
+                        );
+                    } else {
+                        markAllSessionsReconnecting(reattachDeps, targetDeviceId);
+                        try {
+                            await reattachAllSessionsAfterTransportSwitch(reattachDeps, targetDeviceId);
+                        } catch (switchErr) {
+                            failAllSessionsReconnecting(reattachDeps, targetDeviceId);
+                            throw switchErr;
+                        }
+                    }
+                } catch (switchErr) {
+                    failAllSessionsReconnecting(reattachDeps, targetDeviceId);
+                    throw switchErr;
+                }
 
                 const updated = wifiManager.getByDeviceId(targetDeviceId);
+                const usbStill = Boolean(
+                    liveUsbSerial
+                    || (await registry.resolveLiveUsbSerial?.({ deviceId: targetDeviceId }))
+                );
 
                 return {
                     success: true,
                     deviceId: targetDeviceId,
                     progress: [{ step: "connect", message: "Connexion..." }],
-                    message: `Connecté en WiFi — ${updated?.ip || config.ip}`
+                    message: usbStill
+                        ? `WiFi prêt (${updated?.ip || config.ip}) — stream USB jusqu'au débranchement`
+                        : `Connecté en WiFi — ${updated?.ip || config.ip}`
                 };
             }
 
@@ -226,14 +598,48 @@ function registerWifiHandlers(deps) {
             const config = wifiManager.getByDeviceId(deviceId);
             if (config) {
                 wifiManager.setWifiEnabled(deviceId, false);
-                if (config.ip) {
-                    await wifiService.disconnect(
-                        wifiService.buildWifiSerial(config.ip, config.port || 5555)
+                try {
+                    const usbStillPlugged = Boolean(
+                        await registry.resolveLiveUsbSerial?.({ deviceId })
                     );
+                    if (usbStillPlugged) {
+                        // Sessions déjà sur USB — pas de reattach, juste coupe ADB WiFi.
+                        console.log(
+                            `[wifi:toggle] USB branché — WiFi OFF sans reattach device=${deviceId}`
+                        );
+                        if (config.ip) {
+                            await wifiService.disconnect(
+                                wifiService.buildWifiSerial(config.ip, config.port || 5555)
+                            );
+                        }
+                        await refreshDeviceList();
+                    } else {
+                        markAllSessionsReconnecting(reattachDeps, deviceId);
+                        try {
+                            await refreshDeviceList();
+                            await reattachAllSessionsAfterTransportSwitch(reattachDeps, deviceId, {
+                                preferUsb: true
+                            });
+                            if (config.ip) {
+                                await wifiService.disconnect(
+                                    wifiService.buildWifiSerial(config.ip, config.port || 5555)
+                                );
+                                await refreshDeviceList();
+                            }
+                        } catch (switchErr) {
+                            failAllSessionsReconnecting(reattachDeps, deviceId);
+                            throw switchErr;
+                        }
+                    }
+                    console.log(`[wifi] disconnect WiFi OK device=${deviceId} (mode USB)`);
+                } catch (switchErr) {
+                    failAllSessionsReconnecting(reattachDeps, deviceId);
+                    throw switchErr;
                 }
+            } else {
+                await refreshDeviceList();
             }
 
-            await refreshDeviceList();
             return {
                 success: true,
                 deviceId,
@@ -249,9 +655,18 @@ function registerWifiHandlers(deps) {
 
             if (deviceId) {
                 wifiManager.setWifiEnabled(deviceId, false);
+                failAllSessionsReconnecting(reattachDeps, deviceId);
             }
 
             return { success: false, error: message, step, progress };
+        } finally {
+            if (lockKey) {
+                wifiToggleInFlight.delete(lockKey);
+                // Cooldown seulement après un OFF demandé (pas après erreur ON).
+                if (enabled === false) {
+                    wifiOffCooldownUntil.set(lockKey, Date.now() + 2500);
+                }
+            }
         }
     });
 
@@ -314,17 +729,24 @@ function registerWifiHandlers(deps) {
             });
 
             wifiManager.setWifiEnabled(deviceId, true);
-            const wifiSerial = await wifiService.reconnectSaved(deviceId, {
-                usbSerial: liveUsbSerial || undefined
-            });
-            wifiManager.touchLastSeen(deviceId);
-            await refreshDeviceList();
+            markAllSessionsReconnecting(reattachDeps, deviceId);
+            try {
+                const wifiSerial = await wifiService.reconnectSaved(deviceId, {
+                    usbSerial: liveUsbSerial || undefined
+                });
+                wifiManager.touchLastSeen(deviceId);
+                await refreshDeviceList();
+                await reattachAllSessionsAfterTransportSwitch(reattachDeps, deviceId);
 
-            return {
-                success: true,
-                wifiSerial,
-                message: `Connecté en WiFi — ${wifiManager.getByDeviceId(deviceId)?.ip || config.ip}`
-            };
+                return {
+                    success: true,
+                    wifiSerial,
+                    message: `Connecté en WiFi — ${wifiManager.getByDeviceId(deviceId)?.ip || config.ip}`
+                };
+            } catch (err) {
+                failAllSessionsReconnecting(reattachDeps, deviceId);
+                return { success: false, error: err.message };
+            }
         } catch (err) {
             return { success: false, error: err.message };
         }

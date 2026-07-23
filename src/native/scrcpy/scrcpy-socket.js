@@ -17,6 +17,9 @@ const SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT = 2;
 const SC_CONTROL_MSG_TYPE_INJECT_SCROLL_EVENT = 3;
 const SC_CONTROL_MSG_TYPE_BACK_OR_SCREEN_ON = 4;
 const SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER = 10;
+const SC_CONTROL_MSG_TYPE_START_APP = 16;
+const SC_CONTROL_MSG_TYPE_RESET_VIDEO = 17;
+const SC_CONTROL_MSG_TYPE_RESIZE_DISPLAY = 21;
 
 const SC_POINTER_ID_MOUSE = BigInt("0xFFFFFFFFFFFFFFFF");
 const SC_POINTER_ID_GENERIC_FINGER = BigInt("0xFFFFFFFFFFFFFFFE");
@@ -50,6 +53,8 @@ class ScrcpySocketClient extends EventEmitter {
         super();
         this.adbPath = adbPath;
         this.serial = serial;
+        /** Serial ADB qui héberge le process scrcpy-server (shell). Inchangé par soft rebind. */
+        this.shellSerial = serial;
         this.scid = generateScid();
         this.socketName = LOCAL_SOCKET_NAME_PREFIX + this.scid;
         this.localPort = null;
@@ -175,6 +180,7 @@ class ScrcpySocketClient extends EventEmitter {
         await this._pushServer(serverJarPath);
         await this._setupTunnel();
         this._startServerProcess(options);
+        this.shellSerial = this.serial;
         await new Promise((resolve) => setTimeout(resolve, 350));
         await this._connectSockets(options);
     }
@@ -292,15 +298,31 @@ class ScrcpySocketClient extends EventEmitter {
             args.push(`display_id=${options.displayId}`);
         } else if (options.newDisplay) {
             args.push(`new_display=${options.newDisplay}`);
+            // false = apps déplacées vers l'écran principal au lieu d'être détruites.
+            if (options.vdDestroyContent === false) {
+                args.push("vd_destroy_content=false");
+            }
+            if (options.vdSystemDecorations === false) {
+                args.push("vd_system_decorations=false");
+            }
+            if (options.flexDisplay === true) {
+                args.push("flex_display=true");
+            }
         }
 
         // Orientation relative à l'orientation naturelle de l'appareil (voir stream-params.js).
-        const lock = options.captureOrientationLock
-            ?? resolveCaptureOrientationLock(
+        // Si captureOrientationLock est explicitement fourni (y compris null/""), ne pas recalculer :
+        // sinon landscape sans deviceWidth/Height ⇒ @270 et un VD 1920x1080 devient 1080x1920.
+        let lock;
+        if (Object.prototype.hasOwnProperty.call(options, "captureOrientationLock")) {
+            lock = options.captureOrientationLock || null;
+        } else {
+            lock = resolveCaptureOrientationLock(
                 options.orientation === "portrait" ? "portrait" : "landscape",
                 options.deviceWidth,
                 options.deviceHeight
             );
+        }
         if (lock) {
             args.push(`capture_orientation=${lock}`);
         }
@@ -329,7 +351,9 @@ class ScrcpySocketClient extends EventEmitter {
         this.serverProcess.on("exit", (code) => {
             console.log(`[scrcpy-server ${this.serial}] processus terminé, code ${code}`);
             this.emit("server-exit", { code, stderr: this._serverStderr });
-            this.emit("closed");
+            if (!this._suppressClosedEvent) {
+                this.emit("closed");
+            }
         });
     }
 
@@ -545,7 +569,9 @@ class ScrcpySocketClient extends EventEmitter {
 
     this.videoSocket.on("close", () => {
         console.log(`[ScrcpySocketClient] Socket vidéo fermé pour ${this.serial}`);
-        this.emit("closed");
+        if (!this._suppressClosedEvent) {
+            this.emit("closed");
+        }
     });
 }
 
@@ -688,6 +714,47 @@ class ScrcpySocketClient extends EventEmitter {
         const buffer = Buffer.alloc(2);
         buffer.writeUInt8(SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER, 0);
         buffer.writeUInt8(on ? 1 : 0, 1);
+        await this.sendControlMessage(buffer);
+    }
+
+    /**
+     * Démarre/amène une app sur le display capturé (setLaunchDisplayId côté serveur).
+     * @param {string} packageName
+     */
+    async sendStartApp(packageName) {
+        const name = String(packageName || "").trim();
+        if (!name) {
+            throw new Error("packageName manquant pour start_app");
+        }
+        const utf8 = Buffer.from(name, "utf8");
+        if (utf8.length === 0 || utf8.length > 255) {
+            throw new Error(`Nom d'app invalide pour start_app (len=${utf8.length})`);
+        }
+        const buffer = Buffer.alloc(1 + 1 + utf8.length);
+        buffer.writeUInt8(SC_CONTROL_MSG_TYPE_START_APP, 0);
+        buffer.writeUInt8(utf8.length, 1);
+        utf8.copy(buffer, 2);
+        await this.sendControlMessage(buffer);
+    }
+
+    /**
+     * Redimensionne un virtual display flex (flex_display=true requis).
+     * @param {number} width
+     * @param {number} height
+     */
+    async sendResizeDisplay(width, height) {
+        const w = Math.max(1, Math.min(65535, Math.round(Number(width) || 0)));
+        const h = Math.max(1, Math.min(65535, Math.round(Number(height) || 0)));
+        const buffer = Buffer.alloc(5);
+        buffer.writeUInt8(SC_CONTROL_MSG_TYPE_RESIZE_DISPLAY, 0);
+        buffer.writeUInt16BE(w, 1);
+        buffer.writeUInt16BE(h, 3);
+        await this.sendControlMessage(buffer);
+    }
+
+    async sendResetVideo() {
+        const buffer = Buffer.alloc(1);
+        buffer.writeUInt8(SC_CONTROL_MSG_TYPE_RESET_VIDEO, 0);
         await this.sendControlMessage(buffer);
     }
 
@@ -845,6 +912,7 @@ class ScrcpySocketClient extends EventEmitter {
     }
 
     stop() {
+        this._suppressClosedEvent = true;
         if (this.controlSocket) {
             this.controlSocket.destroy();
             this.controlSocket = null;
@@ -863,7 +931,6 @@ class ScrcpySocketClient extends EventEmitter {
         }
         exec(`"${this.adbPath}" -s ${this._quotedSerial()} reverse --remove localabstract:${this.socketName}`, { windowsHide: true });
     }
-
 
     getNewDisplayId() {
         return Number.isInteger(this.newDisplayId) ? this.newDisplayId : null;

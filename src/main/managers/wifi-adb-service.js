@@ -249,8 +249,6 @@ class WifiAdbService {
                 throw new Error("IP introuvable, vérifie que le WiFi est activé sur le téléphone");
             }
 
-            await this.enableTcpip(usbSerial, port);
-
             this.wifiDevicesManager.upsert({
                 ...entry,
                 deviceId,
@@ -264,7 +262,18 @@ class WifiAdbService {
             throw new Error("Configuration WiFi introuvable.");
         }
 
-        return this.connect(ip, port);
+        // Évite `adb tcpip` à chaque toggle : ça redémarre adbd et tue scrcpy-server / les apps.
+        try {
+            return await this.connect(ip, port);
+        } catch (connectErr) {
+            if (!usbSerial) throw connectErr;
+            console.warn(
+                `[WifiAdbService] connect ${ip}:${port} échoué — tcpip en dernier recours (sessions peuvent geler):`,
+                connectErr?.message || connectErr
+            );
+            await this.enableTcpip(usbSerial, port);
+            return this.connect(ip, port);
+        }
     }
 }
 

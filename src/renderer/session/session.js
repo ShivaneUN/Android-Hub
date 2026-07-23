@@ -1108,12 +1108,38 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         state.lastTs = -1;
         state.format = "annexb";
         state.started = false;
+        typeBPortraitStreamCorrection.set(sessionIdParam, false);
+        try {
+            const ctx = canvasElement.getContext("2d");
+            ctx?.setTransform?.(1, 0, 0, 1, 0, 0);
+            canvasElement.style.transform = "";
+            canvasElement.style.margin = "";
+            canvasElement.classList.remove("portrait-interim");
+        } catch (_err) {
+            // noop
+        }
     }
 
     if (window.videoAPI.onStreamRestarting) {
         window.videoAPI.onStreamRestarting((data) => {
             if (data?.sessionId !== sessionIdParam) return;
+            const generation = Number(data?.generation);
+            // Doublon / IPC en retard de la MÊME bascule — ne pas re-reset après replay.
+            if (Number.isFinite(generation) && generation === state._restartGeneration) {
+                console.warn(`[SessionView ${sessionIdParam}] stream-restarting doublon ignoré gen=${generation}`);
+                return;
+            }
+            // Message périmé d'une bascule antérieure.
+            if (Number.isFinite(generation)
+                && Number.isFinite(state._restartGeneration)
+                && generation < state._restartGeneration) {
+                console.warn(`[SessionView ${sessionIdParam}] stream-restarting périmé ignoré gen=${generation}`);
+                return;
+            }
             resetDecoderState();
+            if (Number.isFinite(generation)) {
+                state._restartGeneration = generation;
+            }
         });
     }
 

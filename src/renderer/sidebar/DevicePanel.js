@@ -67,6 +67,27 @@ const AUDIO_ICON_OFF = `<svg class="sidebar-device-audio-icon" viewBox="0 0 24 2
 const TRANSPORT_SWITCH_POLL_INTERVAL_MS = 600;
 const TRANSPORT_SWITCH_TIMEOUT_MS = 18000;
 
+/** deviceId → true pendant un wifi:toggle (home + sidebar partagent le lock). */
+const wifiToggleInFlightIds = new Set();
+
+function setWifiTogglesDisabled(deviceId, disabled) {
+    if (!deviceId) return;
+    for (const input of document.querySelectorAll(".sidebar-wifi-toggle-input")) {
+        if (input.dataset.deviceId === deviceId) {
+            input.disabled = Boolean(disabled);
+        }
+    }
+}
+
+function syncWifiToggleChecked(deviceId, checked) {
+    if (!deviceId) return;
+    for (const input of document.querySelectorAll(".sidebar-wifi-toggle-input")) {
+        if (input.dataset.deviceId === deviceId) {
+            input.checked = Boolean(checked);
+        }
+    }
+}
+
 function normalizeDeviceListResponse(response) {
     if (Array.isArray(response)) return response;
     if (Array.isArray(response?.devices)) return response.devices;
@@ -120,9 +141,19 @@ async function waitForTransportSwitch(deviceId, enabled, options = {}) {
 async function handleWifiToggle(device, enabled, toggleInput) {
     if (!window.wifiAPI?.toggle) return;
 
-    if (toggleInput) toggleInput.disabled = true;
+    const deviceId = device?.deviceId || device?.serial || toggleInput?.dataset?.deviceId || "";
+    if (deviceId && wifiToggleInFlightIds.has(deviceId)) {
+        // Restaurer l'état visuel (changement déjà en cours via l'autre panneau).
+        if (toggleInput) toggleInput.checked = !enabled;
+        return;
+    }
+    if (deviceId) wifiToggleInFlightIds.add(deviceId);
+
+    setWifiTogglesDisabled(deviceId, true);
+    syncWifiToggleChecked(deviceId, enabled);
 
     const switchFailedMessage = dt("devicePanel.switchFailed");
+    // Overlay aussi piloté par transport:reattach-state (Commit 4e) pendant le rebind.
     window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
         timeoutMs: 120000,
         timeoutMessage: switchFailedMessage,
@@ -171,7 +202,7 @@ async function handleWifiToggle(device, enabled, toggleInput) {
 
             window.showHubLoadingOverlayError?.(switchFailedMessage, 2800);
             window.showHubToast?.(switchFailedMessage, "error", 5500);
-            if (toggleInput) toggleInput.checked = !enabled;
+            syncWifiToggleChecked(targetDeviceId || deviceId, !enabled);
             await window.refreshDevices?.();
             return;
         }
@@ -179,14 +210,15 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         const message = wifiErrorMessage(result?.step) || result?.error || dt("devicePanel.wifiFailed");
         window.showHubLoadingOverlayError?.(message || switchFailedMessage, 2800);
         window.showHubToast?.(message, "error", 5500);
-        if (toggleInput) toggleInput.checked = false;
+        syncWifiToggleChecked(deviceId, false);
         await window.refreshDevices?.();
     } catch (err) {
         window.showHubLoadingOverlayError?.(err.message || dt("devicePanel.wifiError"), 2800);
         window.showHubToast?.(err.message || dt("devicePanel.wifiError"), "error", 5500);
-        if (toggleInput) toggleInput.checked = false;
+        syncWifiToggleChecked(deviceId, false);
     } finally {
-        if (toggleInput) toggleInput.disabled = false;
+        if (deviceId) wifiToggleInFlightIds.delete(deviceId);
+        setWifiTogglesDisabled(deviceId, false);
     }
 }
 
@@ -209,6 +241,7 @@ function buildDeviceCardsHtml(connected) {
             device.wifiActive
             ?? (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
         );
+        const wifiBusy = Boolean(device.deviceId && wifiToggleInFlightIds.has(device.deviceId));
         const showUsbBadge = device.usbAvailable && !(wifiChecked && device.transport === "wifi");
         const transportBadge = showUsbBadge && device.transport !== "wifi"
             ? `<span class="sidebar-device-stat transport-usb" title="${dt("sidebar.devicePanel.usb")}">${dt("sidebar.devicePanel.usb")}</span>`
@@ -228,7 +261,7 @@ function buildDeviceCardsHtml(connected) {
                         </button>
                         ${canToggleWifi ? `
                         <label class="sidebar-wifi-toggle" data-dock-tip="${dt("sidebar.devicePanel.wifiToggle")}" aria-label="${dt("sidebar.devicePanel.wifiToggle")}">
-                            <input type="checkbox" class="sidebar-wifi-toggle-input" data-device-id="${device.deviceId || ""}" ${wifiChecked ? "checked" : ""}>
+                            <input type="checkbox" class="sidebar-wifi-toggle-input" data-device-id="${device.deviceId || ""}" ${wifiChecked ? "checked" : ""} ${wifiBusy ? "disabled" : ""}>
                             <span class="sidebar-wifi-toggle-ui"></span>
                         </label>` : ""}
                     </div>
@@ -396,6 +429,30 @@ function initDevicePanel() {
                 devices: data?.devices || {}
             };
             refresh();
+        });
+    }
+
+    // Commit 4e — overlay aligné sur la fenêtre réelle du reattach (mark → rebind).
+    if (window.wifiAPI?.onTransportReattachState) {
+        window.wifiAPI.onTransportReattachState(({ phase, error } = {}) => {
+            if (phase === "start") {
+                window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
+                    timeoutMs: 120000,
+                    timeoutMessage: dt("devicePanel.switchFailed"),
+                    errorAutoCloseMs: 2800
+                });
+                return;
+            }
+            if (phase === "end") {
+                window.hideHubLoadingOverlay?.();
+                return;
+            }
+            if (phase === "error") {
+                window.showHubLoadingOverlayError?.(
+                    error || dt("devicePanel.switchFailed"),
+                    2800
+                );
+            }
         });
     }
 }

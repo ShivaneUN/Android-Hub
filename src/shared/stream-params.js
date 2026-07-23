@@ -106,10 +106,13 @@ function applyCaptureOrientationToOptions(options, orientation, deviceWidth, dev
     return options;
 }
 
-/** Type B au lancement : même verrou capture que Type A en paysage (pas de mode portrait UI). */
+/** Type B au lancement : le VD `new_display` est déjà paysage — pas de verrou @270/@90.
+ * (Un lock “landscape” sur téléphone portrait encode 1080x1920 dans un cadre 1920x1080 → letterbox.)
+ */
 function applyTypeBLaunchOrientation(options = {}, deviceWidth, deviceHeight) {
     delete options.orientation;
-    applyCaptureOrientationToOptions(options, ORIENTATION_LANDSCAPE, deviceWidth, deviceHeight);
+    options.captureOrientationLock = null;
+    options.captureRotation = 0;
     if (Number(deviceWidth) > 0 && Number(deviceHeight) > 0) {
         options.deviceWidth = Number(deviceWidth);
         options.deviceHeight = Number(deviceHeight);

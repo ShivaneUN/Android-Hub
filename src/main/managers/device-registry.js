@@ -150,11 +150,12 @@ class DeviceRegistry {
         const usbOnline = Boolean(group.usbDevice?.connected && group.usbDevice?.status === "green");
         const wifiOnline = Boolean(group.wifiDevice?.connected && group.wifiDevice?.status === "green");
 
+        // Mode WiFi actif → serial WiFi (shell scrcpy sur WiFi = survit au débranchement USB).
         if (wifiEnabled && wifiOnline) {
             return {
                 serial: group.wifiSerial,
                 transport: "wifi",
-                transportLabel: "WiFi connecté",
+                transportLabel: usbOnline ? "WiFi (USB branché)" : "WiFi connecté",
                 usbAvailable: usbOnline,
                 wifiAvailable: true
             };
@@ -253,11 +254,15 @@ class DeviceRegistry {
 
     async _executeListUnifiedDevices() {
         const previousFingerprint = this._listUnifiedCache.rawFingerprint;
+        const previousUnified = this._listUnifiedCache.result
+            ? this._cloneUnifiedDevices(this._listUnifiedCache.result)
+            : [];
 
         const raw = await this.getRawAdbDevices();
         const rawFingerprint = this._buildRawDevicesFingerprint(raw);
 
-        if (this._hasRawTopologyChange(previousFingerprint, rawFingerprint)) {
+        const topologyChanged = this._hasRawTopologyChange(previousFingerprint, rawFingerprint);
+        if (topologyChanged) {
             this._invalidateListUnifiedCache("usb/wifi topology change");
         }
 
@@ -315,6 +320,14 @@ class DeviceRegistry {
             fetchedAt: Date.now(),
             rawFingerprint
         };
+
+        if (topologyChanged && typeof this.onTopologyChange === "function") {
+            try {
+                this.onTopologyChange(this._cloneUnifiedDevices(unified), previousUnified);
+            } catch (err) {
+                console.warn("[DeviceRegistry] onTopologyChange:", err?.message || err);
+            }
+        }
 
         return this._cloneUnifiedDevices(unified);
     }

@@ -109,29 +109,48 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     const userArg = userId !== null ? ` --user ${userId}` : "";
     const monkeyUserArg = userId !== null ? ` --user ${userId}` : "";
     const activity = await resolveLaunchActivity(serial, packageName, userId);
+    const useDisplay = Number.isInteger(displayId);
+    // Handoff USB↔WiFi : amener la task existante (pas de cold start / letterbox).
+    const bringToFront = options.bringToFront === true;
 
     if (!activity) {
+        if (bringToFront) {
+            console.warn(
+                `[launchPackageOnDisplay] activité introuvable pour bringToFront ${packageName} user=${userId ?? "default"}`
+            );
+            return;
+        }
         exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err) => {
             if (err) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err.message);
         });
         return;
     }
 
-    const useDisplay = Number.isInteger(displayId);
     const launchCandidates = [];
-    if (useDisplay) {
+    if (useDisplay && bringToFront) {
+        launchCandidates.push(
+            `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} --activity-single-top --activity-reorder-to-front -n ${activity}`
+        );
+        launchCandidates.push(
+            `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} --activity-single-top -n ${activity}`
+        );
+        // Pas de fallback sans --display : ça enverrait l'app sur l'écran téléphone.
+    } else if (useDisplay) {
         launchCandidates.push(
             options.backgroundLaunch
                 ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} --activity-task-on-home -n ${activity}`
                 : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --display ${displayId} -n ${activity}`
         );
     }
-    launchCandidates.push(
-        options.backgroundLaunch
-            ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --activity-task-on-home -n ${activity}`
-            : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`
-    );
-    launchCandidates.push(`"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`);
+
+    if (!bringToFront) {
+        launchCandidates.push(
+            options.backgroundLaunch
+                ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --activity-task-on-home -n ${activity}`
+                : `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`
+        );
+        launchCandidates.push(`"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} -n ${activity}`);
+    }
 
     let launched = false;
     for (const launchCmd of launchCandidates) {
@@ -145,6 +164,12 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     }
 
     if (!launched) {
+        if (bringToFront) {
+            console.warn(
+                `[launchPackageOnDisplay] bringToFront échec ${packageName} display=${displayId} user=${userId ?? "default"}`
+            );
+            return;
+        }
         exec(`"${adbPath}" -s ${adbSerialArg(serial)} shell monkey${monkeyUserArg} -p ${packageName} -c android.intent.category.LAUNCHER 1`, { windowsHide: true }, (err2) => {
             if (err2) console.error(`Fallback lancement app ${packageName} (user=${userId ?? "default"}):`, err2.message);
         });
@@ -729,6 +754,8 @@ const inputControllersBySession = {}; // { sessionId: AdbInputController }
 const inputDeviceMetaBySession = {}; // { sessionId: { streamWidth, streamHeight } }
 /** @type {Map<string, { serial: string, launchSerial: string|null, stableDeviceId: string|null }>} */
 const sessionAdbSerialCache = new Map();
+/** Tabs Type A en reattach USB↔WiFi — ne pas delete videoClients sur closed/error. */
+const transportReconnectingTabs = new Set();
 
 async function getSessionAdbSerial(routingId, { launchSerial, stableDeviceId } = {}) {
     const cached = sessionAdbSerialCache.get(routingId);
@@ -768,6 +795,61 @@ function invalidateSessionAdbSerialCache(routingId) {
 }
 
 global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
+
+global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
+
+function typeASessionMatchesDevice(entry, deviceId) {
+    if (!entry || !deviceId) return false;
+    return entry.stableDeviceId === deviceId || entry.deviceId === deviceId;
+}
+
+function markTypeASessionsReconnecting(deviceId) {
+    if (!deviceId) return;
+    const sessions = global.browserViewManager?.getAllSessions?.() || [];
+    for (const summary of sessions) {
+        if (summary.type !== "A") continue;
+        if (!typeASessionMatchesDevice(summary, deviceId)) continue;
+        if (!videoClients[summary.sessionId]) continue;
+        transportReconnectingTabs.add(summary.sessionId);
+        console.log(
+            `[wifi][reattach] Type A beginTransportReconnect session=${summary.sessionId} device=${deviceId}`
+        );
+    }
+}
+
+function failTypeASessionsReconnecting(deviceId) {
+    if (!deviceId) return;
+    for (const tabId of [...transportReconnectingTabs]) {
+        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        if (!typeASessionMatchesDevice(entry, deviceId)) continue;
+        transportReconnectingTabs.delete(tabId);
+        console.warn(`[wifi][reattach] Type A fail session=${tabId} device=${deviceId}`);
+    }
+}
+
+async function reattachTypeASessionsAfterTransportSwitch(deviceId, { forceMigrate = false, preferUsb = false } = {}) {
+    if (!deviceId) return;
+
+    const tabIds = [...transportReconnectingTabs].filter((tabId) => {
+        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        return typeASessionMatchesDevice(entry, deviceId);
+    });
+    if (tabIds.length === 0) return;
+
+    // Approche rebind in-place abandonnée (flux cassé + décalage input).
+    // TODO(Commit suivant): appeler switchSessionTransport() ici (destroy+recreate orchestré).
+    console.warn(
+        `[wifi][reattach] Type A no-op — rebind retiré, switchSessionTransport pending ` +
+        `device=${deviceId} sessions=${tabIds.length} preferUsb=${preferUsb} forceMigrate=${forceMigrate}`
+    );
+    for (const tabId of tabIds) {
+        transportReconnectingTabs.delete(tabId);
+    }
+}
+
+global.markTypeASessionsReconnecting = markTypeASessionsReconnecting;
+global.reattachTypeASessionsAfterTransportSwitch = reattachTypeASessionsAfterTransportSwitch;
+global.failTypeASessionsReconnecting = failTypeASessionsReconnecting;
 const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
 const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
 
@@ -955,6 +1037,16 @@ function handleExternalLaunchChildExit(launchId, child) {
     if (launch.handedOff || launch.awaitingHub || newInstanceManager?.isExternalLaunchOwned(launchId)) {
         console.log(`[NewInstance] scrcpy externe termine (${launchId}) — session Hub active, conservation de l'app`);
         delete externalLaunches[launchId];
+        // Le VD était possédé par ce process USB : si le Hub est en WiFi sans avoir claim,
+        // il faut recréer un display sur le shell WiFi (sinon flux noir après unplug).
+        if (newInstanceManager?.recoverAfterExternalDisplayOwnerLost) {
+            void newInstanceManager.recoverAfterExternalDisplayOwnerLost(launchId).catch((err) => {
+                console.warn(
+                    `[NewInstance] recover after externe lost:`,
+                    err?.message || err
+                );
+            });
+        }
         return;
     }
 
@@ -1673,12 +1765,21 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
         const entry = global.browserViewManager?.getSessionEntry(routingId);
         const typeBForResolve = newInstanceManager?.getNewInstanceSession(routingId);
-        const resolvedSerial = await getSessionAdbSerial(routingId, {
-            launchSerial: resolvedDeviceId,
-            stableDeviceId: entry?.stableDeviceId || typeBForResolve?.stableDeviceId || null
-        });
-        if (resolvedSerial) {
-            resolvedDeviceId = resolvedSerial;
+        // Type B : toujours le shell live de la session (évite cache registry WiFi périmé).
+        const liveTypeBShell = typeBForResolve?.client?.shellSerial
+            || typeBForResolve?.serial
+            || null;
+        if (liveTypeBShell) {
+            resolvedDeviceId = liveTypeBShell;
+            invalidateSessionAdbSerialCache(routingId);
+        } else {
+            const resolvedSerial = await getSessionAdbSerial(routingId, {
+                launchSerial: resolvedDeviceId,
+                stableDeviceId: entry?.stableDeviceId || typeBForResolve?.stableDeviceId || null
+            });
+            if (resolvedSerial) {
+                resolvedDeviceId = resolvedSerial;
+            }
         }
 
         const sessionEntry = global.browserViewManager?.getSessionEntry(routingId);
@@ -2288,10 +2389,35 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                     const errorPayload = { tabId, error: err.message };
                     forwardTypeAVideoEvent(tabId, "video-error", errorPayload);
                 }
+                if (transportReconnectingTabs.has(tabId)) {
+                    console.log(`[Video] error ignoré (reattach) tab=${tabId}`);
+                    return;
+                }
                 delete videoClients[tabId];
             });
 
             scrcpyClient.on("closed", () => {
+                if (transportReconnectingTabs.has(tabId)) {
+                    console.log(`[Video] closed ignoré (reattach) tab=${tabId}`);
+                    return;
+                }
+
+                const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+                const deviceId = entry?.stableDeviceId || entry?.deviceId;
+                const wifiConfig = deviceId
+                    ? global.wifiDevicesManager?.getByDeviceId?.(deviceId)
+                    : null;
+                const shellSerial = scrcpyClient.shellSerial || scrcpyClient.serial;
+                const onWifiShell = global.wifiAdbService?.isWifiSerial?.(shellSerial);
+
+                // USB débranché en mode WiFi : garder le client et migrer vers WiFi.
+                if (wifiConfig?.wifiEnabled && !onWifiShell && videoClients[tabId] === scrcpyClient) {
+                    transportReconnectingTabs.add(tabId);
+                    console.log(`[Video] closed USB → fallback WiFi tab=${tabId} device=${deviceId}`);
+                    void reattachTypeASessionsAfterTransportSwitch(deviceId);
+                    return;
+                }
+
                 delete videoClients[tabId];
                 if (scrcpyClientsBySerial[serial] === scrcpyClient) {
                     delete scrcpyClientsBySerial[serial];
@@ -2734,6 +2860,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getWifiDevicesManager: () => wifiDevicesManager,
         getCustomNamesManager: () => global.customNamesManager,
         getMainWindow: () => win,
+        getNewInstanceManager: () => newInstanceManager,
         loadHistory,
         removeDeviceFromHistory,
         refreshDeviceList: async () => {
