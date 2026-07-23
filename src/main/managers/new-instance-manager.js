@@ -851,46 +851,40 @@ class NewInstanceManager extends EventEmitter {
         }
 
         const label = sessionId ? ` (${sessionId})` : "";
-        // Pas de `pm list users` (lent) : user de la session + profils Xiaomi courants.
-        const userIds = this._resolveForceStopUserIdsFast(userId);
+        // Un seul user : base (0) et clone (10/999) partagent le package — ne pas tuer les deux.
+        const targetUserId = Number.isInteger(userId) ? userId : 0;
 
-        // Un seul force-stop par user, en parallèle — suffisant et bien plus rapide.
-        const stopResults = await Promise.allSettled(
-            userIds.map((uid) => spawnAdbShell(this.adbPath, adbSerial, [
-                "am", "force-stop", "--user", String(uid), packageName
-            ]))
-        );
-        const withoutUser = await Promise.allSettled([
-            spawnAdbShell(this.adbPath, adbSerial, ["am", "force-stop", packageName])
-        ]);
-
-        const stopped = stopResults.some((r) => r.status === "fulfilled")
-            || withoutUser.some((r) => r.status === "fulfilled");
-
-        if (stopped) {
-            console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} users=[${userIds.join(",")}]`);
-        } else {
-            for (const result of [...stopResults, ...withoutUser]) {
-                if (result.status === "rejected") {
-                    console.warn(`[NewInstanceManager] App stop echec:`, result.reason?.message || result.reason);
-                }
-            }
+        let stopped = false;
+        try {
+            await spawnAdbShell(this.adbPath, adbSerial, [
+                "am", "force-stop", "--user", String(targetUserId), packageName
+            ]);
+            stopped = true;
+            console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} user=${targetUserId}`);
+        } catch (err) {
+            console.warn(
+                `[NewInstanceManager] App stop echec (user=${targetUserId}):`,
+                err?.message || err
+            );
         }
 
-        await this._removeAppTasksFromRecents(adbSerial, packageName);
+        await this._removeAppTasksFromRecents(adbSerial, packageName, targetUserId);
 
-        // stayon false en arrière-plan — ne bloque pas la fermeture
-        void spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]).catch(() => {});
+        // Ne coupe pas stayon si une autre session Type B tourne encore sur ce device.
+        const otherSessionAlive = Array.from(this.sessions.values()).some((s) => (
+            s.sessionId !== sessionId
+            && s.serial === serial
+            && s.state !== "stopped"
+            && s.state !== "stopping"
+        ));
+        if (!otherSessionAlive) {
+            void spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]).catch(() => {});
+        }
     }
 
-    _resolveForceStopUserIdsFast(preferredUserId = null) {
-        const ids = new Set([0, 10, 999]);
-        if (Number.isInteger(preferredUserId)) ids.add(preferredUserId);
-        return Array.from(ids);
-    }
-
-    async _removeAppTasksFromRecents(serial, packageName) {
+    async _removeAppTasksFromRecents(serial, packageName, userId = 0) {
         if (!serial || !packageName) return;
+        const targetUserId = Number.isInteger(userId) ? userId : 0;
         let dump = "";
         try {
             dump = await spawnAdbShell(this.adbPath, serial, ["dumpsys", "activity", "recents"]);
@@ -904,10 +898,18 @@ class NewInstanceManager extends EventEmitter {
 
         const taskIds = new Set();
         const lines = String(dump).split(/\r?\n/);
+        const userMatchers = [
+            new RegExp(`\\bU=${targetUserId}\\b`),
+            new RegExp(`\\buserId=${targetUserId}\\b`),
+            new RegExp(`\\bu${targetUserId}\\b`)
+        ];
+
         for (let i = 0; i < lines.length; i += 1) {
             const line = lines[i];
             if (!line.includes(packageName)) continue;
             const window = lines.slice(Math.max(0, i - 4), i + 6).join("\n");
+            if (!userMatchers.some((re) => re.test(window))) continue;
+
             for (const match of window.matchAll(/\btaskId\s*=\s*(\d+)/gi)) {
                 taskIds.add(match[1]);
             }
@@ -935,14 +937,18 @@ class NewInstanceManager extends EventEmitter {
                 try {
                     await spawnAdbShell(this.adbPath, serial, shellArgs);
                     removed = true;
-                    console.log(`[NewInstanceManager] Task/stack retire: ${shellArgs.join(" ")} (${packageName})`);
+                    console.log(
+                        `[NewInstanceManager] Task/stack retire: ${shellArgs.join(" ")} (${packageName} user=${targetUserId})`
+                    );
                     break;
                 } catch (_err) {
                     // essayer la commande suivante
                 }
             }
             if (!removed) {
-                console.warn(`[NewInstanceManager] Impossible de retirer task ${taskId} (${packageName})`);
+                console.warn(
+                    `[NewInstanceManager] Impossible de retirer task ${taskId} (${packageName} user=${targetUserId})`
+                );
             }
         }
     }
@@ -980,7 +986,11 @@ class NewInstanceManager extends EventEmitter {
 
         if (typeof global.killExternalScrcpyLaunchesForApp === "function") {
             try {
-                await global.killExternalScrcpyLaunchesForApp(entry.deviceId, entry.packageName);
+                await global.killExternalScrcpyLaunchesForApp(
+                    entry.deviceId,
+                    entry.packageName,
+                    entry.userId
+                );
             } catch (err) {
                 console.warn(`[NewInstanceManager] kill scrcpy externe (fallback):`, err?.message || err);
             }

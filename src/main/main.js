@@ -876,13 +876,16 @@ async function killExternalScrcpyLaunch(launchId) {
 
 global.killExternalScrcpyLaunch = killExternalScrcpyLaunch;
 
-async function killExternalScrcpyLaunchesForApp(serial, packageName) {
+async function killExternalScrcpyLaunchesForApp(serial, packageName, userId = null) {
     if (!serial || !packageName) return;
+    const targetUserId = Number.isInteger(userId) ? userId : 0;
     const ids = Object.keys(externalLaunches).filter((launchId) => {
         const launch = externalLaunches[launchId];
-        return launch
-            && launch.serial === serial
-            && launch.packageName === packageName;
+        if (!launch || launch.serial !== serial || launch.packageName !== packageName) {
+            return false;
+        }
+        const launchUserId = Number.isInteger(launch.userId) ? launch.userId : 0;
+        return launchUserId === targetUserId;
     });
     for (const launchId of ids) {
         await killExternalScrcpyLaunch(launchId);
