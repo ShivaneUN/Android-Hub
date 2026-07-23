@@ -796,8 +796,6 @@ function invalidateSessionAdbSerialCache(routingId) {
 
 global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
 
-global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
-
 function typeASessionMatchesDevice(entry, deviceId) {
     if (!entry || !deviceId) return false;
     return entry.stableDeviceId === deviceId || entry.deviceId === deviceId;
@@ -827,28 +825,8 @@ function failTypeASessionsReconnecting(deviceId) {
     }
 }
 
-async function reattachTypeASessionsAfterTransportSwitch(deviceId, { forceMigrate = false, preferUsb = false } = {}) {
-    if (!deviceId) return;
-
-    const tabIds = [...transportReconnectingTabs].filter((tabId) => {
-        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
-        return typeASessionMatchesDevice(entry, deviceId);
-    });
-    if (tabIds.length === 0) return;
-
-    // Approche rebind in-place abandonnée (flux cassé + décalage input).
-    // TODO(Commit suivant): appeler switchSessionTransport() ici (destroy+recreate orchestré).
-    console.warn(
-        `[wifi][reattach] Type A no-op — rebind retiré, switchSessionTransport pending ` +
-        `device=${deviceId} sessions=${tabIds.length} preferUsb=${preferUsb} forceMigrate=${forceMigrate}`
-    );
-    for (const tabId of tabIds) {
-        transportReconnectingTabs.delete(tabId);
-    }
-}
 
 global.markTypeASessionsReconnecting = markTypeASessionsReconnecting;
-global.reattachTypeASessionsAfterTransportSwitch = reattachTypeASessionsAfterTransportSwitch;
 global.failTypeASessionsReconnecting = failTypeASessionsReconnecting;
 const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
 const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
@@ -1037,16 +1015,8 @@ function handleExternalLaunchChildExit(launchId, child) {
     if (launch.handedOff || launch.awaitingHub || newInstanceManager?.isExternalLaunchOwned(launchId)) {
         console.log(`[NewInstance] scrcpy externe termine (${launchId}) — session Hub active, conservation de l'app`);
         delete externalLaunches[launchId];
-        // Le VD était possédé par ce process USB : si le Hub est en WiFi sans avoir claim,
-        // il faut recréer un display sur le shell WiFi (sinon flux noir après unplug).
-        if (newInstanceManager?.recoverAfterExternalDisplayOwnerLost) {
-            void newInstanceManager.recoverAfterExternalDisplayOwnerLost(launchId).catch((err) => {
-                console.warn(
-                    `[NewInstance] recover after externe lost:`,
-                    err?.message || err
-                );
-            });
-        }
+        // TODO(switchSessionTransport): externe-lost recover pending
+        console.warn("[NewInstance] externe lost — recover pending switchSessionTransport launchId=" + launchId);
         return;
     }
 
@@ -2413,8 +2383,8 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 // USB débranché en mode WiFi : garder le client et migrer vers WiFi.
                 if (wifiConfig?.wifiEnabled && !onWifiShell && videoClients[tabId] === scrcpyClient) {
                     transportReconnectingTabs.add(tabId);
-                    console.log(`[Video] closed USB → fallback WiFi tab=${tabId} device=${deviceId}`);
-                    void reattachTypeASessionsAfterTransportSwitch(deviceId);
+                    console.warn("[Video] USB→WiFi — mark only, switchSessionTransport pending tab=" + tabId);
+                    failTypeASessionsReconnecting(deviceId);
                     return;
                 }
 
