@@ -26,6 +26,7 @@
             </div>
         `;
         item.dataset.dockTip = t("sidebar.language");
+        item.setAttribute("data-i18n-dock-tip", "sidebar.language");
 
         if (navSettings && dock.contains(navSettings)) {
             navSettings.insertAdjacentElement("afterend", item);
@@ -45,8 +46,10 @@
         badge.textContent = locale === "en" ? "EN" : "FR";
         const item = document.getElementById("nav-language");
         if (item) {
-            item.title = locale === "en" ? t("sidebar.languageEn") : t("sidebar.languageFr");
-            item.dataset.dockTip = locale === "en" ? "English" : "Français";
+            const tipKey = locale === "en" ? "sidebar.languageEn" : "sidebar.languageFr";
+            item.title = t(tipKey);
+            item.dataset.dockTip = t(tipKey);
+            item.setAttribute("data-i18n-dock-tip", tipKey);
         }
     }
 

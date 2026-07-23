@@ -75,6 +75,15 @@
             const key = el.getAttribute("data-i18n-aria-label");
             if (key) el.setAttribute("aria-label", t(key));
         });
+        root.querySelectorAll("[data-i18n-dock-tip]").forEach((el) => {
+            const key = el.getAttribute("data-i18n-dock-tip");
+            if (!key) return;
+            const label = t(key);
+            el.dataset.dockTip = label;
+            if (!el.hasAttribute("data-i18n-aria-label") && !el.getAttribute("aria-label")) {
+                el.setAttribute("aria-label", label);
+            }
+        });
     }
 
     function notifyChange() {

@@ -223,10 +223,11 @@ function createSessionTabElement({ sessionId, type, active, label, hasCustomName
 
     tab.querySelector(".tab-close").addEventListener("click", async (e) => {
         e.stopPropagation();
+        console.warn(`[Sidebar] tab-close click session=${sessionId}`);
         if (sessionId.startsWith("instance-") && typeof closeInstance === "function") {
             await closeInstance(sessionId);
         } else if (typeof closeNewInstanceSession === "function") {
-            await closeNewInstanceSession(sessionId);
+            await closeNewInstanceSession(sessionId, "tab-close");
         } else {
             await window.sessionAPI.close(sessionId);
         }

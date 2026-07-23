@@ -855,7 +855,8 @@ function activateNewInstanceSession(sessionId) {
     activeNewInstanceSessionId = sessionId;
 }
 
-async function closeNewInstanceSession(sessionId) {
+async function closeNewInstanceSession(sessionId, reason = "unspecified") {
+    console.warn(`[NewSession] closeNewInstanceSession ${sessionId} reason=${reason}`);
     const entry = newInstanceSessions.get(sessionId);
 
     // Teardown UI immédiat (même rythme que Type A) — kill device en arrière-plan.
@@ -1083,7 +1084,7 @@ async function launchTypeBSession({
 
         scheduleLaunchHistoryRefresh();
     } catch (err) {
-        await closeNewInstanceSession(sessionId);
+        await closeNewInstanceSession(sessionId, "launch-error");
         throw err;
     }
 }

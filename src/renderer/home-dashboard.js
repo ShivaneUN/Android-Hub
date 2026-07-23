@@ -106,13 +106,14 @@
       const colorStyle = color ? ` style="--device-chip-color:${escapeAttr(color)}"` : "";
       const audioOn = audioUi?.isOn?.(device) !== false;
       const audioIcon = audioOn ? (audioUi?.iconOn || "") : (audioUi?.iconOff || "");
+      const audioLabel = globalThis.HubI18n?.t?.("sidebar.devicePanel.audioToggle") || "Audio";
       return (
         `<div class="dock-device-chip${color ? " has-device-color" : ""}" data-device-id="${escapeAttr(device.deviceId || "")}" data-serial="${escapeAttr(device.serial || "")}"${colorStyle}>` +
         `<span class="dock-battery-item dock-battery-${tone}" data-dock-tip="${escapeAttr(name)}">` +
         batteryIconSvg(device.battery, tone) +
         `<span class="dock-battery-pct">${level}</span>` +
         `</span>` +
-        `<button type="button" class="sidebar-device-audio-btn dock-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${escapeAttr(key)}" data-dock-tip="Audio" aria-label="Audio">` +
+        `<button type="button" class="sidebar-device-audio-btn dock-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${escapeAttr(key)}" data-dock-tip="${escapeAttr(audioLabel)}" aria-label="${escapeAttr(audioLabel)}">` +
         audioIcon +
         `</button>` +
         `</div>`
@@ -249,6 +250,11 @@
       void syncDockBatteries();
     });
   }
+
+  window.HubI18n?.onChange?.(() => {
+    void syncDockBatteries();
+    void syncRecentApps();
+  });
 
   if (window.audioAPI?.onGlobalStateChanged) {
     window.audioAPI.onGlobalStateChanged(() => {

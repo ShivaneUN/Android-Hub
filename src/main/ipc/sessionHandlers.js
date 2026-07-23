@@ -135,6 +135,7 @@ function registerSessionHandlers(adbPath, deps = {}) {
     });
 
     ipcMain.handle("session:close", async (_event, sessionId) => {
+        console.warn(`[session:close] sessionId=${sessionId}`);
         const manager = getNewInstanceManager?.();
         const entry = global.browserViewManager?.getSessionEntry(sessionId);
         const isAppInstance = sessionId.startsWith("new-instance-") || entry?.type === "B";

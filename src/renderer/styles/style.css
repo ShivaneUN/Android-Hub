@@ -2019,7 +2019,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .sidebar-device-stat.transport-wifi-connected { color: #4f8cff; font-size: 11px; font-weight: 600; }
 .sidebar-device-stat.transport-unknown { color: #5b6373; font-size: 11px; }
 
-/* --- Overlay chargement centré (non bloquant) --- */
+/* --- Overlay chargement centré — bloque les clics (évite de fermer un onglet pendant le switch) --- */
 .hub-loading-overlay {
   position: fixed;
   inset: 0;
@@ -2034,6 +2034,8 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 
 .hub-loading-overlay.visible {
   opacity: 1;
+  pointer-events: auto;
+  background: rgba(8, 10, 16, 0.35);
 }
 
 .hub-loading-overlay.hidden {

@@ -76,7 +76,7 @@
                  title="${escapeHtml(session.label || session.sessionId)}">
                 <div class="stream-deck-tile-accent"></div>
                 <div class="stream-deck-tile-body">
-                    <div class="stream-deck-tile-chrome" title="Glisser pour réordonner">
+                    <div class="stream-deck-tile-chrome" title="${escapeHtml(st("streamDeck.dragToReorder"))}">
                         <span class="stream-deck-tile-grip" aria-hidden="true"></span>
                         <span class="stream-deck-tile-pill device-color-pill" style="background:${escapeHtml(color)}"></span>
                         <span class="stream-deck-tile-label">${escapeHtml(session.label || session.sessionId)}</span>
@@ -759,6 +759,11 @@
         window.onDisplayLayoutChange?.(() => {
             lastSessionsKey = "";
             lastMultiBoundsKey = "";
+            scheduleLayoutSync();
+        });
+
+        globalThis.HubI18n?.onChange?.(() => {
+            lastSessionsKey = "";
             scheduleLayoutSync();
         });
 

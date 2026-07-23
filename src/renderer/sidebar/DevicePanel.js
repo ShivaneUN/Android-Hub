@@ -223,7 +223,7 @@ function buildDeviceCardsHtml(connected) {
                     <span class="sidebar-device-status ${statusDot}"></span>
                     <span class="sidebar-device-name">${name}</span>
                     <div class="sidebar-device-actions">
-                        <button type="button" class="sidebar-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${audioKey}" data-dock-tip="Audio" aria-label="${dt("sidebar.devicePanel.audioToggle")}">
+                        <button type="button" class="sidebar-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${audioKey}" data-dock-tip="${dt("sidebar.devicePanel.audioToggle")}" aria-label="${dt("sidebar.devicePanel.audioToggle")}">
                             ${audioOn ? AUDIO_ICON_ON : AUDIO_ICON_OFF}
                         </button>
                         ${canToggleWifi ? `

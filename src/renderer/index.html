@@ -40,7 +40,7 @@
   </div>
 
   <div class="tabs-bar" id="tabs-bar">
-    <button type="button" class="tabs-new-instance tablet-only" id="tabs-new-instance" data-dock-tip="Nouvelle instance" aria-label="Nouvelle instance">
+    <button type="button" class="tabs-new-instance tablet-only" id="tabs-new-instance" data-i18n-dock-tip="sidebar.newInstance" data-i18n-aria-label="sidebar.newInstance" aria-label="Nouvelle instance">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
     </button>
     <div class="tabs-bar-track" id="tabs-bar-track"></div>
@@ -80,7 +80,7 @@
     </div>
 
     <div class="quick-actions-dock" id="quick-actions-dock">
-      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-dock-tip="Écran" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
+      <div class="sidebar-item sidebar-screen-toggle disabled" id="nav-toggle-screen" data-i18n-dock-tip="sidebar.screen" data-i18n-title="toggles.screenTitle" title="Eteindre ou rallumer l'ecran de l'appareil (session mirroring active)">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="7" y="2" width="10" height="20" rx="2.5"/>
@@ -91,7 +91,7 @@
         <div class="label" data-i18n="sidebar.screen">Ecran</div>
       </div>
 
-      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-dock-tip="Orientation" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
+      <div class="sidebar-item sidebar-orientation-toggle disabled" id="nav-toggle-orientation" data-i18n-dock-tip="sidebar.portrait" data-i18n-title="toggles.portraitTitle" title="Activer ou desactiver le mode portrait">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="2" y="7" width="20" height="10" rx="2.5"/>
@@ -102,7 +102,7 @@
         <div class="label" data-i18n="sidebar.portrait">Portrait</div>
       </div>
 
-      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-dock-tip="Audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
+      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-dock-tip="sidebar.audio" data-i18n-title="toggles.audioTitle" title="Couper ou reactiver l'audio de toutes les sessions">
         <div class="icon">
           <svg id="sidebar-global-audio-icon-on" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M11 5 6 9H2v6h4l5 4V5z"/>
@@ -119,7 +119,7 @@
         <div class="label" data-i18n="sidebar.audio">Audio</div>
       </div>
 
-      <div class="sidebar-item" id="nav-home" data-dock-tip="Accueil" aria-label="Accueil">
+      <div class="sidebar-item" id="nav-home" data-i18n-dock-tip="sidebar.home" data-i18n-aria-label="sidebar.home" aria-label="Accueil">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 10.5 12 3l9 7.5"/>
@@ -127,10 +127,10 @@
             <path d="M10 20v-6h4v6"/>
           </svg>
         </div>
-        <div class="label">Accueil</div>
+        <div class="label" data-i18n="sidebar.home">Accueil</div>
       </div>
 
-      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-dock-tip="Stream Deck" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
+      <div class="sidebar-item sidebar-stream-deck-toggle" id="nav-toggle-stream-deck" data-i18n-dock-tip="streamDeck.toggle" data-i18n-title="streamDeck.toggleTitle" title="Mode Stream Deck — affichage multi-appareils">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="7" height="7" rx="1.5"/>
@@ -142,7 +142,7 @@
         <div class="label" data-i18n="streamDeck.toggle">Mode Stream Deck</div>
       </div>
 
-      <div class="sidebar-item" id="nav-settings" data-dock-tip="Paramètres" data-i18n-title="toggles.settingsTitle" title="Appareils, contrôle et nettoyage">
+      <div class="sidebar-item" id="nav-settings" data-i18n-dock-tip="sidebar.settings" data-i18n-title="toggles.settingsTitle" title="Appareils, contrôle et nettoyage">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3"/>
@@ -152,7 +152,7 @@
         <div class="label" data-i18n="sidebar.settings">Paramètres</div>
       </div>
 
-      <div class="sidebar-item" id="nav-aide" data-dock-tip="Aide" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
+      <div class="sidebar-item" id="nav-aide" data-i18n-dock-tip="sidebar.help" data-i18n-title="toggles.helpTitle" title="Aide et raccourcis clavier">
         <div class="icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
@@ -172,7 +172,7 @@
       <div class="page" id="page-new">
         <div class="empty-state">
           <div class="home-dashboard-section home-devices-section tablet-only" hidden>
-            <p class="home-dashboard-label">Appareils connectés</p>
+            <p class="home-dashboard-label" data-i18n="sidebar.connectedDevices">Appareils connectés</p>
             <div class="home-devices-panel" id="home-devices-panel"></div>
           </div>
           <img class="empty-state-mascot" src="assets/android-hub-logo.png" alt="" width="120" height="120">
@@ -182,18 +182,18 @@
             <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
           </div>
           <div class="home-dashboard-section home-apps-section tablet-only" hidden>
-            <p class="home-dashboard-label">Applications récentes</p>
+            <p class="home-dashboard-label" data-i18n="homeDashboard.recentApps">Applications récentes</p>
             <div class="home-apps-recent" id="home-apps-recent"></div>
           </div>
           <div class="ui-theme-switch">
             <button type="button" class="ui-theme-option" data-theme="classic">
-              <span class="ui-theme-option-title">Interface classique</span>
-              <span class="ui-theme-option-desc">Rail complet, vue actuelle</span>
+              <span class="ui-theme-option-title" data-i18n="uiTheme.classicTitle">Interface classique</span>
+              <span class="ui-theme-option-desc" data-i18n="uiTheme.classicDesc">Rail complet, vue actuelle</span>
             </button>
             <button type="button" class="ui-theme-option" data-theme="tablet">
-              <span class="ui-theme-option-badge">NEW</span>
-              <span class="ui-theme-option-title">Nouvelle interface</span>
-              <span class="ui-theme-option-desc">Style tablette, plein écran</span>
+              <span class="ui-theme-option-badge" data-i18n="uiTheme.badgeNew">NEW</span>
+              <span class="ui-theme-option-title" data-i18n="uiTheme.tabletTitle">Nouvelle interface</span>
+              <span class="ui-theme-option-desc" data-i18n="uiTheme.tabletDesc">Style tablette, plein écran</span>
             </button>
           </div>
         </div>

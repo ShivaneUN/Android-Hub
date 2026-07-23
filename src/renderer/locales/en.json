@@ -9,6 +9,7 @@
     "control": "Control",
     "settings": "Settings",
     "help": "Help",
+    "home": "Home",
     "language": "Language",
     "languageFr": "Français",
     "languageEn": "English",
@@ -32,11 +33,22 @@
       "deviceFallback": "Device"
     }
   },
+  "homeDashboard": {
+    "recentApps": "Recent apps"
+  },
+  "uiTheme": {
+    "classicTitle": "Classic interface",
+    "classicDesc": "Full rail, current layout",
+    "tabletTitle": "New interface",
+    "tabletDesc": "Tablet style, fullscreen",
+    "badgeNew": "NEW"
+  },
   "streamDeck": {
     "toggle": "Stream Deck mode",
     "toggleTitle": "Enable Stream Deck multi-device display",
     "barTitle": "Android Hub — Display",
     "empty": "No active session",
+    "dragToReorder": "Drag to swap positions",
     "layout": {
       "grid": "Grid",
       "focus": "Focus",

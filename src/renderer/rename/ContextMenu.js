@@ -3,11 +3,12 @@
  * Le menu DOM HTML ne peut pas passer au-dessus des BrowserView vidéo.
  */
 (function initContextMenuBridge() {
-    async function closeSessionById(sessionId) {
+    async function closeSessionById(sessionId, reason = "context-menu") {
+        console.warn(`[ContextMenu] closeSessionById ${sessionId} reason=${reason}`);
         if (sessionId.startsWith("instance-") && typeof closeInstance === "function") {
             await closeInstance(sessionId);
         } else if (typeof closeNewInstanceSession === "function") {
-            await closeNewInstanceSession(sessionId);
+            await closeNewInstanceSession(sessionId, reason);
         } else if (window.sessionAPI?.close) {
             await window.sessionAPI.close(sessionId);
         }

@@ -9,6 +9,7 @@
     "control": "Control",
     "settings": "Settings",
     "help": "Help",
+    "home": "Home",
     "language": "Language",
     "languageFr": "Français",
     "languageEn": "English",
@@ -24,6 +25,7 @@
       "empty": "No connected devices",
       "mirroring": "Mirroring",
       "wifiToggle": "WiFi ADB connection",
+      "audioToggle": "PC audio for this device",
       "battery": "Battery",
       "transportAdb": "ADB transport",
       "usb": "USB",
@@ -31,11 +33,22 @@
       "deviceFallback": "Device"
     }
   },
+  "homeDashboard": {
+    "recentApps": "Recent apps"
+  },
+  "uiTheme": {
+    "classicTitle": "Classic interface",
+    "classicDesc": "Full rail, current layout",
+    "tabletTitle": "New interface",
+    "tabletDesc": "Tablet style, fullscreen",
+    "badgeNew": "NEW"
+  },
   "streamDeck": {
     "toggle": "Stream Deck mode",
     "toggleTitle": "Enable Stream Deck multi-device display",
     "barTitle": "Android Hub — Display",
     "empty": "No active session",
+    "dragToReorder": "Drag to swap positions",
     "layout": {
       "grid": "Grid",
       "focus": "Focus",
