@@ -1,38 +1,81 @@
-.settings-tab-bar {
+.settings-layout {
   display: flex;
-  gap: 4px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-tab-bar,
+.settings-side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 168px;
   flex-shrink: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border-subtle);
+  background: #10141b;
+  overflow-y: auto;
 }
 
 .settings-tab-btn {
-  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
   border: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  text-align: left;
+  position: relative;
+  transition: color 0.15s, background 0.15s;
 }
 
 .settings-tab-btn:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .settings-tab-btn.active {
-  color: var(--accent-blue);
-  border-bottom-color: var(--accent-blue);
-  background: rgba(79, 140, 255, 0.08);
+  color: #9ec0ff;
+  background: rgba(79, 140, 255, 0.12);
+}
+
+.settings-tab-btn.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent-blue);
+}
+
+.settings-nav-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-nav-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .settings-panel-body {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }

@@ -31,6 +31,11 @@
   max-height: min(700px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
 }
 
+.hub-modal--settings {
+  width: min(860px, calc(100vw - var(--sidebar-width, 208px) - 24px));
+  max-height: min(760px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
+}
+
 .hub-modal--control {
   width: min(420px, calc(100vw - var(--sidebar-width, 208px) - 24px));
   max-height: min(680px, calc(100vh - var(--chrome-top-height, 80px) - 16px));

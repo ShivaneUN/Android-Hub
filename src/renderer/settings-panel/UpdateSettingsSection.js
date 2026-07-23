@@ -38,9 +38,11 @@
         if (!root) return;
         const currentVersionEl = root.querySelector("#settings-update-current-version");
         if (!currentVersionEl) return;
-        currentVersionEl.textContent = t("update.status.currentVersion", {
-            version: state.currentVersion || "?"
-        });
+        currentVersionEl.textContent = state.currentVersion
+            ? (String(state.currentVersion).startsWith("v")
+                ? String(state.currentVersion)
+                : `v${state.currentVersion}`)
+            : "v?";
     }
 
     function renderState(state = {}) {

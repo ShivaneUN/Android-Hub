@@ -164,10 +164,33 @@
   },
   "settingsPanel": {
     "title": "Paramètres",
+    "subtitle": "Appareils, stream et maintenance",
     "tabDevices": "Appareils",
     "tabControl": "Contrôle",
     "tabMaintenance": "Nettoyage",
-    "tabUpdates": "Mise à jour"
+    "tabUpdates": "Mise à jour",
+    "tabAbout": "À propos",
+    "maintLogsHint": "Fichiers de plus de {days} jours",
+    "maintLogsHintShort": "plus de {days} jours",
+    "maintCacheHint": "fichiers temporaires",
+    "maintKeepHint": "Conserve les {days} derniers jours de logs/cache",
+    "seeMore": "Voir ›",
+    "clearHistory": "Effacer l'historique",
+    "autoOptions": "Options auto",
+    "aboutTagline": "Un hub pour connecter, lancer et contrôler vos tablettes Android.",
+    "aboutFeaturesTitle": "Ce que fait le Hub",
+    "aboutFeat1Title": "Connexion USB / Wi‑Fi",
+    "aboutFeat1Desc": "Détection des appareils, renommage, statut en direct et bascule USB ↔ Wi‑Fi.",
+    "aboutFeat2Title": "Nouvelle instance",
+    "aboutFeat2Desc": "Lancez une app en display virtuel dédié, y compris clones et profils Android.",
+    "aboutFeat3Title": "Mirroring & contrôle",
+    "aboutFeat3Desc": "Stream scrcpy avec presets résolution, DPI, FPS, bitrate et codec par session.",
+    "aboutFeat4Title": "Dock & batteries",
+    "aboutFeat4Desc": "Surveillez charge, Muet et Wi‑Fi depuis le dock flottant pendant le stream.",
+    "aboutFeat5Title": "Historique & récents",
+    "aboutFeat5Desc": "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
+    "aboutFeat6Title": "Maintenance",
+    "aboutFeat6Desc": "Nettoyage logs, cache et historique, manuel ou automatique au démarrage."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -199,6 +222,10 @@
     "rename": "Renommer",
     "reconnect": "Reconnecter",
     "remove": "Supprimer",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "connectedBadge": "Connecté",
+    "offlineBadge": "Hors ligne",
     "cleanupNow": "Nettoyer maintenant",
     "discoverDevices": "Recherche de nouveau appareil",
     "discoverSearching": "Recherche en cours...",
@@ -413,10 +440,12 @@
       "guide": "Guide mirroring",
       "wifi": "Connexion WiFi",
       "refresh": "Rafraîchir",
-      "close": "Fermer"
+      "close": "Fermer",
+      "subtitle": "Guides, raccourcis et dépannage",
+      "troubleshoot": "Dépannage"
     },
     "shortcuts": {
-      "intro": "Raccourcis clavier et actions disponibles dans Android Hub. Les raccourcis de navigation ne s'appliquent pas lorsque vous tapez dans un champ texte. Clic droit sur un appareil dans « Appareils connectés » ou sur un onglet de session pour ouvrir un menu contextuel (renommer, couleur, fermer…). Le mode Stream Deck permet d'afficher plusieurs sessions en grille, focus ou duo.",
+      "intro": "Raccourcis et actions du Hub. Inactifs dans un champ texte. Clic droit sur un appareil ou un onglet de session pour le menu contextuel.",
       "groups": [
         {
           "title": "Navigation",
@@ -647,16 +676,61 @@
     },
     "wifi": {
       "title": "Connecter un appareil en WiFi",
+      "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, reconnectez l'appareil via le toggle.",
       "steps": [
-        "Branche ton appareil en USB et assure-toi qu'il est bien détecté dans le Hub (débogage USB activé sur le téléphone).",
-        "Vérifie que ton téléphone est connecté au WiFi, sur le même réseau que cet ordinateur.",
-        "Clique sur le toggle WiFi à côté de l'appareil dans la sidebar.",
-        "À la première connexion, le Hub va automatiquement configurer l'appareil et te demander de lui donner un nom. Une fois connecté, un message « Connecté en WiFi » s'affiche.",
-        "Tu peux maintenant débrancher le câble USB — l'appareil reste joignable tant qu'il est sur le même réseau WiFi.",
-        "Pour repasser en USB, reclique simplement sur le toggle (le WiFi sera désactivé, mais la configuration reste enregistrée pour la prochaine fois).",
-        "Retrouve tous tes appareils WiFi et USB, avec leur historique, dans Paramètres → Appareils (icône engrenage dans la barre principale)."
-      ],
-      "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, il se peut que tu doives reconnecter l'appareil via le toggle."
+        {
+          "chipLabel": "USB",
+          "visualLabel": "Connexion USB",
+          "visualCaption": "Première configuration",
+          "title": "Branchez l'appareil en USB",
+          "lead": "La première connexion WiFi passe par USB pour configurer ADB.",
+          "steps": [
+            "Branche ton appareil en USB et assure-toi qu'il est détecté dans le Hub.",
+            "Le débogage USB doit être activé sur le téléphone.",
+            "Choisis « Transfert de fichiers » (MTP) si Android le demande."
+          ],
+          "tip": "Sans détection USB, le toggle WiFi ne pourra pas configurer l'appareil."
+        },
+        {
+          "chipLabel": "Réseau",
+          "visualLabel": "Même réseau",
+          "visualCaption": "WiFi commun",
+          "title": "Vérifiez le réseau WiFi",
+          "lead": "Le téléphone et le PC doivent être sur le même réseau local.",
+          "steps": [
+            "Connecte le téléphone au WiFi.",
+            "Vérifie que cet ordinateur est sur le même réseau (pas un guest isolé).",
+            "Évite les VPN qui isolent le trafic local si la connexion échoue."
+          ],
+          "tip": "Les réseaux « invité » bloquent souvent la communication entre appareils."
+        },
+        {
+          "chipLabel": "WiFi ADB",
+          "visualLabel": "Activation",
+          "visualCaption": "Sidebar Hub",
+          "title": "Activez le toggle WiFi",
+          "lead": "Le Hub configure ADB WiFi et enregistre l'appareil.",
+          "steps": [
+            "Clique sur le toggle WiFi à côté de l'appareil dans la sidebar.",
+            "À la première connexion, donne un nom à l'appareil quand le Hub le demande.",
+            "Une fois prêt, le message « Connecté en WiFi » s'affiche."
+          ],
+          "tip": "Tu peux renommer l'appareil plus tard dans Paramètres → Appareils."
+        },
+        {
+          "chipLabel": "Débrancher",
+          "visualLabel": "Sans câble",
+          "visualCaption": "Connexion sans fil",
+          "title": "Débranchez le câble USB",
+          "lead": "L'appareil reste joignable tant qu'il est sur le même WiFi.",
+          "steps": [
+            "Débranche le câble USB — la session WiFi continue.",
+            "Pour repasser en USB, reclique sur le toggle (la config reste enregistrée).",
+            "Retrouve USB et WiFi dans Paramètres → Appareils."
+          ],
+          "tip": "Si l'IP change, reconnecte via le toggle WiFi."
+        }
+      ]
     },
     "guide": {
       "stepLabel": "Étape {current} sur {total}",

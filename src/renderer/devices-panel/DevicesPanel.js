@@ -178,6 +178,13 @@
         if (els.historyDetail) {
             els.historyDetail.textContent = categoryPreview.history?.detail || "—";
         }
+
+        const maintLogs = document.getElementById("settings-maint-logs-detail");
+        const maintCache = document.getElementById("settings-maint-cache-detail");
+        const maintHistory = document.getElementById("settings-maint-history-detail");
+        if (maintLogs) maintLogs.textContent = categoryPreview.logs?.detail || "—";
+        if (maintCache) maintCache.textContent = categoryPreview.cache?.detail || "—";
+        if (maintHistory) maintHistory.textContent = categoryPreview.history?.detail || "—";
     }
 
     function hasCleanupSelection(categories) {
@@ -386,30 +393,71 @@
         bindAutoCleanPreferences();
         applyMaintenanceHintLabels();
         void loadAutoCleanPreferences();
+        void refreshCleanupPreview();
+
+        const optionsToggle = document.getElementById("devices-maint-options-toggle");
+        const autoPanel = document.getElementById("devices-maintenance-auto-panel");
+        if (optionsToggle && autoPanel && !optionsToggle.dataset.bound) {
+            optionsToggle.dataset.bound = "1";
+            optionsToggle.addEventListener("click", () => {
+                const open = !autoPanel.classList.contains("is-open");
+                autoPanel.classList.toggle("is-open", open);
+                if (open) autoPanel.removeAttribute("hidden");
+                else autoPanel.setAttribute("hidden", "");
+            });
+        }
+
+        const historyHintBtn = document.getElementById("devices-cleanup-history-hint");
+        if (historyHintBtn && !historyHintBtn.dataset.bound) {
+            historyHintBtn.dataset.bound = "1";
+            historyHintBtn.disabled = false;
+            historyHintBtn.addEventListener("click", () => {
+                void onCleanupNow();
+            });
+        }
+
+        const seeLogsBtn = document.getElementById("devices-cleanup-now-btn-logs");
+        if (seeLogsBtn && !seeLogsBtn.dataset.bound) {
+            seeLogsBtn.dataset.bound = "1";
+            seeLogsBtn.addEventListener("click", () => {
+                void onCleanupNow();
+            });
+        }
     }
 
     function renderDeviceRow(entry, { section, subLine }) {
         const deviceId = entry.deviceId || entry.serial;
         const reconnectBtn = section === "wifi"
-            ? `<button type="button" class="devices-panel-btn" data-action="reconnect" data-device-id="${escapeHtml(deviceId)}" title="${t("devicesPanel.reconnect")}">${t("devicesPanel.reconnect")}</button>`
+            ? `<button type="button" class="devices-panel-btn" data-action="reconnect" data-device-id="${escapeHtml(deviceId)}" title="${t("devicesPanel.reconnect")}">${t("devicesPanel.reconnect")}</button><span class="devices-panel-action-sep" aria-hidden="true"></span>`
             : "";
 
-        const statusClass = section === "wifi"
-            ? (entry.adbState === "connected" ? "online" : "offline")
-            : (entry.connected ? "online" : "offline");
+        const isOnline = section === "wifi"
+            ? entry.adbState === "connected"
+            : Boolean(entry.connected);
+        const statusClass = isOnline ? "online" : "offline";
+        const statusBadge = isOnline ? t("devicesPanel.connectedBadge") : t("devicesPanel.offlineBadge");
+        const liveLabel = isOnline ? t("devicesPanel.online") : t("devicesPanel.offline");
+        const transport = section === "wifi" ? t("devicesPanel.wifi") : t("devicesPanel.usb");
+        const icon = section === "wifi"
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`
+            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 17h6"/></svg>`;
 
         return `
-            <div class="devices-panel-row" data-device-id="${escapeHtml(deviceId)}" data-section="${section}">
-                ${colorPillMarkup(entry.deviceColor)}
+            <div class="devices-panel-row ${statusClass}" data-device-id="${escapeHtml(deviceId)}" data-section="${section}">
+                <div class="devices-panel-icon" aria-hidden="true">${icon}</div>
                 <div class="devices-panel-main">
                     <div class="devices-panel-name">${escapeHtml(entry.name)}</div>
-                    <div class="devices-panel-sub">${escapeHtml(subLine)} · ${formatDate(entry.lastSeen)}</div>
+                    <div class="devices-panel-sub">${escapeHtml(subLine)} • ${escapeHtml(transport)}</div>
+                    <div class="devices-panel-live"><span class="devices-panel-dot"></span>${escapeHtml(liveLabel)}</div>
                 </div>
-                <span class="devices-panel-status ${statusClass}">${escapeHtml(entry.statusLabel)}</span>
-                <div class="devices-panel-actions">
-                    <button type="button" class="devices-panel-btn" data-action="rename" data-device-id="${escapeHtml(deviceId)}" data-original-name="${escapeHtml(entry.originalName || entry.name)}" title="${t("devicesPanel.rename")}">${t("devicesPanel.rename")}</button>
-                    ${reconnectBtn}
-                    <button type="button" class="devices-panel-btn danger" data-action="remove" data-device-id="${escapeHtml(deviceId)}" data-section="${section}" title="${t("devicesPanel.remove")}">${t("devicesPanel.remove")}</button>
+                <div class="devices-panel-side">
+                    <span class="devices-panel-status ${statusClass}">${escapeHtml(statusBadge)}</span>
+                    <div class="devices-panel-actions">
+                        <button type="button" class="devices-panel-btn" data-action="rename" data-device-id="${escapeHtml(deviceId)}" data-original-name="${escapeHtml(entry.originalName || entry.name)}" title="${t("devicesPanel.rename")}">${t("devicesPanel.rename")}</button>
+                        <span class="devices-panel-action-sep" aria-hidden="true"></span>
+                        ${reconnectBtn}
+                        <button type="button" class="devices-panel-btn danger" data-action="remove" data-device-id="${escapeHtml(deviceId)}" data-section="${section}" title="${t("devicesPanel.remove")}">${t("devicesPanel.remove")}</button>
+                    </div>
                 </div>
             </div>
         `;

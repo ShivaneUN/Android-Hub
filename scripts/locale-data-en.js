@@ -148,10 +148,30 @@ module.exports = {
     },
     settingsPanel: {
         title: "Settings",
+        subtitle: "Devices, stream and maintenance",
         tabDevices: "Devices",
         tabControl: "Control",
         tabMaintenance: "Cleanup",
-        tabUpdates: "Updates"
+        tabUpdates: "Updates",
+        tabAbout: "About",
+        maintLogsHint: "Files older than {days} days",
+        maintCacheHint: "Temporary files",
+        clearHistory: "Clear history",
+        autoOptions: "Auto options",
+        aboutTagline: "A hub to connect, launch and control your Android tablets.",
+        aboutFeaturesTitle: "What the Hub does",
+        aboutFeat1Title: "USB / Wi‑Fi connection",
+        aboutFeat1Desc: "Device detection, renaming, live status and USB ↔ Wi‑Fi switching.",
+        aboutFeat2Title: "New instance",
+        aboutFeat2Desc: "Launch an app on a dedicated virtual display, including clones and Android profiles.",
+        aboutFeat3Title: "Mirroring & control",
+        aboutFeat3Desc: "scrcpy stream with resolution, DPI, FPS, bitrate and codec presets per session.",
+        aboutFeat4Title: "Dock & batteries",
+        aboutFeat4Desc: "Monitor charge, Mute and Wi‑Fi from the floating dock during stream.",
+        aboutFeat5Title: "History & recents",
+        aboutFeat5Desc: "Quickly find and relaunch recently used apps and profiles.",
+        aboutFeat6Title: "Maintenance",
+        aboutFeat6Desc: "Clean logs, cache and history manually or automatically on startup."
     },
     devicePanel: {
         wifiEnabled: "WiFi enabled",
@@ -183,6 +203,10 @@ module.exports = {
         rename: "Rename",
         reconnect: "Reconnect",
         remove: "Remove",
+        online: "Online",
+        offline: "Offline",
+        connectedBadge: "Connected",
+        offlineBadge: "Offline",
         cleanupNow: "Clean up now",
         discoverDevices: "Search for new devices",
         discoverSearching: "Searching...",
@@ -385,14 +409,16 @@ module.exports = {
     help: {
         tab: {
             title: "Help & Shortcuts",
+            subtitle: "Guides, shortcuts, and troubleshooting",
             shortcuts: "Shortcuts",
             guide: "Mirroring guide",
             wifi: "WiFi connection",
+            troubleshoot: "Troubleshooting",
             refresh: "Refresh",
             close: "Close"
         },
         shortcuts: {
-            intro: "Keyboard shortcuts and actions available in Android Hub. Navigation shortcuts do not apply while typing in a text field. Right-click a device in Connected devices or a session tab to open a context menu (rename, color, close…). Stream Deck mode lets you display multiple sessions in grid, focus, or duo layout.",
+            intro: "Hub shortcuts and actions. Disabled while typing in a text field. Right-click a device or session tab for the context menu.",
             groups: [
                 {
                     title: "Navigation",
@@ -471,17 +497,62 @@ module.exports = {
             ]
         },
         wifi: {
-            title: "Connect a device over WiFi",
-            steps: [
-                "Connect your device via USB and make sure it is detected in the Hub (USB debugging enabled on the phone).",
-                "Make sure your phone is connected to WiFi on the same network as this computer.",
-                "Click the WiFi toggle next to the device in the sidebar.",
-                "On first connection, the Hub will automatically configure the device and ask you to give it a name. Once connected, a Connected over WiFi message appears.",
-                "You can now unplug the USB cable — the device stays reachable as long as it is on the same WiFi network.",
-                "To switch back to USB, simply click the toggle again (WiFi will be disabled, but the configuration is saved for next time).",
-                "Find all your WiFi and USB devices, along with their history, in Settings → Devices (gear icon in the main bar)."
-            ],
-            note: "If the phone's WiFi network changes or its IP address changes, you may need to reconnect the device using the toggle."
+            "title": "Connect a device over WiFi",
+            "note": "If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
+            "steps": [
+                {
+                    "chipLabel": "USB",
+                    "visualLabel": "USB connection",
+                    "visualCaption": "First-time setup",
+                    "title": "Plug in the device over USB",
+                    "lead": "The first WiFi setup goes through USB to configure ADB.",
+                    "steps": [
+                        "Connect your device via USB and make sure it is detected in the Hub.",
+                        "USB debugging must be enabled on the phone.",
+                        "Choose File transfer (MTP) if Android asks for the USB mode."
+                    ],
+                    "tip": "Without USB detection, the WiFi toggle cannot configure the device."
+                },
+                {
+                    "chipLabel": "Network",
+                    "visualLabel": "Same network",
+                    "visualCaption": "Shared WiFi",
+                    "title": "Check the WiFi network",
+                    "lead": "The phone and PC must be on the same local network.",
+                    "steps": [
+                        "Connect the phone to WiFi.",
+                        "Make sure this computer is on the same network (not an isolated guest network).",
+                        "Avoid VPNs that isolate local traffic if the connection fails."
+                    ],
+                    "tip": "Guest networks often block device-to-device communication."
+                },
+                {
+                    "chipLabel": "WiFi ADB",
+                    "visualLabel": "Enable",
+                    "visualCaption": "Hub sidebar",
+                    "title": "Turn on the WiFi toggle",
+                    "lead": "The Hub configures WiFi ADB and saves the device.",
+                    "steps": [
+                        "Click the WiFi toggle next to the device in the sidebar.",
+                        "On first connection, name the device when the Hub asks.",
+                        "When ready, a Connected over WiFi message appears."
+                    ],
+                    "tip": "You can rename the device later in Settings → Devices."
+                },
+                {
+                    "chipLabel": "Unplug",
+                    "visualLabel": "Wireless",
+                    "visualCaption": "Cable-free",
+                    "title": "Unplug the USB cable",
+                    "lead": "The device stays reachable while on the same WiFi.",
+                    "steps": [
+                        "Unplug the USB cable — the WiFi session continues.",
+                        "To switch back to USB, click the toggle again (settings stay saved).",
+                        "Find USB and WiFi devices in Settings → Devices."
+                    ],
+                    "tip": "If the IP changes, reconnect with the WiFi toggle."
+                }
+            ]
         },
         guide: {
             stepLabel: "Step {current} of {total}",

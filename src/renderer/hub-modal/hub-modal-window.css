@@ -42,6 +42,13 @@ html, body {
   min-height: 0;
 }
 
+.hub-modal-panel .hub-modal--settings .settings-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .hub-modal-panel .hub-modal--session {
   display: flex;
   flex-direction: column;
