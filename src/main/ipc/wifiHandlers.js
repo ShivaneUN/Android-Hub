@@ -428,6 +428,7 @@ function registerWifiHandlers(deps) {
                         markAllSessionsReconnecting(reattachDeps, targetDeviceId);
                         console.warn("[wifi] marked only — switchSessionTransport pending device=" + targetDeviceId);
                         failAllSessionsReconnecting(reattachDeps, targetDeviceId);
+                    }
                 } catch (switchErr) {
                     failAllSessionsReconnecting(reattachDeps, targetDeviceId);
                     throw switchErr;
