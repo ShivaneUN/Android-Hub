@@ -189,25 +189,59 @@ class WifiAdbService {
         return target;
     }
 
+    /**
+     * Connect WiFi avec retries courts (après unplug USB).
+     * @returns {Promise<string>} wifiSerial
+     */
+    async connectWithRetry(ip, port = DEFAULT_WIFI_PORT, { attempts = 4, delayMs = 200, connectTimeoutMs = 3500 } = {}) {
+        const target = this.buildWifiSerial(ip, port);
+        let lastErr = null;
+        for (let i = 0; i < attempts; i++) {
+            try {
+                const state = await this.getAdbState(target, 1200);
+                if (state === "device") {
+                    return target;
+                }
+                return await this.connect(ip, port, connectTimeoutMs);
+            } catch (err) {
+                lastErr = err;
+                console.warn(
+                    `[WifiAdbService] connect ${target} tentative ${i + 1}/${attempts}:`,
+                    err?.message || err
+                );
+                if (i + 1 < attempts) {
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
+            }
+        }
+        throw lastErr || new Error(`Impossible de connecter ${target}`);
+    }
+
     async disconnect(wifiSerial) {
         if (!wifiSerial) return;
         try {
-            await execWithTimeout(`"${this.adbPath}" disconnect ${adbSerialArg(wifiSerial)}`, 5000);
+            await execWithTimeout(`"${this.adbPath}" disconnect ${adbSerialArg(wifiSerial)}`, 3000);
         } catch (err) {
             console.warn(`[WifiAdbService] disconnect ${wifiSerial}:`, err.message);
         }
     }
 
-    async getAdbState(serial) {
+    async getAdbState(serial, timeoutMs = 1500) {
         try {
             const stdout = await execWithTimeout(
                 `"${this.adbPath}" -s ${adbSerialArg(serial)} get-state`,
-                5000
+                timeoutMs
             );
             return stdout.trim().toLowerCase();
         } catch (_err) {
             return null;
         }
+    }
+
+    /** True si le serial répond en état device. */
+    async isAdbOnline(serial) {
+        if (!serial) return false;
+        return (await this.getAdbState(serial)) === "device";
     }
 
     async setupFirstConnection(usbSerial, onProgress) {
@@ -233,6 +267,10 @@ class WifiAdbService {
         return { deviceId, ip, port: DEFAULT_WIFI_PORT, wifiSerial };
     }
 
+    /**
+     * Reconnecte l'ADB WiFi à partir de la config sauvée.
+     * Si usbSerial est mort (débranchement), utilise l'IP sauvée + adb connect (pas de fetch IP USB).
+     */
     async reconnectSaved(deviceId, { usbSerial = null } = {}) {
         const entry = this.wifiDevicesManager.getByDeviceId(deviceId);
         if (!entry?.ip && !usbSerial) {
@@ -240,39 +278,67 @@ class WifiAdbService {
         }
 
         const port = entry?.port || DEFAULT_WIFI_PORT;
-        let ip = entry?.ip;
+        let ip = entry?.ip || null;
         const now = new Date().toISOString();
 
-        if (usbSerial) {
-            ip = await this.fetchWlan0Ip(usbSerial);
-            if (!ip) {
-                throw new Error("IP introuvable, vérifie que le WiFi est activé sur le téléphone");
+        // Déjà online sur l'IP connue → rien à faire.
+        if (ip) {
+            const existing = this.buildWifiSerial(ip, port);
+            if (await this.isAdbOnline(existing)) {
+                return existing;
             }
+        }
 
-            this.wifiDevicesManager.upsert({
-                ...entry,
-                deviceId,
-                ip,
-                port,
-                wifiEnabled: true,
-                usbSerialHint: usbSerial,
-                lastSeen: now
-            });
-        } else if (!ip) {
+        // USB seulement s'il est vraiment joignable (sinon débranchement → IP sauvée).
+        let liveUsb = null;
+        if (usbSerial) {
+            if (await this.isAdbOnline(usbSerial)) {
+                liveUsb = usbSerial;
+            } else {
+                console.warn(
+                    `[WifiAdbService] usbSerial ${usbSerial} offline — connect via IP sauvée`
+                );
+            }
+        }
+
+        if (liveUsb) {
+            try {
+                const freshIp = await this.fetchWlan0Ip(liveUsb);
+                if (freshIp) {
+                    ip = freshIp;
+                    this.wifiDevicesManager.upsert({
+                        ...entry,
+                        deviceId,
+                        ip,
+                        port,
+                        wifiEnabled: true,
+                        usbSerialHint: liveUsb,
+                        lastSeen: now
+                    });
+                }
+            } catch (err) {
+                console.warn(
+                    `[WifiAdbService] fetchWlan0Ip ${liveUsb}:`,
+                    err?.message || err
+                );
+            }
+        }
+
+        if (!ip) {
             throw new Error("Configuration WiFi introuvable.");
         }
 
-        // Évite `adb tcpip` à chaque toggle : ça redémarre adbd et tue scrcpy-server / les apps.
+        // Évite `adb tcpip` à chaque fois : ça redémarre adbd et tue scrcpy / les apps.
         try {
-            return await this.connect(ip, port);
+            return await this.connectWithRetry(ip, port);
         } catch (connectErr) {
-            if (!usbSerial) throw connectErr;
+            if (!liveUsb) throw connectErr;
             console.warn(
-                `[WifiAdbService] connect ${ip}:${port} échoué — tcpip en dernier recours (sessions peuvent geler):`,
+                `[WifiAdbService] connect ${ip}:${port} échoué — tcpip en dernier recours:`,
                 connectErr?.message || connectErr
             );
-            await this.enableTcpip(usbSerial, port);
-            return this.connect(ip, port);
+            await this.enableTcpip(liveUsb, port);
+            return this.connectWithRetry(ip, port);
         }
     }
 }

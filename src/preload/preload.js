@@ -43,8 +43,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     // --- Nouvelle session ---
     getAppsWithDetails: (serial) => ipcRenderer.invoke("device:apps", serial),
-    launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null, stableDeviceId = null) =>
-        ipcRenderer.invoke("new-instance:launch", { serial, packageName, userId, latencyTraceId, stableDeviceId }),
+    launchNewInstance: (serial, packageName, userId = null, latencyTraceId = null, stableDeviceId = null, bootstrapNewDisplay = null) =>
+        ipcRenderer.invoke("new-instance:launch", {
+            serial,
+            packageName,
+            userId,
+            latencyTraceId,
+            stableDeviceId,
+            bootstrapNewDisplay
+        }),
 
     // --- Nouvelle instance Type B (IPC dedie) ---
     newInstanceCreate: (payload) => ipcRenderer.invoke("new-instance:create", payload),

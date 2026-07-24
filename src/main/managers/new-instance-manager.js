@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { exec, spawn } = require("child_process");
 const { ScrcpySocketClient } = require("../../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../../native/scrcpy/control/adb-input-controller");
-const { DEFAULT_STREAM_PARAMS, toScrcpyOptions } = require("../../shared/stream-params");
+const { DEFAULT_STREAM_PARAMS, toScrcpyOptions, formatNewDisplay } = require("../../shared/stream-params");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
 const { notifySessionStreamRestarting } = require("../ipc/wifiHandlers");
 
@@ -31,9 +31,25 @@ function mergeTypeBScrcpyOptions(scrcpyOptions = {}, session = null) {
         ...(session?.streamOptions || {}),
         ...scrcpyOptions
     };
-    merged.newDisplay = scrcpyOptions.newDisplay
-        || session?.streamOptions?.newDisplay
-        || toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
+    const explicitNewDisplay = Boolean(
+        scrcpyOptions.newDisplay
+        && scrcpyOptions.displayId === undefined
+    );
+    const attachDisplayId = Number.isInteger(scrcpyOptions.displayId)
+        ? scrcpyOptions.displayId
+        : (!explicitNewDisplay && Number.isInteger(merged.displayId) ? merged.displayId : null);
+
+    // Attach display_id (soft-cut USB↔WiFi) : jamais forcer newDisplay par-dessus.
+    // Recreate explicite (newDisplay sans displayId) : ne pas hériter d'un vieux displayId.
+    if (Number.isInteger(attachDisplayId)) {
+        merged.displayId = attachDisplayId;
+        delete merged.newDisplay;
+    } else {
+        delete merged.displayId;
+        merged.newDisplay = scrcpyOptions.newDisplay
+            || session?.streamOptions?.newDisplay
+            || toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
+    }
     merged.stayAwake = true;
     merged.turnScreenOff = true;
     merged.audio = scrcpyOptions.audio === true;
@@ -208,6 +224,53 @@ class NewInstanceManager extends EventEmitter {
 
             client.on("new-display-id", onDisplayReady);
         });
+    }
+
+    /** Soft cut USB↔WiFi : waiter attachable après création du client. */
+    _createFirstPacketWaiter(timeoutMs = 2000) {
+        let settle;
+        const promise = new Promise((resolve) => {
+            settle = resolve;
+        });
+        let done = false;
+        let timer = null;
+        let attachedClient = null;
+        const onPacket = () => finish(true);
+        const finish = (ok) => {
+            if (done) return;
+            done = true;
+            if (timer) clearTimeout(timer);
+            if (attachedClient) {
+                try {
+                    attachedClient.removeListener("raw-packet", onPacket);
+                    attachedClient.removeListener("video-packet", onPacket);
+                } catch (_err) {
+                    // noop
+                }
+            }
+            settle(ok);
+        };
+        return {
+            promise,
+            attach(client) {
+                if (done) return;
+                if (!client) {
+                    finish(false);
+                    return;
+                }
+                attachedClient = client;
+                timer = setTimeout(() => finish(false), timeoutMs);
+                client.once("raw-packet", onPacket);
+                client.once("video-packet", onPacket);
+            }
+        };
+    }
+
+    /** Soft cut USB↔WiFi : true dès le premier paquet vidéo (ou timeout). */
+    _waitForClientFirstPacket(client, timeoutMs = 5000) {
+        const waiter = this._createFirstPacketWaiter(timeoutMs);
+        waiter.attach(client);
+        return waiter.promise;
     }
 
     async _ensureDeviceStayAwake(serial) {
@@ -458,6 +521,26 @@ class NewInstanceManager extends EventEmitter {
             return;
         }
 
+        // USB mort (débranchement) : garder la session pour Continuer WiFi / soft-cut.
+        // Si toggle WiFi ON : hold silencieux (topologie rebind sans popup) — ne pas delete.
+        const shellSerial = session.client?.shellSerial || session.serial;
+        const onWifiShell = Boolean(global.wifiAdbService?.isWifiSerial?.(shellSerial));
+        const deviceId = session.stableDeviceId || null;
+        const wifiArmed = Boolean(
+            deviceId && global.wifiDevicesManager?.getByDeviceId?.(deviceId)?.wifiEnabled
+        );
+
+        if (!onWifiShell) {
+            session.client = null;
+            this.beginTransportReconnect(session);
+            notifySessionStreamRestarting(session.sessionId);
+            console.log(
+                `[NewInstanceManager] USB shell closed — hold session=${session.sessionId}`
+                + (wifiArmed ? " (WiFi armé → rebind silencieux)" : " pour Continuer WiFi")
+            );
+            return;
+        }
+
         const wasActive = session.state === "started"
             || session.state === "starting"
             || session.state === "display-ready";
@@ -491,6 +574,19 @@ class NewInstanceManager extends EventEmitter {
         this.sessions.delete(session.sessionId);
         this.emit("state", { sessionId: session.sessionId, state: session.state });
         this.emit("scrcpy-closed", { sessionId: session.sessionId });
+    }
+
+    /** Géométrie new_display pour recreate après mort du VD (stop scrcpy). */
+    _resolveSessionNewDisplay(session) {
+        if (session?.streamOptions?.newDisplay) {
+            return session.streamOptions.newDisplay;
+        }
+        const w = session?.streamSize?.width;
+        const h = session?.streamSize?.height;
+        if (w > 0 && h > 0) {
+            return formatNewDisplay({ width: w, height: h });
+        }
+        return toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
     }
 
     /**
@@ -547,7 +643,9 @@ class NewInstanceManager extends EventEmitter {
     }
 
     /**
-     * Destroy+recreate orchestré Type B (USB↔WiFi) — attach display_id existant, pas de new VD.
+     * Destroy+recreate orchestré Type B (USB↔WiFi).
+     * 1) Tentative attach display_id (si le VD a survécu)
+     * 2) Sinon recreate new_display + relaunch app (le stop scrcpy détruit souvent le VD)
      * @returns {{ success: boolean, skipped?: boolean, error?: string }}
      */
     async switchSessionTransportTypeB(session, newSerial) {
@@ -562,32 +660,20 @@ class NewInstanceManager extends EventEmitter {
             this.beginTransportReconnect(session);
         }
 
+        session._transportRebindActive = true;
+
         console.log(
             `[switchSessionTransport] Type B begin session=${session.sessionId} newSerial=${newSerial}`
         );
 
         notifySessionStreamRestarting(session.sessionId);
 
-        const preservedDisplayId = Number.isInteger(session.displayId)
-            ? session.displayId
-            : (Number.isInteger(session.presetDisplayId) ? session.presetDisplayId : null);
-
-        if (!Number.isInteger(preservedDisplayId)) {
-            console.warn(
-                `[switchSessionTransport] Type B fail — displayId manquant session=${session.sessionId}`
-            );
-            this.endTransportReconnect(session, { success: false });
-            return { success: false, error: "displayId manquant" };
-        }
-
-        session.presetDisplayId = preservedDisplayId;
-        session.displayId = preservedDisplayId;
+        const newDisplay = this._resolveSessionNewDisplay(session);
 
         const streamW = session.streamSize?.width || null;
         const streamH = session.streamSize?.height || null;
 
         session.serial = newSerial;
-        session.skipPackageLaunch = true;
 
         if (session.inputController) {
             try {
@@ -617,62 +703,141 @@ class NewInstanceManager extends EventEmitter {
             }
         }
 
-        try {
-            const attachOptions = {
-                ...(session.streamOptions || {}),
-                displayId: preservedDisplayId,
-                skipPackageLaunch: true
-            };
-            delete attachOptions.newDisplay;
-
-            await this._runClientStart(session, attachOptions);
-            await this._ensureSessionInputController(session, streamW, streamH);
-
-            this.endTransportReconnect(session, { success: true });
-            console.log(
-                `[switchSessionTransport] Type B ok session=${session.sessionId} newSerial=${newSerial} displayId=${preservedDisplayId}`
-            );
-            return { success: true };
-        } catch (err) {
+        const stopCurrentClient = () => {
             try {
                 session.client?.stop?.();
             } catch (_err) {
                 // noop
             }
             session.client = null;
+        };
+
+        const startWithFirstPacket = async (options, timeoutMs) => {
+            const firstPacketDeferred = this._createFirstPacketWaiter(timeoutMs);
+            await this._runClientStart(session, options);
+            // _runClientStart pose state=started — rester en mode rebind jusqu'à la fin.
+            if (session.state !== "reconnecting") {
+                session.state = "reconnecting";
+            }
+            firstPacketDeferred.attach(session.client);
+            return firstPacketDeferred.promise;
+        };
+
+        try {
+            // Après stop scrcpy le VD est presque toujours mort : recreate direct (pas d'attach lent).
+            session.skipPackageLaunch = false;
+            session.displayId = null;
+            session.presetDisplayId = null;
+            const recreateOptions = {
+                ...(session.streamOptions || {}),
+                newDisplay,
+                skipPackageLaunch: false,
+                vdDestroyContent: false
+            };
+            delete recreateOptions.displayId;
+            const firstPacketOk = await startWithFirstPacket(recreateOptions, 3500);
+            if (!firstPacketOk) {
+                throw new Error("Pas de flux vidéo après recreate new_display");
+            }
+
+            await this._ensureSessionInputController(session, streamW, streamH);
+
+            this.endTransportReconnect(session, { success: true });
+            console.log(
+                `[switchSessionTransport] Type B ok session=${session.sessionId} newSerial=${newSerial} `
+                + `mode=recreate displayId=${session.displayId ?? "?"} firstPacket=${firstPacketOk}`
+            );
+            return { success: true };
+        } catch (err) {
+            stopCurrentClient();
             this.endTransportReconnect(session, { success: false });
             console.warn(
                 `[switchSessionTransport] Type B fail session=${session.sessionId}:`,
                 err?.message || err
             );
             return { success: false, error: err?.message || "Échec start vidéo" };
+        } finally {
+            session._transportRebindActive = false;
         }
     }
 
     /**
-     * Switch toutes les sessions Type B en state=reconnecting pour ce device.
+     * Switch toutes les sessions Type B du device vers newSerial.
+     * @param {string} deviceId
+     * @param {string} newSerial
+     * @param {{ extraAliases?: string[] }} [options]
      * @returns {{ success: boolean, count: number }}
      */
-    async switchTypeBSessionsForDevice(deviceId, newSerial) {
+    async switchTypeBSessionsForDevice(deviceId, newSerial, { extraAliases = [] } = {}) {
         if (!deviceId || !newSerial) {
             return { success: false, count: 0 };
         }
 
-        const expectedWifiSerial = (() => {
+        const aliases = new Set(
+            [deviceId, ...(Array.isArray(extraAliases) ? extraAliases : [])]
+                .map((value) => (value == null ? "" : String(value).trim()))
+                .filter(Boolean)
+        );
+        try {
             const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
-            if (!cfg?.ip) return null;
-            return global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555) || null;
-        })();
+            if (cfg?.deviceId) aliases.add(String(cfg.deviceId));
+            if (cfg?.usbSerialHint) aliases.add(String(cfg.usbSerialHint));
+            if (cfg?.ip) {
+                const wifiSerial = global.wifiAdbService?.buildWifiSerial?.(
+                    cfg.ip,
+                    cfg.port || 5555
+                );
+                if (wifiSerial) aliases.add(String(wifiSerial));
+            }
+        } catch (_err) {
+            // noop
+        }
 
+        // Filet : IDs Type B connus via BrowserView (stableDeviceId / deviceId).
+        try {
+            for (const entry of global.browserViewManager?.getAllSessions?.() || []) {
+                if (entry?.type !== "B" || !entry.sessionId) continue;
+                if (
+                    aliases.has(String(entry.stableDeviceId || ""))
+                    || aliases.has(String(entry.deviceId || ""))
+                    || aliases.has(String(entry.serial || ""))
+                ) {
+                    aliases.add(String(entry.sessionId));
+                }
+            }
+        } catch (_err) {
+            // noop
+        }
+
+        const isWifi = (serial) => Boolean(global.wifiAdbService?.isWifiSerial?.(serial));
         const sessions = [];
+        const seen = new Set();
+
         for (const summary of this.listNewInstanceSessions() || []) {
-            if (summary.state !== "reconnecting") continue;
-            const matches = summary.stableDeviceId === deviceId
-                || summary.serial === deviceId
-                || (expectedWifiSerial && summary.serial === expectedWifiSerial);
+            if (summary.state === "stopped" || summary.state === "stopping") continue;
+            const matches = aliases.has(String(summary.stableDeviceId || ""))
+                || aliases.has(String(summary.serial || ""))
+                || aliases.has(String(summary.sessionId || ""));
             if (!matches) continue;
+
             const session = this.getNewInstanceSession(summary.sessionId);
-            if (session) sessions.push(session);
+            if (!session || seen.has(session.sessionId)) continue;
+
+            const shouldSwitch = summary.state === "reconnecting"
+                || summary.state === "started"
+                || summary.state === "display-ready"
+                || summary.state === "starting"
+                || isWifi(session.serial)
+                || isWifi(summary.serial)
+                || session.serial !== newSerial;
+
+            if (!shouldSwitch) continue;
+
+            if (session.state !== "reconnecting") {
+                this.beginTransportReconnect(session);
+            }
+            seen.add(session.sessionId);
+            sessions.push(session);
         }
 
         console.log(
@@ -779,7 +944,11 @@ class NewInstanceManager extends EventEmitter {
         }
 
         if (mergedOptions.turnScreenOff && !session.externalLaunchId) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            // Rebind transport : pas d'attente 500ms (soft-cut déjà en place).
+            const settleMs = session._transportRebindActive ? 0 : 500;
+            if (settleMs > 0) {
+                await new Promise((resolve) => setTimeout(resolve, settleMs));
+            }
             await this._turnOffPhysicalScreen(session);
         }
 

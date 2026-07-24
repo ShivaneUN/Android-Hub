@@ -1182,12 +1182,18 @@ async function launchTypeBSession({
         latencyTraceId = started.traceId;
     }
 
+    // Lire le preset default AVANT le bootstrap externe pour que --new-display
+    // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
+    const presetScrcpyOpts = await buildDefaultScrcpyOptions("B");
+    const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
+
     const scrcpyLaunch = await window.electronAPI.launchNewInstance(
         serial,
         packageName,
         normalizedUserId,
         latencyTraceId,
-        resolvedStableId
+        resolvedStableId,
+        bootstrapNewDisplay
     );
     if (!scrcpyLaunch?.success) {
         throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
@@ -1204,7 +1210,6 @@ async function launchTypeBSession({
         throw new Error(t("newSession.virtualDisplayMissing"));
     }
 
-    const presetScrcpyOpts = await buildDefaultScrcpyOptions("B");
     const streamOptions = {
         ...presetScrcpyOpts,
         stayAwake: true,

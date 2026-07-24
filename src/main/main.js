@@ -800,7 +800,28 @@ global.invalidateSessionAdbSerialCache = invalidateSessionAdbSerialCache;
 
 function typeASessionMatchesDevice(entry, deviceId) {
     if (!entry || !deviceId) return false;
-    return entry.stableDeviceId === deviceId || entry.deviceId === deviceId;
+    if (entry.stableDeviceId === deviceId || entry.deviceId === deviceId) return true;
+    if (entry.serial && entry.serial === deviceId) return true;
+
+    const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
+    if (cfg?.usbSerialHint) {
+        const usbHint = String(cfg.usbSerialHint);
+        if (entry.deviceId === usbHint || entry.serial === usbHint || entry.stableDeviceId === usbHint) {
+            return true;
+        }
+    }
+    if (cfg?.ip) {
+        const wifiSerial = global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555);
+        if (wifiSerial && (entry.serial === wifiSerial || entry.deviceId === wifiSerial)) {
+            return true;
+        }
+    }
+
+    const client = entry.sessionId ? videoClients[entry.sessionId] : null;
+    const shell = client?.shellSerial || client?.serial || null;
+    if (shell && (shell === deviceId || shell === cfg?.usbSerialHint)) return true;
+
+    return false;
 }
 
 function markTypeASessionsReconnecting(deviceId) {
@@ -809,7 +830,7 @@ function markTypeASessionsReconnecting(deviceId) {
     for (const summary of sessions) {
         if (summary.type !== "A") continue;
         if (!typeASessionMatchesDevice(summary, deviceId)) continue;
-        if (!videoClients[summary.sessionId]) continue;
+        // Même sans client vivant (USB déjà mort) : Continuer WiFi doit pouvoir restarter.
         transportReconnectingTabs.add(summary.sessionId);
         console.log(
             `[wifi][reattach] Type A beginTransportReconnect session=${summary.sessionId} device=${deviceId}`
@@ -844,10 +865,23 @@ function listTypeAReconnectingTabIds(deviceId) {
 }
 
 global.listTypeAReconnectingTabIds = listTypeAReconnectingTabIds;
+
 /** True si au moins une session Hub du device tourne encore sur un shell WiFi (ip:port). */
 function deviceHubSessionsOnWifiShell(deviceId) {
     if (!deviceId) return false;
     const isWifi = (serial) => Boolean(global.wifiAdbService?.isWifiSerial?.(serial));
+
+    const aliases = new Set([String(deviceId)]);
+    try {
+        const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
+        if (cfg?.usbSerialHint) aliases.add(String(cfg.usbSerialHint));
+        if (cfg?.ip) {
+            const wifiSerial = global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555);
+            if (wifiSerial) aliases.add(String(wifiSerial));
+        }
+    } catch (_err) {
+        // noop
+    }
 
     const sessions = global.browserViewManager?.getAllSessions?.() || [];
     for (const summary of sessions) {
@@ -859,22 +893,19 @@ function deviceHubSessionsOnWifiShell(deviceId) {
         }
     }
 
-    const expectedWifiSerial = (() => {
-        const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
-        if (!cfg?.ip) return null;
-        return global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555) || null;
-    })();
-
     const ni = global.newInstanceManager;
     for (const summary of ni?.listNewInstanceSessions?.() || []) {
         if (summary.state === "stopped" || summary.state === "stopping") continue;
-        const matchesDevice = summary.stableDeviceId === deviceId
-            || summary.serial === deviceId
-            || (expectedWifiSerial && summary.serial === expectedWifiSerial);
+        const matchesDevice = aliases.has(String(summary.stableDeviceId || ""))
+            || aliases.has(String(summary.serial || ""));
         if (!matchesDevice) continue;
         if (isWifi(summary.serial)) return true;
         const session = ni.getNewInstanceSession?.(summary.sessionId);
-        if (session && isWifi(session.serial)) return true;
+        const shell = session?.client?.shellSerial
+            || session?.client?.serial
+            || session?.serial
+            || null;
+        if (isWifi(shell)) return true;
     }
 
     return false;
@@ -1004,11 +1035,12 @@ function buildDisplayBootstrapScrcpyArgs(baseArgs) {
     return next;
 }
 
-function buildNewInstanceExternalBaseArgs(serial, packageName, userId, { captureOrientationLock } = {}) {
+function buildNewInstanceExternalBaseArgs(serial, packageName, userId, { captureOrientationLock, newDisplay } = {}) {
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
+    const bootstrapNewDisplay = resolveExternalBootstrapNewDisplay(newDisplay);
     const args = [
         "--serial", serial,
-        "--new-display=1920x1080",
+        `--new-display=${bootstrapNewDisplay}`,
         "--turn-screen-off",
         "--stay-awake",
         "--no-window",
@@ -1022,6 +1054,31 @@ function buildNewInstanceExternalBaseArgs(serial, packageName, userId, { capture
         args.splice(3, 0, `--start-app=${packageName}`);
     }
     return args;
+}
+
+/** VD bootstrap Type B : preset default (WxH ou WxH/DPI), sinon Full HD. */
+function resolveExternalBootstrapNewDisplay(candidate) {
+    const FALLBACK = "1920x1080";
+    if (candidate == null || candidate === "") {
+        return FALLBACK;
+    }
+    const raw = String(candidate).trim();
+    const match = raw.match(/^(\d{2,5})x(\d{2,5})(?:\/(\d{2,4}))?$/i);
+    if (!match) {
+        return FALLBACK;
+    }
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!(width > 0 && height > 0)) {
+        return FALLBACK;
+    }
+    if (match[3]) {
+        const dpi = Number(match[3]);
+        if (dpi > 0) {
+            return `${width}x${height}/${dpi}`;
+        }
+    }
+    return `${width}x${height}`;
 }
 
 function buildExternalScrcpyBaseArgsForDisplayId(serial, displayId) {
@@ -1386,8 +1443,8 @@ app.whenReady().then(() => {
             }
         }
     });
-
     global.newInstanceManager = newInstanceManager;
+
     launchHistoryBootstrap = new LaunchHistoryManager(userDataPath, {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });
@@ -2021,7 +2078,8 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         packageName,
         userId = null,
         latencyTraceId = null,
-        stableDeviceId = null
+        stableDeviceId = null,
+        bootstrapNewDisplay = null
     }) => {
         if (!serial) {
             return { success: false, error: "Appareil non sélectionné" };
@@ -2046,13 +2104,16 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         const launchOrient = {};
         applyTypeBLaunchOrientation(launchOrient, launchDims?.width, launchDims?.height);
         const baseArgs = buildNewInstanceExternalBaseArgs(serial, packageName, normalizedUserId, {
-            captureOrientationLock: launchOrient.captureOrientationLock || null
+            captureOrientationLock: launchOrient.captureOrientationLock || null,
+            newDisplay: bootstrapNewDisplay
         });
         // Toujours --no-audio/--no-playback : le son PC passe uniquement par SessionAudioProcessManager.
         // buildExternalScrcpyArgs (applyScrcpyCliArgs) laissait l'audio ON si mute global OFF → OFF ne coupait plus.
         const args = buildDisplayBootstrapScrcpyArgs(baseArgs);
         console.log(
-            `[NewInstance] launch ${serial} capture-orientation:`,
+            `[NewInstance] launch ${serial} new-display:`,
+            resolveExternalBootstrapNewDisplay(bootstrapNewDisplay),
+            "capture-orientation:",
             launchOrient.captureOrientationLock || "null",
             launchDims ? `${launchDims.width}x${launchDims.height}` : "dims-absentes"
         );
@@ -2238,7 +2299,11 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 if (scrcpyClientsBySerial[serial]) {
                     delete scrcpyClientsBySerial[serial];
                 }
-                await new Promise((resolve) => setTimeout(resolve, 500));
+                // Soft cut USB↔WiFi : délai court (évite 500ms de trou noir inutile).
+                const settleMs = Number.isFinite(runtime.settleMs) ? runtime.settleMs : 80;
+                if (settleMs > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, settleMs));
+                }
             } else {
                 return { success: false, error: "Stream déjà actif pour cet onglet" };
             }
@@ -2432,19 +2497,22 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
                 const entry = global.browserViewManager?.getSessionEntry?.(tabId);
                 const deviceId = entry?.stableDeviceId || entry?.deviceId;
-                const wifiConfig = deviceId
-                    ? global.wifiDevicesManager?.getByDeviceId?.(deviceId)
-                    : null;
                 const shellSerial = scrcpyClient.shellSerial || scrcpyClient.serial;
                 const onWifiShell = global.wifiAdbService?.isWifiSerial?.(shellSerial);
 
-                // USB débranché en mode WiFi : stub auto désarmé (ne pas mark/fail —
-                // ça vidait transportReconnectingTabs avant le toggle manuel Commit 1).
-                // Branchement auto → switchSessionTransportTypeA : commit topologie à venir.
-                if (wifiConfig?.wifiEnabled && !onWifiShell && videoClients[tabId] === scrcpyClient) {
+                // USB mort (débranchement) alors que l'onglet existe encore :
+                // stopVideoStreamForTab efface videoClients avant stop → pas de hold.
+                // Ici le client est encore dans la map → hold pour Continuer WiFi / soft-cut.
+                if (!onWifiShell && videoClients[tabId] === scrcpyClient && entry) {
+                    transportReconnectingTabs.add(tabId);
+                    notifySessionStreamRestarting(tabId);
+                    delete videoClients[tabId];
+                    if (scrcpyClientsBySerial[serial] === scrcpyClient) {
+                        delete scrcpyClientsBySerial[serial];
+                    }
                     console.log(
-                        `[Video] USB→WiFi détecté (auto) tab=${tabId} — ignoré pour l'instant `
-                        + `(commit topologie à venir). Utiliser le toggle WiFi manuel pour switcher.`
+                        `[Video] USB shell closed — hold tab=${tabId}`
+                        + ` device=${deviceId || "?"} pour Continuer WiFi`
                     );
                     return;
                 }
@@ -2590,7 +2658,6 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         }
     }
 
-
     /**
      * Destroy+recreate orchestré du flux Type A (USB↔WiFi).
      * Réutilise startVideoStreamLogic pour listeners + start (pas de rebind).
@@ -2612,27 +2679,33 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         notifySessionStreamRestarting(tabId);
 
         const oldClient = videoClients[tabId];
-        if (!oldClient) {
-            transportReconnectingTabs.delete(tabId);
+        if (oldClient) {
+            try {
+                oldClient.stop();
+            } catch (err) {
+                console.warn(
+                    `[switchSessionTransport] Type A stop ancien client tab=${tabId}:`,
+                    err?.message || err
+                );
+            }
+            if (videoClients[tabId] === oldClient) {
+                delete videoClients[tabId];
+            }
+        } else {
             console.log(
-                `[switchSessionTransport] Type A skip — pas de client tab=${tabId}`
+                `[switchSessionTransport] Type A — pas de client vivant tab=${tabId}, start direct sur ${newSerial}`
             );
-            return { success: true, skipped: true };
-        }
-
-        try {
-            oldClient.stop();
-        } catch (err) {
-            console.warn(
-                `[switchSessionTransport] Type A stop ancien client tab=${tabId}:`,
-                err?.message || err
-            );
-        }
-        if (videoClients[tabId] === oldClient) {
-            delete videoClients[tabId];
         }
 
         const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        if (!entry) {
+            transportReconnectingTabs.delete(tabId);
+            console.warn(
+                `[switchSessionTransport] Type A fail — session introuvable tab=${tabId}`
+            );
+            return { success: false, error: "session introuvable" };
+        }
+
         const scrcpyOptions = entry?.scrcpyOptions ? { ...entry.scrcpyOptions } : {};
         const packageName = entry?.packageName || null;
 
@@ -2641,7 +2714,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             tabId,
             packageName,
             scrcpyOptions,
-            { force: true }
+            { force: true, settleMs: 80 }
         );
 
         if (result?.success) {
@@ -2885,6 +2958,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     });
 
     async function stopVideoStreamForTab(tabId) {
+        transportReconnectingTabs.delete(tabId);
         const client = videoClients[tabId];
         if (client) {
             client.stop();

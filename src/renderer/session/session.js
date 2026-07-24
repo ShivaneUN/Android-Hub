@@ -683,9 +683,14 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
     };
 
     function ensureCanvasSize(width, height) {
-        if (canvasElement.width === width && canvasElement.height === height) return;
+        if (canvasElement.width === width && canvasElement.height === height) {
+            state.softCutHolding = false;
+            return;
+        }
+        // Resize = clear canvas — inévitable si résolution change après soft-cut.
         canvasElement.width = width;
         canvasElement.height = height;
+        state.softCutHolding = false;
     }
 
     function getCodecCandidates(codecId) {
@@ -900,7 +905,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
         console.error(`[SessionView ${tabId}] Erreur stream:`, eventData.error);
     });
 
-    function resetDecoderState() {
+    function resetDecoderState({ softCut = false } = {}) {
         framePresenter.cancel();
         if (state.decoder && state.decoder.state !== "closed") {
             state.decoder.close();
@@ -916,13 +921,31 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
         state.firstPts = null;
         state.lastTimestampUs = -1;
         state.syntheticTimestampUs = 0;
-        state.frameCount = 0;
+        // Soft cut USB↔WiFi : garder frameCount + pixels canvas (pas de trou noir).
+        if (!softCut) {
+            state.frameCount = 0;
+        }
+        state.softCutHolding = Boolean(softCut);
     }
 
     if (window.videoAPI.onStreamRestarting) {
         window.videoAPI.onStreamRestarting((data) => {
             if (data?.sessionId !== tabId) return;
-            resetDecoderState();
+            const generation = Number(data?.generation);
+            if (Number.isFinite(generation) && generation === state._restartGeneration) {
+                return;
+            }
+            if (Number.isFinite(generation)
+                && Number.isFinite(state._restartGeneration)
+                && generation < state._restartGeneration) {
+                return;
+            }
+            // Soft cut : ferme le décodeur mais fige la dernière image sur le canvas.
+            resetDecoderState({ softCut: true });
+            if (Number.isFinite(generation)) {
+                state._restartGeneration = generation;
+            }
+            console.log(`[SessionView ${tabId}] soft-cut hold (stream-restarting)`);
         });
     }
 
@@ -998,8 +1021,12 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
 
     async function initDecoder(meta) {
         if (state.decoderReady || state.decoder) return;
-        canvasElement.width = meta.width;
-        canvasElement.height = meta.height;
+        // Soft cut : ne pas réassigner width/height si identiques (sinon clear canvas).
+        if (canvasElement.width !== meta.width || canvasElement.height !== meta.height) {
+            canvasElement.width = meta.width;
+            canvasElement.height = meta.height;
+        }
+        state.softCutHolding = false;
         const decoderConfig = {
             codec: meta.codecId === "h265" || meta.codecId === "hevc" ? "hev1.1.6.L93.B0" : "avc1.640034",
             codedWidth: meta.width,
@@ -1094,7 +1121,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         console.error(`[SessionView ${sessionIdParam}] Erreur stream:`, data.error);
     });
 
-    function resetDecoderState() {
+    function resetDecoderState({ softCut = false } = {}) {
         framePresenter.cancel();
         if (state.decoder && state.decoder.state !== "closed") {
             state.decoder.close();
@@ -1103,21 +1130,25 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         state.decoderReady = false;
         state.pendingConfig = null;
         state.queue.length = 0;
-        state.frameCount = 0;
         state.firstPts = null;
         state.lastTs = -1;
         state.format = "annexb";
         state.started = false;
-        typeBPortraitStreamCorrection.set(sessionIdParam, false);
-        try {
-            const ctx = canvasElement.getContext("2d");
-            ctx?.setTransform?.(1, 0, 0, 1, 0, 0);
-            canvasElement.style.transform = "";
-            canvasElement.style.margin = "";
-            canvasElement.classList.remove("portrait-interim");
-        } catch (_err) {
-            // noop
+        // Soft cut : ne pas reset transforms / frameCount — dernière image reste visible.
+        if (!softCut) {
+            state.frameCount = 0;
+            typeBPortraitStreamCorrection.set(sessionIdParam, false);
+            try {
+                const ctx = canvasElement.getContext("2d");
+                ctx?.setTransform?.(1, 0, 0, 1, 0, 0);
+                canvasElement.style.transform = "";
+                canvasElement.style.margin = "";
+                canvasElement.classList.remove("portrait-interim");
+            } catch (_err) {
+                // noop
+            }
         }
+        state.softCutHolding = Boolean(softCut);
     }
 
     if (window.videoAPI.onStreamRestarting) {
@@ -1136,10 +1167,11 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
                 console.warn(`[SessionView ${sessionIdParam}] stream-restarting périmé ignoré gen=${generation}`);
                 return;
             }
-            resetDecoderState();
+            resetDecoderState({ softCut: true });
             if (Number.isFinite(generation)) {
                 state._restartGeneration = generation;
             }
+            console.log(`[SessionView ${sessionIdParam}] soft-cut hold (stream-restarting)`);
         });
     }
 
