@@ -26,9 +26,15 @@ Le toggle WiFi se resynchronise depuis l’état réel : `new-instance:state` (b
 
 ### 4c — USB débranché + infobulle de choix (2026-07-24)
 
+**Statut : commité** (`7540b4a`).
+
+Topologie USB perdu (WiFi armé + sessions Hub) → `transport:usb-unplugged` → prompt Continuer en WiFi / Jouer sur l'appareil. Continuer → `switchDeviceSessionsToWifi`. Jouer → ferme sessions + WiFi OFF.
+
+### 4d — USB rebranché + bascule silencieuse (2026-07-24)
+
 **Statut : implémenté (à committer).**
 
-Topologie USB perdu (WiFi armé + sessions Hub) → `transport:usb-unplugged` → prompt Continuer en WiFi / Jouer sur l'appareil. Continuer → `switchDeviceSessionsToWifi`. Jouer → ferme sessions + WiFi OFF. 4d USB rebranché silencieux à venir.
+Topologie USB revenu + sessions encore sur shell WiFi → `switchDeviceSessionsToSerial(..., { silent: true })` vers serial USB. Pas d'overlay ; dismiss prompt 4c via `transport:usb-regained` ; toggle resync (4b).
 
 ---
 
@@ -397,6 +403,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf UI — debounce recherche apps** — `AppLauncherSearch.js` + `AppList.js` : 100 ms (`clearTimeout`/`setTimeout`) sur handler `input` uniquement ; filtre/tri/render inchangés ; timer nettoyé dans `destroy()`. Commits `aad55b3`, `28344f4`. LOCK intact.
+- 2026-07-24 — **switchSessionTransport 4d** — USB rebranché → switch silencieux vers serial USB si sessions encore sur WiFi ; `silent` overlay ; `transport:usb-regained`.
 - 2026-07-24 — **switchSessionTransport 4c** — USB débranché + prompt Continuer WiFi / Jouer sur l'appareil (`transport:usb-unplugged`, `wifi:continue-on-wifi`, `wifi:play-on-device`).
 - 2026-07-24 — **switchSessionTransport 4b** — Toggle WiFi resync depuis `new-instance:state` + `transport:reattach-state` (pas seulement le clic). `stableDeviceId` dans begin/endTransportReconnect.
 - 2026-07-24 — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` (attach display_id) + branchement toggle ON sans USB avec Type A ; overlay end si A+B OK. Stub closed USB→WiFi déjà neutralisé. 4b/4c/4d à venir.

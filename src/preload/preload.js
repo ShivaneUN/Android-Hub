@@ -192,6 +192,11 @@ contextBridge.exposeInMainWorld("wifiAPI", {
         ipcRenderer.on("transport:usb-unplugged", handler);
         return () => ipcRenderer.removeListener("transport:usb-unplugged", handler);
     },
+    onUsbRegained: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("transport:usb-regained", handler);
+        return () => ipcRenderer.removeListener("transport:usb-regained", handler);
+    },
     continueOnWifi: (payload) => ipcRenderer.invoke("wifi:continue-on-wifi", payload),
     playOnDevice: (payload) => ipcRenderer.invoke("wifi:play-on-device", payload)
 });

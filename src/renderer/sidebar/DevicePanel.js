@@ -624,26 +624,31 @@ function initDevicePanel() {
     }
 
     // Overlay + resync toggle alignés sur la fenêtre réelle du reattach (4a/4b).
+    // silent=true (4d) : pas d'overlay, resync toggle seulement.
     if (window.wifiAPI?.onTransportReattachState) {
-        window.wifiAPI.onTransportReattachState(({ phase, error, deviceId } = {}) => {
+        window.wifiAPI.onTransportReattachState(({ phase, error, deviceId, silent } = {}) => {
             if (phase === "start") {
-                window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
-                    timeoutMs: 120000,
-                    timeoutMessage: dt("devicePanel.switchFailed"),
-                    errorAutoCloseMs: 2800
-                });
+                if (!silent) {
+                    window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
+                        timeoutMs: 120000,
+                        timeoutMessage: dt("devicePanel.switchFailed"),
+                        errorAutoCloseMs: 2800
+                    });
+                }
                 return;
             }
             if (phase === "end") {
-                window.hideHubLoadingOverlay?.();
+                if (!silent) window.hideHubLoadingOverlay?.();
                 void resyncWifiTogglesFromLiveDevices(deviceId || null);
                 return;
             }
             if (phase === "error") {
-                window.showHubLoadingOverlayError?.(
-                    error || dt("devicePanel.switchFailed"),
-                    2800
-                );
+                if (!silent) {
+                    window.showHubLoadingOverlayError?.(
+                        error || dt("devicePanel.switchFailed"),
+                        2800
+                    );
+                }
                 void resyncWifiTogglesFromLiveDevices(deviceId || null);
             }
         });
@@ -660,6 +665,13 @@ function initDevicePanel() {
     if (window.wifiAPI?.onUsbUnplugged) {
         window.wifiAPI.onUsbUnplugged((payload = {}) => {
             showUsbUnplugPrompt(payload);
+        });
+    }
+
+    // 4d — USB revenu → retirer le prompt 4c s'il est encore ouvert ; toggle resync via silent end.
+    if (window.wifiAPI?.onUsbRegained) {
+        window.wifiAPI.onUsbRegained(({ deviceId } = {}) => {
+            if (deviceId) dismissUsbUnplugPrompt(deviceId);
         });
     }
 }

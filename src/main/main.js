@@ -844,6 +844,35 @@ function listTypeAReconnectingTabIds(deviceId) {
 }
 
 global.listTypeAReconnectingTabIds = listTypeAReconnectingTabIds;
+/** True si au moins une session Hub du device tourne encore sur un shell WiFi (ip:port). */
+function deviceHubSessionsOnWifiShell(deviceId) {
+    if (!deviceId) return false;
+    const isWifi = (serial) => Boolean(global.wifiAdbService?.isWifiSerial?.(serial));
+
+    const sessions = global.browserViewManager?.getAllSessions?.() || [];
+    for (const summary of sessions) {
+        if (!typeASessionMatchesDevice(summary, deviceId)) continue;
+        if (summary.type === "A") {
+            const client = videoClients[summary.sessionId];
+            const shell = client?.shellSerial || client?.serial || null;
+            if (isWifi(shell)) return true;
+        }
+    }
+
+    const ni = global.newInstanceManager;
+    for (const summary of ni?.listNewInstanceSessions?.() || []) {
+        if (summary.state === "stopped" || summary.state === "stopping") continue;
+        if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+        if (isWifi(summary.serial)) return true;
+        const session = ni.getNewInstanceSession?.(summary.sessionId);
+        if (session && isWifi(session.serial)) return true;
+    }
+
+    return false;
+}
+
+global.deviceHubSessionsOnWifiShell = deviceHubSessionsOnWifiShell;
+
 const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
 const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
 
@@ -1349,6 +1378,7 @@ app.whenReady().then(() => {
         }
     });
 
+    global.newInstanceManager = newInstanceManager;
     launchHistoryBootstrap = new LaunchHistoryManager(userDataPath, {
         getActiveTypeBKeys: getActiveTypeBHistoryKeys
     });

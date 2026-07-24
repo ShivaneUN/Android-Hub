@@ -8,7 +8,7 @@ Dernière mise à jour : 2026-07-23
 
 **Statut : implémenté (pas encore commité — review + test manuel requis).**
 
-`switchSessionTransport` : 4a Type A+B + toggle ; stub closed ; **4b** toggle resync ; **4c** USB débranché + infobulle Continuer WiFi / Jouer appareil. Plan **4d** USB rebranché silencieux à venir.
+`switchSessionTransport` : 4a–4d complets (toggle, sync UI, USB perdu + choix, USB rebranché silencieux). Bootstrap résolution preset toujours en pause (WC).
 
 ---
 
@@ -4972,6 +4972,7 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
+- **2026-07-24** — **switchSessionTransport 4d** — USB rebranché → switch silencieux vers USB si sessions sur shell WiFi.
 - **2026-07-24** — **switchSessionTransport 4c** — USB débranché + prompt Continuer WiFi / Jouer sur l'appareil.
 - **2026-07-24** — **switchSessionTransport 4b** — Toggle WiFi resync depuis état session (`new-instance:state`) + `transport:reattach-state` end/error.
 - **2026-07-24** — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` + toggle ON sans USB (A+B) ; overlay end si les deux OK. Stub closed déjà neutralisé. 4b/4c/4d à venir.
