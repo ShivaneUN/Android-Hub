@@ -18,7 +18,7 @@
 
 .help-modal {
   background: #141820;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   width: min(960px, calc(100vw - var(--sidebar-width, 208px) - 24px));
   max-height: min(700px, calc(100vh - var(--chrome-top-height, 80px) - 16px));
@@ -36,7 +36,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
@@ -72,7 +72,7 @@
 .help-modal-subtitle {
   margin: 2px 0 0;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.3;
 }
 
@@ -82,7 +82,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 18px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -137,8 +137,8 @@
 }
 
 .help-nav-btn.active {
-  background: rgba(79, 140, 255, 0.12);
-  color: #9ec0ff;
+  background: color-mix(in srgb, var(--accent-blue) 22%, #1a2130);
+  color: #fff;
 }
 
 .help-nav-btn.active::before {
@@ -209,14 +209,44 @@
   color: var(--text-primary);
 }
 
-.help-section-title-row {
-  margin-bottom: 4px;
+.help-appearance-intro {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.help-appearance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.help-appearance-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #161b22;
+}
+
+.help-appearance-card-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.help-appearance-card-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* --- Raccourcis compact --- */
 .help-shortcuts-intro {
   font-size: 11.5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: 1.45;
   margin: 0 0 12px;
 }
@@ -236,7 +266,7 @@
   font-weight: 650;
   letter-spacing: 0.55px;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -279,7 +309,7 @@
 
 .help-kbd-plus {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin: 0 1px;
 }
 
@@ -320,7 +350,7 @@
   border-radius: 50%;
   border: 2px solid #2a3344;
   background: #0f1319;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -359,7 +389,7 @@
 .help-stepper-chip {
   display: none;
   font-size: 10.5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   margin-right: 4px;
 }
@@ -408,7 +438,7 @@
 
 .help-guide-visual-caption {
   font-size: 11.5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-align: center;
   margin-top: 10px;
 }
@@ -521,7 +551,7 @@
 .help-troubleshoot-link {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 12px;
   text-decoration: underline;
   cursor: pointer;

@@ -62,7 +62,7 @@ module.exports = {
     },
     emptyState: {
         title: "Android Hub",
-        subtitle: "Affichage et contrôle multi-appareils Android",
+        subtitle: "Appareils, apparence, stream et maintenance",
         hint: "Branchez un appareil en USB"
     },
     update: {
@@ -150,10 +150,29 @@ module.exports = {
         title: "Paramètres",
         subtitle: "Appareils, stream et maintenance",
         tabDevices: "Appareils",
+        tabAppearance: "Apparence",
         tabControl: "Contrôle",
         tabMaintenance: "Nettoyage",
         tabUpdates: "Mise à jour",
         tabAbout: "À propos",
+        appearanceLead: "Choisissez le style d’interface du Hub.",
+        accentTitle: "Couleur du Hub",
+        accentLead: "Accent des boutons, onglets et éléments actifs.",
+        surfaceTitle: "Fond du Hub",
+        surfaceLead: "Ambiance de fond de l’interface.",
+        wallpaperPick: "Choisir une image…",
+        wallpaperClear: "Retirer",
+        wallpaperNone: "Aucune image",
+        surface: {
+                "midnight": "Minuit",
+                "graphite": "Graphite",
+                "slate": "Ardoise",
+                "forest": "Forêt",
+                "ocean": "Océan",
+                "dusk": "Crépuscule",
+                "wine": "Bordeaux",
+                "cocoa": "Cacao"
+        },
         maintLogsHint: "Fichiers de plus de {days} jours",
         maintCacheHint: "Fichiers temporaires",
         clearHistory: "Effacer l'historique",
@@ -171,15 +190,17 @@ module.exports = {
         aboutFeat5Title: "Dock & batteries",
         aboutFeat5Desc: "Dock flottant : écran, portrait, audio, Accueil. Batteries + Muet / Wi‑Fi par appareil pendant le stream.",
         aboutFeat6Title: "Interface classique / Nouvelle",
-        aboutFeat6Desc: "Rail classique, ou style tablette plein écran avec Accueil enrichi (appareils, récents, choix d’UI).",
+        aboutFeat6Desc: "Rail classique ou interface tablette plein écran (Accueil enrichi, dock). Réglable dans Paramètres → Apparence, ou depuis l’écran d’accueil.",
         aboutFeat7Title: "Historique & récents",
         aboutFeat7Desc: "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
         aboutFeat8Title: "Aide & guides",
-        aboutFeat8Desc: "Raccourcis, guide mirroring pas à pas, connexion Wi‑Fi et dépannage intégrés.",
+        aboutFeat8Desc: "Raccourcis, guide mirroring pas à pas, connexion Wi‑Fi, apparence et dépannage intégrés.",
         aboutFeat9Title: "Maintenance",
         aboutFeat9Desc: "Nettoyage logs, cache et historique — manuel ou automatique au démarrage.",
         aboutFeat10Title: "Mises à jour",
-        aboutFeat10Desc: "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos."
+        aboutFeat10Desc: "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos.",
+        aboutFeat11Title: "Personnalisation visuelle",
+        aboutFeat11Desc: "Couleur d’accent du Hub, ambiances de fond (Minuit, Océan, Crépuscule…) et image personnalisée via le sélecteur Windows. Les choix sont mémorisés."
     },
     devicePanel: {
         wifiEnabled: "WiFi activé",
@@ -422,6 +443,7 @@ module.exports = {
             guide: "Guide mirroring",
             wifi: "Connexion WiFi",
             troubleshoot: "Dépannage",
+            appearance: "Apparence",
             refresh: "Rafraîchir",
             close: "Fermer"
         },
@@ -850,6 +872,28 @@ module.exports = {
                         "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier."
                     ],
                     tip: "Double-cliquez une entrée de l'historique pour relancer rapidement une application déjà utilisée."
+                }
+            ]
+        },
+        appearance: {
+            title: "Personnaliser l’apparence",
+            intro: "Paramètres → Apparence centralise le style d’interface, la couleur d’accent, l’ambiance de fond et une image personnalisée. Les choix sont enregistrés et appliqués au prochain démarrage.",
+            sections: [
+                {
+                    title: "Interface classique ou Nouvelle",
+                    body: "Interface classique conserve le rail latéral complet. Nouvelle interface passe en style tablette plein écran : Accueil enrichi (appareils connectés, applications récentes), dock flottant et navigation allégée. Vous pouvez aussi changer depuis l’écran d’accueil."
+                },
+                {
+                    title: "Couleur du Hub",
+                    body: "L’accent colore boutons actifs, onglets, liens et indicateurs. Dix teintes alignées sur la palette des appareils — le contraste des textes et badges reste lisible."
+                },
+                {
+                    title: "Fond du Hub",
+                    body: "Huit ambiances sombres (Minuit, Graphite, Ardoise, Forêt, Océan, Crépuscule, Bordeaux, Cacao) teintent l’arrière-plan sans modifier le contenu. Idéal pour un look sobre et cohérent."
+                },
+                {
+                    title: "Image personnalisée",
+                    body: "Choisir une image… ouvre le sélecteur de fichiers Windows (JPG, PNG, WebP, GIF, BMP). L’image s’affiche en fond plein écran avec un voile pour garder les libellés lisibles. Retirer restaure les ambiances de couleur. Les fenêtres Paramètres et Aide restent toujours opaques."
                 }
             ]
         },

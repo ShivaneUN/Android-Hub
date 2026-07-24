@@ -3,8 +3,13 @@ const {
     registerAppIconProtocolSchemes,
     setupAppIconProtocol
 } = require("./app-icon-protocol");
+const {
+    registerHubWallpaperProtocolSchemes,
+    setupHubWallpaperProtocol
+} = require("./hub-wallpaper-protocol");
 
 registerAppIconProtocolSchemes();
+registerHubWallpaperProtocolSchemes();
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const path = require("path");
 const fs = require("fs");
@@ -1389,6 +1394,9 @@ function registerLaunchLatencyHandlers() {
 app.whenReady().then(() => {
     const userDataPath = app.getPath("userData");
     setupAppIconProtocol(userDataPath);
+    const { HubWallpaperManager } = require("./managers/hub-wallpaper-manager");
+    global.hubWallpaperManager = new HubWallpaperManager(userDataPath);
+    setupHubWallpaperProtocol(() => global.hubWallpaperManager?.getStoredPath?.() || null);
 
     historyPath = path.join(userDataPath, "device-history.json");
     global.customNamesManager = new CustomNamesManager(userDataPath);
@@ -3126,6 +3134,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     });
     registerUiPreferencesHandlers({
         getUiPreferencesManager: () => global.uiPreferencesManager,
+        getHubWallpaperManager: () => global.hubWallpaperManager,
         getMainWindow: () => win,
         getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null
     });

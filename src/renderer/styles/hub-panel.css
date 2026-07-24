@@ -12,7 +12,7 @@
 
 .hub-modal,
 .help-modal {
-  background: #141820;
+  background: var(--bg-panel, #141820);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   display: flex;
@@ -99,7 +99,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -124,7 +124,7 @@
 .hub-panel-refresh-btn {
   border: 1px solid var(--border-subtle);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   border-radius: 8px;
   padding: 4px 10px;
   font-size: 12px;

@@ -14,7 +14,7 @@
   flex-shrink: 0;
   padding: 12px 10px;
   border-right: 1px solid var(--border-subtle);
-  background: #10141b;
+  background: var(--bg-sidebar);
   overflow-y: auto;
 }
 
@@ -42,8 +42,8 @@
 }
 
 .settings-tab-btn.active {
-  color: #9ec0ff;
-  background: rgba(79, 140, 255, 0.12);
+  color: color-mix(in srgb, var(--accent-blue) 75%, #fff);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
 }
 
 .settings-tab-btn.active::before {

@@ -30,6 +30,7 @@
         { id: "shortcuts", icon: "keys" },
         { id: "guide", icon: "mirror" },
         { id: "wifi", icon: "wifi" },
+        { id: "appearance", icon: "palette" },
         { id: "troubleshoot", icon: "wrench" }
     ];
 
@@ -65,6 +66,7 @@
 
     function navLabel(id) {
         if (id === "troubleshoot") return t("help.tab.troubleshoot");
+        if (id === "appearance") return t("help.tab.appearance");
         return t(`help.tab.${id}`);
     }
 
@@ -73,6 +75,7 @@
             keys: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h2M11 10h2M16 10h2M8 14h8"/></svg>`,
             mirror: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="10" height="16" rx="1.5"/><rect x="15" y="7" width="6" height="10" rx="1"/><path d="M13 12h2"/></svg>`,
             wifi: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+            palette: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 0 0 0 18c.8 0 1.4-.6 1.4-1.4 0-.4-.1-.7-.4-1-.3-.3-.4-.6-.4-1 0-.8.6-1.4 1.4-1.4H16a5 5 0 0 0 0-10H12z"/><circle cx="7.5" cy="11.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="10.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16.5" cy="11.5" r="1.1" fill="currentColor" stroke="none"/></svg>`,
             wrench: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-1.9-1.9 2-2.1z"/></svg>`
         };
         return icons[type] || "";
@@ -372,6 +375,23 @@
         `;
     }
 
+    function renderAppearanceSection() {
+        const data = tObject("help.appearance");
+        const sections = Array.isArray(data.sections) ? data.sections : [];
+        return `
+            <h3 class="help-section-heading">${data.title || t("help.tab.appearance")}</h3>
+            <p class="help-appearance-intro">${data.intro || ""}</p>
+            <div class="help-appearance-list">
+                ${sections.map((section) => `
+                    <article class="help-appearance-card">
+                        <h4 class="help-appearance-card-title">${section.title || ""}</h4>
+                        <p class="help-appearance-card-body">${section.body || ""}</p>
+                    </article>
+                `).join("")}
+            </div>
+        `;
+    }
+
     function renderNav() {
         return NAV_ITEMS.map((item) => `
             <button type="button" class="help-nav-btn${item.id === "shortcuts" ? " active" : ""}" data-help-tab="${item.id}">
@@ -394,7 +414,6 @@
                         </div>
                     </div>
                     <div class="hub-panel-header-actions">
-                        <button type="button" class="hub-panel-refresh-btn" data-hub-panel-refresh="help" title="${t("help.tab.refresh")}">${t("help.tab.refresh")}</button>
                         <button type="button" class="help-modal-close" data-hub-modal-close id="help-modal-close" title="${t("help.tab.close")}">&#10005;</button>
                     </div>
                 </div>
@@ -412,6 +431,9 @@
                             </section>
                             <section class="help-section" id="help-section-wifi" data-section="wifi">
                                 ${renderWifiSection()}
+                            </section>
+                            <section class="help-section" id="help-section-appearance" data-section="appearance">
+                                ${renderAppearanceSection()}
                             </section>
                             <section class="help-section" id="help-section-troubleshoot" data-section="troubleshoot">
                                 ${renderTroubleshootSection()}

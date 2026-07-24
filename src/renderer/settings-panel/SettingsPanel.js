@@ -33,6 +33,10 @@
             window.bindMaintenanceSection?.();
         }
 
+        if (tab === "appearance") {
+            window.bindAppearanceSection?.();
+        }
+
         if (tab === "updates") {
             window.bindUpdateSettingsSection?.();
         }

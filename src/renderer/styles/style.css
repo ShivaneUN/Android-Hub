@@ -1,14 +1,16 @@
 :root {
   --bg-app: #0a0e14;
   --bg-sidebar: #11151c;
+  --bg-panel: #141820;
   --border-subtle: #1d232d;
+  --bg-app-image: none;
   --accent-blue: #4f8cff;
   --accent-blue-soft: #2a3b56;
   --session-focus-ring: #22c55e;
   --session-focus-ring-soft: rgba(34, 197, 94, 0.28);
-  --text-primary: #f1f3f7;
-  --text-secondary: #8b93a3;
-  --text-muted: #5b6373;
+  --text-primary: #f5f7fb;
+  --text-secondary: #b4bccb;
+  --text-muted: #8b93a3;
   --btn-disabled-bg: #1a1f29;
   --btn-disabled-text: #6b7280;
   --sidebar-width: 208px;
@@ -26,10 +28,47 @@
 html, body {
   width: 100%;
   height: 100%;
-  background: var(--bg-app);
+  background-color: var(--bg-app);
+  background-image: var(--bg-app-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
   overflow: hidden;
+}
+
+html[data-hub-wallpaper="1"] .app,
+html[data-hub-wallpaper="1"] .titlebar,
+html[data-hub-wallpaper="1"] .tabs-bar,
+html[data-hub-wallpaper="1"] .main-layout,
+html[data-hub-wallpaper="1"] .content {
+  background-color: transparent;
+}
+
+html[data-hub-wallpaper="1"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg-app) 52%, transparent);
+}
+
+html[data-hub-wallpaper="1"] .app {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-hub-wallpaper="1"] .sidebar {
+  background-color: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
+}
+
+html[data-hub-wallpaper="1"] .titlebar,
+html[data-hub-wallpaper="1"] .tabs-bar {
+  background-color: color-mix(in srgb, var(--bg-app) 78%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 .app {
@@ -932,6 +971,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--text-primary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
 }
 
 .empty-state .subtitle {
@@ -939,12 +979,14 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   color: var(--text-secondary);
   margin-bottom: 28px;
   line-height: 1.5;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
 }
 
 .empty-state .hint {
   font-size: 13px;
   color: var(--text-muted);
   margin-bottom: 14px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
 }
 
 .btn-primary {
@@ -2250,8 +2292,8 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #8b93a3;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c5cad6;
 }
 
 .devices-panel-status.online {
@@ -2260,7 +2302,8 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 }
 
 .devices-panel-status.offline {
-  color: #8b93a3;
+  color: #e8ecf4;
+  background: #3a4558;
 }
 
 .devices-panel-actions {
@@ -2458,7 +2501,11 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 
 .ui-theme-option.active {
   border-color: #3fb950;
-  background: rgba(63, 185, 80, 0.08);
+  background: #142018;
+}
+
+.ui-theme-option.active:hover {
+  background: #18261e;
 }
 
 .ui-theme-option-title {

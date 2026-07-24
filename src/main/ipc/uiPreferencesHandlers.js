@@ -8,8 +8,17 @@ function broadcastLocaleChanged(getWindows, locale) {
     }
 }
 
+function broadcastWallpaperChanged(getWindows, state) {
+    for (const win of getWindows()) {
+        if (win && !win.isDestroyed()) {
+            win.webContents.send("ui:wallpaper-changed", state);
+        }
+    }
+}
+
 function registerUiPreferencesHandlers(deps) {
     const getUiPreferencesManager = deps.getUiPreferencesManager;
+    const getHubWallpaperManager = deps.getHubWallpaperManager;
     const getMainWindow = deps.getMainWindow;
     const getHubModalWindow = deps.getHubModalWindow;
 
@@ -75,6 +84,41 @@ function registerUiPreferencesHandlers(deps) {
             return { success: false, error: "manager-unavailable" };
         }
         return manager.setDisplayPreferences(payload);
+    });
+
+    ipcMain.handle("ui:get-hub-wallpaper", async () => {
+        const manager = getHubWallpaperManager?.();
+        if (!manager) {
+            return { active: false, fileName: null, url: null };
+        }
+        return manager.getState();
+    });
+
+    ipcMain.handle("ui:pick-hub-wallpaper", async (event) => {
+        const manager = getHubWallpaperManager?.();
+        if (!manager) {
+            return { success: false, error: "manager-unavailable", active: false };
+        }
+        const parent = BrowserWindow.fromWebContents(event.sender);
+        const result = await manager.pickFromDialog(parent);
+        if (result.success) {
+            broadcastWallpaperChanged(getWindows, {
+                active: result.active,
+                fileName: result.fileName,
+                url: result.url
+            });
+        }
+        return result;
+    });
+
+    ipcMain.handle("ui:clear-hub-wallpaper", async () => {
+        const manager = getHubWallpaperManager?.();
+        if (!manager) {
+            return { success: false, error: "manager-unavailable", active: false };
+        }
+        const state = manager.clear();
+        broadcastWallpaperChanged(getWindows, state);
+        return { success: true, ...state };
     });
 }
 

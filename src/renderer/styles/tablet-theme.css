@@ -670,11 +670,18 @@ body.theme-tablet .empty-state-mascot {
 }
 
 .home-dashboard-label {
+  display: inline-block;
   font-size: 11px;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: #e8ecf4;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #0a0e14 78%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
 }
 
 .home-devices-panel {
@@ -720,6 +727,7 @@ body.theme-tablet .empty-state-mascot {
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .home-app-tile-icon img {
@@ -741,12 +749,17 @@ body.theme-tablet .empty-state-mascot {
 
 .home-app-tile-name {
   font-size: 10.5px;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: #f1f3f7;
   text-align: center;
-  max-width: 72px;
+  max-width: 76px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #0a0e14 72%, transparent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 /* -- Commit C : masquer le rail latéral en thème tablette.

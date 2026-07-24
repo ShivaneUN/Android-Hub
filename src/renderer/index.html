@@ -21,6 +21,9 @@
 <link rel="stylesheet" href="help/help-panel.css">
 <link rel="stylesheet" href="stream-deck/stream-deck.css">
 <link rel="stylesheet" href="styles/tablet-theme.css">
+<script src="../shared/device-colors.js"></script>
+<script src="styles/hub-accent.js"></script>
+<script src="styles/hub-surface.js"></script>
 </head>
 <body class="">
 
@@ -505,6 +508,35 @@
         applyTheme(theme);
       });
     });
+
+    window.applyUiTheme = applyTheme;
+    window.getUiTheme = getCurrentTheme;
+    window.__hubModalMainActions = {
+      ...(window.__hubModalMainActions || {}),
+      setUiTheme(theme) {
+        const next = theme === "tablet" ? "tablet" : "classic";
+        try { localStorage.setItem(STORAGE_KEY, next); } catch (_err) {}
+        applyTheme(next);
+        return { theme: getCurrentTheme() };
+      },
+      getUiTheme() {
+        return getCurrentTheme();
+      },
+      setUiAccent(accent) {
+        const next = window.setUiAccent?.(accent) || "5";
+        return { accent: next };
+      },
+      getUiAccent() {
+        return window.getUiAccent?.() || "5";
+      },
+      setUiSurface(surface) {
+        const next = window.setUiSurface?.(surface) || "midnight";
+        return { surface: next };
+      },
+      getUiSurface() {
+        return window.getUiSurface?.() || "midnight";
+      }
+    };
   })();
 </script>
 </body>

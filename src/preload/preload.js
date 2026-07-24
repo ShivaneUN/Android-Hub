@@ -256,8 +256,13 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     getPreferences: () => ipcRenderer.invoke("ui:get-preferences"),
     setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
     setDisplayPreferences: (payload) => ipcRenderer.invoke("ui:set-display-preferences", payload),
+    getHubWallpaper: () => ipcRenderer.invoke("ui:get-hub-wallpaper"),
+    pickHubWallpaper: () => ipcRenderer.invoke("ui:pick-hub-wallpaper"),
+    clearHubWallpaper: () => ipcRenderer.invoke("ui:clear-hub-wallpaper"),
     onLocaleChanged: (callback) =>
-        ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data))
+        ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data)),
+    onWallpaperChanged: (callback) =>
+        ipcRenderer.on("ui:wallpaper-changed", (_event, data) => callback(data))
 });
 
 contextBridge.exposeInMainWorld("maintenanceAPI", {

@@ -62,7 +62,7 @@ module.exports = {
     },
     emptyState: {
         title: "Android Hub",
-        subtitle: "Multi-device Android display and control",
+        subtitle: "Devices, appearance, stream, and maintenance",
         hint: "Connect a device via USB"
     },
     update: {
@@ -150,10 +150,29 @@ module.exports = {
         title: "Settings",
         subtitle: "Devices, stream and maintenance",
         tabDevices: "Devices",
+        tabAppearance: "Appearance",
         tabControl: "Control",
         tabMaintenance: "Cleanup",
         tabUpdates: "Updates",
         tabAbout: "About",
+        appearanceLead: "Choose the Hub interface style.",
+        accentTitle: "Hub color",
+        accentLead: "Accent for buttons, tabs, and active elements.",
+        surfaceTitle: "Hub background",
+        surfaceLead: "Background mood for the interface.",
+        wallpaperPick: "Choose an image…",
+        wallpaperClear: "Remove",
+        wallpaperNone: "No image",
+        surface: {
+                "midnight": "Midnight",
+                "graphite": "Graphite",
+                "slate": "Slate",
+                "forest": "Forest",
+                "ocean": "Ocean",
+                "dusk": "Dusk",
+                "wine": "Wine",
+                "cocoa": "Cocoa"
+        },
         maintLogsHint: "Files older than {days} days",
         maintCacheHint: "Temporary files",
         clearHistory: "Clear history",
@@ -171,15 +190,17 @@ module.exports = {
         aboutFeat5Title: "Dock & batteries",
         aboutFeat5Desc: "Floating dock: screen, portrait, audio, Home. Batteries plus per-device Mute / Wi‑Fi during stream.",
         aboutFeat6Title: "Classic / New interface",
-        aboutFeat6Desc: "Classic rail, or full-screen tablet style with a richer Home (devices, recents, UI choice).",
+        aboutFeat6Desc: "Classic rail or full-screen tablet UI (richer Home, dock). Set in Settings → Appearance, or from the Home screen.",
         aboutFeat7Title: "History & recents",
         aboutFeat7Desc: "Quickly find and relaunch recently used apps and profiles.",
         aboutFeat8Title: "Help & guides",
-        aboutFeat8Desc: "Shortcuts, step-by-step mirroring guide, Wi‑Fi setup and built-in troubleshooting.",
+        aboutFeat8Desc: "Shortcuts, step-by-step mirroring guide, Wi‑Fi setup, appearance, and built-in troubleshooting.",
         aboutFeat9Title: "Maintenance",
         aboutFeat9Desc: "Clean logs, cache and history — manually or automatically on startup.",
         aboutFeat10Title: "Updates",
-        aboutFeat10Desc: "Check, download and install new versions from About."
+        aboutFeat10Desc: "Check, download and install new versions from About.",
+        aboutFeat11Title: "Visual personalization",
+        aboutFeat11Desc: "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered."
     },
     devicePanel: {
         wifiEnabled: "WiFi enabled",
@@ -422,6 +443,7 @@ module.exports = {
             guide: "Mirroring guide",
             wifi: "WiFi connection",
             troubleshoot: "Troubleshooting",
+            appearance: "Appearance",
             refresh: "Refresh",
             close: "Close"
         },
@@ -850,6 +872,28 @@ module.exports = {
                         "Each session opens in a dedicated tab that you can control with the mouse and keyboard."
                     ],
                     tip: "Double-click a history entry to quickly relaunch an application you have used before."
+                }
+            ]
+        },
+        appearance: {
+            title: "Customize appearance",
+            intro: "Settings → Appearance centralizes interface style, accent color, background mood, and a custom image. Choices are saved and applied on the next launch.",
+            sections: [
+                {
+                    title: "Classic or New interface",
+                    body: "Classic interface keeps the full side rail. New interface switches to a full-screen tablet layout: richer Home (connected devices, recent apps), floating dock, and lighter navigation. You can also switch from the Home screen."
+                },
+                {
+                    title: "Hub color",
+                    body: "The accent colors active buttons, tabs, links, and indicators. Ten shades match the device color palette — text and badges stay readable."
+                },
+                {
+                    title: "Hub background",
+                    body: "Eight dark moods (Midnight, Graphite, Slate, Forest, Ocean, Dusk, Wine, Cocoa) tint the backdrop without changing content. Ideal for a sober, consistent look."
+                },
+                {
+                    title: "Custom image",
+                    body: "Choose an image… opens the Windows file picker (JPG, PNG, WebP, GIF, BMP). The image fills the Hub with a soft veil so labels stay readable. Remove restores color moods. Settings and Help windows always stay opaque."
                 }
             ]
         },
