@@ -2385,11 +2385,14 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 const shellSerial = scrcpyClient.shellSerial || scrcpyClient.serial;
                 const onWifiShell = global.wifiAdbService?.isWifiSerial?.(shellSerial);
 
-                // USB débranché en mode WiFi : garder le client et migrer vers WiFi.
+                // USB débranché en mode WiFi : stub auto désarmé (ne pas mark/fail —
+                // ça vidait transportReconnectingTabs avant le toggle manuel Commit 1).
+                // Branchement auto → switchSessionTransportTypeA : commit topologie à venir.
                 if (wifiConfig?.wifiEnabled && !onWifiShell && videoClients[tabId] === scrcpyClient) {
-                    transportReconnectingTabs.add(tabId);
-                    console.warn("[Video] USB→WiFi — mark only, switchSessionTransport pending tab=" + tabId);
-                    failTypeASessionsReconnecting(deviceId);
+                    console.log(
+                        `[Video] USB→WiFi détecté (auto) tab=${tabId} — ignoré pour l'instant `
+                        + `(commit topologie à venir). Utiliser le toggle WiFi manuel pour switcher.`
+                    );
                     return;
                 }
 
