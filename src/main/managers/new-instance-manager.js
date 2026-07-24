@@ -658,10 +658,19 @@ class NewInstanceManager extends EventEmitter {
             return { success: false, count: 0 };
         }
 
+        const expectedWifiSerial = (() => {
+            const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
+            if (!cfg?.ip) return null;
+            return global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555) || null;
+        })();
+
         const sessions = [];
         for (const summary of this.listNewInstanceSessions() || []) {
             if (summary.state !== "reconnecting") continue;
-            if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+            const matches = summary.stableDeviceId === deviceId
+                || summary.serial === deviceId
+                || (expectedWifiSerial && summary.serial === expectedWifiSerial);
+            if (!matches) continue;
             const session = this.getNewInstanceSession(summary.sessionId);
             if (session) sessions.push(session);
         }

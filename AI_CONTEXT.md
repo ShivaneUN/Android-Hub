@@ -32,9 +32,9 @@ Topologie USB perdu (WiFi armé + sessions Hub) → `transport:usb-unplugged` �
 
 ### 4d — USB rebranché + bascule silencieuse (2026-07-24)
 
-**Statut : implémenté (à committer).**
+**Statut : commité** (`d8fe05a`) + polish UI/perf (toggle sync, disconnect WiFi, poll rapide).
 
-Topologie USB revenu + sessions encore sur shell WiFi → `switchDeviceSessionsToSerial(..., { silent: true })` vers serial USB. Pas d'overlay ; dismiss prompt 4c via `transport:usb-regained` ; toggle resync (4b).
+Topologie USB revenu → UI USB immédiate + `switchSessionTransport` si sessions sur shell WiFi + `adb disconnect` WiFi. Marche aussi sans session ouverte. Toggle ON USB branché bascule vraiment vers WiFi. Poll devices 1,5 s tant que WiFi actif.
 
 ---
 

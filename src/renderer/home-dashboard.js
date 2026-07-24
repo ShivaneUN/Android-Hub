@@ -104,7 +104,8 @@
     );
     const wifiChecked = Boolean(
       device.wifiActive
-      ?? (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
+      || (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
+      || (device.wifiEnabled && device.wifiAvailable)
     );
     const wifiBusy = Boolean(
       (device.deviceId && window.__deviceWifiUi?.isInFlight?.(device.deviceId))
@@ -163,7 +164,8 @@
     );
     const wifiChecked = Boolean(
       device.wifiActive
-      ?? (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
+      || (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
+      || (device.wifiEnabled && device.wifiAvailable)
     );
     const wifiHtml = canToggleWifi
       ? (

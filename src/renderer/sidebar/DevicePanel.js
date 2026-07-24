@@ -74,10 +74,12 @@ const wifiToggleInFlightIds = new Set();
 let wifiToggleResyncTimer = null;
 
 function wifiToggleCheckedFromDevice(device) {
-    return Boolean(
-        device?.wifiActive
-        ?? (device?.wifiEnabled && device?.transport === "wifi" && device?.connected !== false)
-    );
+    // Aligné sur le transport effectif / armement WiFi (wifiEnabled + ADB online).
+    if (device?.wifiActive) return true;
+    if (device?.wifiEnabled && device?.transport === "wifi" && device?.connected !== false) {
+        return true;
+    }
+    return Boolean(device?.wifiEnabled && device?.wifiAvailable);
 }
 
 /**
@@ -284,9 +286,12 @@ function findDeviceEntry(devices, deviceId) {
 function isTransportSwitchConfirmed(entry, enabled) {
     if (!entry) return false;
     if (enabled) {
-        return entry.transport === "wifi" && entry.wifiActive === true;
+        return Boolean(
+            (entry.transport === "wifi" && entry.wifiActive === true)
+            || (entry.wifiEnabled && entry.wifiAvailable)
+        );
     }
-    return entry.transport === "usb";
+    return entry.transport === "usb" || entry.wifiEnabled === false;
 }
 
 function delay(ms) {
@@ -668,10 +673,11 @@ function initDevicePanel() {
         });
     }
 
-    // 4d — USB revenu → retirer le prompt 4c s'il est encore ouvert ; toggle resync via silent end.
+    // 4d — USB revenu → retirer le prompt 4c ; forcer resync toggle (pas seulement le label).
     if (window.wifiAPI?.onUsbRegained) {
         window.wifiAPI.onUsbRegained(({ deviceId } = {}) => {
             if (deviceId) dismissUsbUnplugPrompt(deviceId);
+            void resyncWifiTogglesFromLiveDevices(deviceId || null);
         });
     }
 }

@@ -859,10 +859,19 @@ function deviceHubSessionsOnWifiShell(deviceId) {
         }
     }
 
+    const expectedWifiSerial = (() => {
+        const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
+        if (!cfg?.ip) return null;
+        return global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555) || null;
+    })();
+
     const ni = global.newInstanceManager;
     for (const summary of ni?.listNewInstanceSessions?.() || []) {
         if (summary.state === "stopped" || summary.state === "stopping") continue;
-        if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+        const matchesDevice = summary.stableDeviceId === deviceId
+            || summary.serial === deviceId
+            || (expectedWifiSerial && summary.serial === expectedWifiSerial);
+        if (!matchesDevice) continue;
         if (isWifi(summary.serial)) return true;
         const session = ni.getNewInstanceSession?.(summary.sessionId);
         if (session && isWifi(session.serial)) return true;

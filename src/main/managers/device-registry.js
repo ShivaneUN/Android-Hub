@@ -150,12 +150,13 @@ class DeviceRegistry {
         const usbOnline = Boolean(group.usbDevice?.connected && group.usbDevice?.status === "green");
         const wifiOnline = Boolean(group.wifiDevice?.connected && group.wifiDevice?.status === "green");
 
-        // Mode WiFi actif → serial WiFi (shell scrcpy sur WiFi = survit au débranchement USB).
+        // WiFi armé + ADB WiFi online → transport WiFi (toggle ON / label), même si USB branché.
+        // Retour USB (4d) remet wifiEnabled=false + disconnect → retombe sur USB ci-dessous.
         if (wifiEnabled && wifiOnline) {
             return {
                 serial: group.wifiSerial,
                 transport: "wifi",
-                transportLabel: usbOnline ? "WiFi (USB branché)" : "WiFi connecté",
+                transportLabel: "WiFi connecté",
                 usbAvailable: usbOnline,
                 wifiAvailable: true
             };

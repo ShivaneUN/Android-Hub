@@ -2,11 +2,15 @@
  * Service de polling ADB partagé — source de vérité renderer pour la liste devices.
  */
 let currentDevices = [];
-let pollingInterval = null;
+let pollingTimer = null;
+let pollingStarted = false;
 let lastRefreshAt = 0;
 let refreshInFlight = null;
+let lastWifiWatchActive = false;
 const DEVICE_REFRESH_MIN_MS = 2500;
 const DEVICE_POLL_INTERVAL_MS = 12000;
+/** Poll rapide si WiFi armé / actif — détecte le rebranchement USB sans attendre 12s. */
+const DEVICE_POLL_INTERVAL_WIFI_MS = 1500;
 const DEVICE_FULL_STATUS_EVERY_N_POLLS = 4;
 let lightweightPollCount = 0;
 
@@ -17,6 +21,18 @@ function normalizeDevices(devices) {
 
 function deviceSnapshotKey(device) {
     return device?.deviceId || device?.serial || "";
+}
+
+function isWifiTransportWatchActive(devices = currentDevices) {
+    return (devices || []).some((device) =>
+        Boolean(device?.wifiEnabled || device?.wifiActive || device?.transport === "wifi")
+    );
+}
+
+function resolvePollIntervalMs(devices = currentDevices) {
+    return isWifiTransportWatchActive(devices)
+        ? DEVICE_POLL_INTERVAL_WIFI_MS
+        : DEVICE_POLL_INTERVAL_MS;
 }
 
 function mergeLightweightDevices(previous, incoming) {
@@ -46,11 +62,26 @@ function dispatchDevicesRefreshed(devices) {
     window.dispatchEvent(new CustomEvent("devices-refreshed", { detail: devices.slice() }));
 }
 
-async function pollDeviceList({ force = false, lightweight = false } = {}) {
+function clearDevicePollingTimer() {
+    if (pollingTimer) {
+        clearTimeout(pollingTimer);
+        pollingTimer = null;
+    }
+}
+
+function scheduleNextDevicePoll() {
+    if (!pollingStarted) return;
+    clearDevicePollingTimer();
+    pollingTimer = setTimeout(() => {
+        void runScheduledDevicePoll();
+    }, resolvePollIntervalMs());
+}
+
+async function pollDeviceList({ force = false, lightweight = false, forceFresh = false } = {}) {
     const cacheIsFresh = lastRefreshAt > 0 && (Date.now() - lastRefreshAt < DEVICE_REFRESH_MIN_MS);
     const hasDevices = currentDevices.length > 0;
 
-    if (!force && cacheIsFresh && hasDevices) {
+    if (!force && !forceFresh && cacheIsFresh && hasDevices) {
         return currentDevices.slice();
     }
 
@@ -60,9 +91,10 @@ async function pollDeviceList({ force = false, lightweight = false } = {}) {
 
     refreshInFlight = (async () => {
         try {
-            const response = await window.electronAPI.getDevices(
-                lightweight ? { lightweight: true } : {}
-            );
+            const response = await window.electronAPI.getDevices({
+                ...(lightweight ? { lightweight: true } : {}),
+                ...(forceFresh ? { forceFresh: true } : {})
+            });
             const devices = Array.isArray(response)
                 ? response
                 : Array.isArray(response?.devices)
@@ -75,6 +107,12 @@ async function pollDeviceList({ force = false, lightweight = false } = {}) {
                 : incoming;
             lastRefreshAt = Date.now();
             dispatchDevicesRefreshed(currentDevices);
+
+            const wifiWatch = isWifiTransportWatchActive();
+            if (wifiWatch !== lastWifiWatchActive) {
+                lastWifiWatchActive = wifiWatch;
+                scheduleNextDevicePoll();
+            }
         } catch (e) {
             console.error("Erreur recuperation appareils:", e);
         } finally {
@@ -92,25 +130,35 @@ async function refreshDevicesIfStale() {
 }
 
 async function refreshDevicesForce() {
-    return pollDeviceList({ force: true });
+    return pollDeviceList({ force: true, forceFresh: true });
+}
+
+async function runScheduledDevicePoll() {
+    lightweightPollCount += 1;
+    const wifiWatch = isWifiTransportWatchActive();
+    if (lightweightPollCount >= DEVICE_FULL_STATUS_EVERY_N_POLLS) {
+        lightweightPollCount = 0;
+        await pollDeviceList({ force: true, lightweight: false, forceFresh: wifiWatch });
+    } else {
+        await pollDeviceList({
+            force: wifiWatch,
+            lightweight: true,
+            forceFresh: wifiWatch
+        });
+    }
+    scheduleNextDevicePoll();
 }
 
 function startDevicePolling() {
-    if (pollingInterval) return;
-    void pollDeviceList({ force: true }).then((devices) => {
+    if (pollingStarted) return;
+    pollingStarted = true;
+    void pollDeviceList({ force: true, forceFresh: true }).then((devices) => {
         if (!devices.length) {
-            setTimeout(() => void pollDeviceList({ force: true }), 600);
+            setTimeout(() => void pollDeviceList({ force: true, forceFresh: true }), 600);
         }
+        lastWifiWatchActive = isWifiTransportWatchActive();
+        scheduleNextDevicePoll();
     });
-    pollingInterval = setInterval(() => {
-        lightweightPollCount += 1;
-        if (lightweightPollCount >= DEVICE_FULL_STATUS_EVERY_N_POLLS) {
-            lightweightPollCount = 0;
-            void pollDeviceList({ force: true, lightweight: false });
-            return;
-        }
-        void pollDeviceList({ force: false, lightweight: true });
-    }, DEVICE_POLL_INTERVAL_MS);
 }
 
 function getCurrentDevices() {
