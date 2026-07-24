@@ -2,7 +2,47 @@
 
 > **Règle générale :** tout ce qui est listé ci-dessous comme **LOCK** est stable, validé en tests utilisateur, et **ne doit pas être modifié** sans accord explicite du mainteneur.
 
-Dernière mise à jour : 2026-07-21
+Dernière mise à jour : 2026-07-23
+
+---
+
+## switchSessionTransport — Commit 1/3 : Type A + toggle WiFi manuel (2026-07-23)
+
+**Statut : implémenté (pas encore commité — review + test manuel requis).**
+
+Destroy+recreate Type A (`switchSessionTransportTypeA` / `switchTypeASessionsForDevice` dans `main.js`), branché sur `wifi:toggle` ON quand USB absent. Overlay `transport:reattach-state` phase `"end"` si Type A OK. Stub `closed` USB→WiFi neutralisé (no-op). Type B : voir suite 4a.
+
+### Suite 4a — Type B (2026-07-24)
+
+**Statut : implémenté (pas encore commité).**
+
+`switchSessionTransportTypeB` / `switchTypeBSessionsForDevice` dans `new-instance-manager.js` (attach `display_id`, dispose input, pas de new VD). Branche toggle ON USB absent : Type A + Type B ; overlay `end` seulement si les deux OK.
+
+Plan produit 4a–4d : 4a mécanique A+B (en cours) → 4b sync toggle UI sur état session → 4c USB débranché + infobulle → 4d USB rebranché silencieux.
+
+---
+
+## Audit catégorie (b) — point 3 : fix orientation Type B / letterbox (2026-07-23)
+
+**Statut : validé par test manuel — pas de commit isolé (option 3).**
+
+Comportement LOCK à préserver :
+1. `stream-params.js` — `applyTypeBLaunchOrientation` → `captureOrientationLock = null` + `captureRotation = 0` (pas de verrou `@270`/`@90`).
+2. `scrcpy-socket.js` — `hasOwnProperty` sur `captureOrientationLock` pour que ce `null` soit honoré (sinon recalcul → letterbox).
+
+**Historique :** les deux hunks ont été introduits dans `a8940ec` (WIP snapshot a+b, mélangé avec reattach) et sont restés inchangés jusqu’à HEAD. Pas de commit dédié ; pas de réécriture d’historique.
+
+**Validation :** test manuel sans WiFi — lancement Type B nominal + restart paramètres + garde-fou Type A ; portrait plein cadre, Type A non affecté.
+
+---
+
+## Audit catégorie (b) — point 2 : bootstrap externe & résolution preset (2026-07-23)
+
+**Statut : implémenté (pas encore commité — review + test manuel requis).**
+
+Le lancement Type B lit le preset par défaut (`buildDefaultScrcpyOptions`) **avant** `launchNewInstance`, et passe `bootstrapNewDisplay` au main. `buildNewInstanceExternalBaseArgs` utilise `--new-display=${…}` (WxH ou WxH/DPI) au lieu de forcer `1920x1080`. Fallback `1920x1080` si valeur absente/invalide. Corrige la perte de résolution custom après la priorité `display_id` + `skipPackageLaunch` dans `_runClientStart` (inchangée). Fix orientation non touché.
+
+Fichiers : `new-session.js`, `preload.js`, `main.js` (`resolveExternalBootstrapNewDisplay`).
 
 ---
 
@@ -347,6 +387,10 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf UI — debounce recherche apps** — `AppLauncherSearch.js` + `AppList.js` : 100 ms (`clearTimeout`/`setTimeout`) sur handler `input` uniquement ; filtre/tri/render inchangés ; timer nettoyé dans `destroy()`. Commits `aad55b3`, `28344f4`. LOCK intact.
+- 2026-07-24 — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` (attach display_id) + branchement toggle ON sans USB avec Type A ; overlay end si A+B OK. Stub closed USB→WiFi déjà neutralisé. 4b/4c/4d à venir.
+- 2026-07-23 — **switchSessionTransport Commit 1/3** — Type A destroy+recreate (`switchSessionTransportTypeA`) + branchement `wifi:toggle` ON sans USB ; overlay phase `end` ; Type B encore mark/TODO/fail ; topologie auto non branchée.
+- 2026-07-23 — **Audit catégorie (b) point 3** — Fix orientation Type B (letterbox) validé par test manuel (portrait plein cadre, Type A non affecté ; sans WiFi : lancement nominal + restart paramètres + garde-fou Type A). Comportement LOCK dans `applyTypeBLaunchOrientation` (`null` lock) + `hasOwnProperty` (`scrcpy-socket.js`). Pas de commit isolé — hunks présents dans `a8940ec` (WIP mélangé).
+- 2026-07-23 — **Audit catégorie (b) point 2** — Correction : bootstrap externe Type B respecte la résolution du preset par défaut (`bootstrapNewDisplay` → `--new-display`) au lieu de forcer `1920x1080` ; corrige la perte de résolution custom introduite par la priorité `display_id`/`skipPackageLaunch`.
 - 2026-07-23 — **Audit catégorie (b) point 1** — Retrait du vestige `preferredNewDisplay` / `resolveTypeBNewDisplay` (`new-instance-manager.js`), orphelin depuis le retrait de la catégorie (a) — aucun effet runtime.
 - 2026-07-22 — **Reattach USB/WiFi — nettoyage rebind in-place** — Retrait de `ScrcpySocketClient.rebind()` / `rebindTransportOnly()` (`scrcpy-socket.js`) et `AdbInputController.rebind()` (`adb-input-controller.js`). Approche rebind in-place abandonnée après test réel (flux vidéo cassé + décalage input). Suite : `switchSessionTransport` (destroy+recreate orchestré), commit séparé à venir.
 - 2026-07-21 — **Reattach USB/WiFi — Commit 3/4** — `AdbInputController.rebind()` — **abandonné / retiré** (voir nettoyage 2026-07-22).

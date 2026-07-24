@@ -332,7 +332,7 @@ const { WifiDevicesManager } = require("./managers/wifi-devices-manager");
 const { WifiAdbService } = require("./managers/wifi-adb-service");
 const { DevicePowerManager } = require("./managers/device-power-manager");
 const { DeviceOrientationManager } = require("./managers/device-orientation-manager");
-const { registerWifiHandlers } = require("./ipc/wifiHandlers");
+const { registerWifiHandlers, notifySessionStreamRestarting } = require("./ipc/wifiHandlers");
 
 const adbPath = getAdbPath();
 const serverJarPath = getServerJarPath();
@@ -830,6 +830,20 @@ function failTypeASessionsReconnecting(deviceId) {
 
 global.markTypeASessionsReconnecting = markTypeASessionsReconnecting;
 global.failTypeASessionsReconnecting = failTypeASessionsReconnecting;
+
+/** Tabs Type A du device actuellement dans transportReconnectingTabs. */
+function listTypeAReconnectingTabIds(deviceId) {
+    if (!deviceId) return [];
+    const out = [];
+    for (const tabId of [...transportReconnectingTabs]) {
+        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        if (!typeASessionMatchesDevice(entry, deviceId)) continue;
+        out.push(tabId);
+    }
+    return out;
+}
+
+global.listTypeAReconnectingTabIds = listTypeAReconnectingTabIds;
 const scrcpyClientsBySerial = {}; // { serial: ScrcpySocketClient } — legacy, éviter pour l'input
 const externalLaunches = {}; // { launchId: { child, serial, packageName, userId, displayId, handedOff } }
 
@@ -2536,6 +2550,113 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             return { success: false, error: err.message };
         }
     }
+
+
+    /**
+     * Destroy+recreate orchestré du flux Type A (USB↔WiFi).
+     * Réutilise startVideoStreamLogic pour listeners + start (pas de rebind).
+     * @returns {{ success: boolean, skipped?: boolean, error?: string }}
+     */
+    async function switchSessionTransportTypeA(tabId, newSerial) {
+        if (!tabId || !newSerial) {
+            console.warn(
+                `[switchSessionTransport] Type A skip — tabId/newSerial manquant tab=${tabId || "?"} serial=${newSerial || "?"}`
+            );
+            return { success: false, error: "tabId ou newSerial manquant" };
+        }
+
+        transportReconnectingTabs.add(tabId);
+        console.log(
+            `[switchSessionTransport] Type A begin tab=${tabId} newSerial=${newSerial}`
+        );
+
+        notifySessionStreamRestarting(tabId);
+
+        const oldClient = videoClients[tabId];
+        if (!oldClient) {
+            transportReconnectingTabs.delete(tabId);
+            console.log(
+                `[switchSessionTransport] Type A skip — pas de client tab=${tabId}`
+            );
+            return { success: true, skipped: true };
+        }
+
+        try {
+            oldClient.stop();
+        } catch (err) {
+            console.warn(
+                `[switchSessionTransport] Type A stop ancien client tab=${tabId}:`,
+                err?.message || err
+            );
+        }
+        if (videoClients[tabId] === oldClient) {
+            delete videoClients[tabId];
+        }
+
+        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        const scrcpyOptions = entry?.scrcpyOptions ? { ...entry.scrcpyOptions } : {};
+        const packageName = entry?.packageName || null;
+
+        const result = await startVideoStreamLogic(
+            newSerial,
+            tabId,
+            packageName,
+            scrcpyOptions,
+            { force: true }
+        );
+
+        if (result?.success) {
+            invalidateSessionAdbSerialCache(tabId);
+            try {
+                await getOrCreateSessionInputController(tabId, newSerial);
+            } catch (err) {
+                console.warn(
+                    `[switchSessionTransport] Type A input recreate tab=${tabId}:`,
+                    err?.message || err
+                );
+            }
+            transportReconnectingTabs.delete(tabId);
+            console.log(
+                `[switchSessionTransport] Type A ok tab=${tabId} newSerial=${newSerial}`
+            );
+            return { success: true };
+        }
+
+        try {
+            videoClients[tabId]?.stop?.();
+        } catch (_err) {
+            // noop
+        }
+        delete videoClients[tabId];
+        transportReconnectingTabs.delete(tabId);
+        console.warn(
+            `[switchSessionTransport] Type A fail tab=${tabId}:`,
+            result?.error || "start failed"
+        );
+        return { success: false, error: result?.error || "Échec start vidéo" };
+    }
+
+    async function switchTypeASessionsForDevice(deviceId, newSerial) {
+        const tabIds = listTypeAReconnectingTabIds(deviceId);
+        console.log(
+            `[switchSessionTransport] Type A device=${deviceId} tabs=${tabIds.length} newSerial=${newSerial}`
+        );
+        if (tabIds.length === 0) {
+            return { success: true, count: 0 };
+        }
+
+        let allOk = true;
+        for (const tabId of tabIds) {
+            const outcome = await switchSessionTransportTypeA(tabId, newSerial);
+            if (!outcome?.success) {
+                allOk = false;
+            }
+        }
+        return { success: allOk, count: tabIds.length };
+    }
+
+    global.switchSessionTransportTypeA = switchSessionTransportTypeA;
+    global.switchTypeASessionsForDevice = switchTypeASessionsForDevice;
 
     ipcMain.handle("start-video-stream", async (event, { serial, tabId, packageName, options = {} }) => {
         global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "streamInvoke" });

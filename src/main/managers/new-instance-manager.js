@@ -4,6 +4,7 @@ const { ScrcpySocketClient } = require("../../native/scrcpy/scrcpy-socket");
 const { AdbInputController, KEYCODE_MAP } = require("../../native/scrcpy/control/adb-input-controller");
 const { DEFAULT_STREAM_PARAMS, toScrcpyOptions } = require("../../shared/stream-params");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
+const { notifySessionStreamRestarting } = require("../ipc/wifiHandlers");
 
 const KEY_ACTION_DOWN = 0;
 const KEY_ACTION_UP = 1;
@@ -536,6 +537,144 @@ class NewInstanceManager extends EventEmitter {
             serial: session.serial,
             packageName: session.packageName
         });
+    }
+
+    /**
+     * Destroy+recreate orchestré Type B (USB↔WiFi) — attach display_id existant, pas de new VD.
+     * @returns {{ success: boolean, skipped?: boolean, error?: string }}
+     */
+    async switchSessionTransportTypeB(session, newSerial) {
+        if (!session?.sessionId || !newSerial) {
+            console.warn(
+                `[switchSessionTransport] Type B skip — session/newSerial manquant session=${session?.sessionId || "?"} serial=${newSerial || "?"}`
+            );
+            return { success: false, error: "session ou newSerial manquant" };
+        }
+
+        if (session.state !== "reconnecting") {
+            this.beginTransportReconnect(session);
+        }
+
+        console.log(
+            `[switchSessionTransport] Type B begin session=${session.sessionId} newSerial=${newSerial}`
+        );
+
+        notifySessionStreamRestarting(session.sessionId);
+
+        const preservedDisplayId = Number.isInteger(session.displayId)
+            ? session.displayId
+            : (Number.isInteger(session.presetDisplayId) ? session.presetDisplayId : null);
+
+        if (!Number.isInteger(preservedDisplayId)) {
+            console.warn(
+                `[switchSessionTransport] Type B fail — displayId manquant session=${session.sessionId}`
+            );
+            this.endTransportReconnect(session, { success: false });
+            return { success: false, error: "displayId manquant" };
+        }
+
+        session.presetDisplayId = preservedDisplayId;
+        session.displayId = preservedDisplayId;
+
+        const streamW = session.streamSize?.width || null;
+        const streamH = session.streamSize?.height || null;
+
+        session.serial = newSerial;
+        session.skipPackageLaunch = true;
+
+        if (session.inputController) {
+            try {
+                if (typeof session.inputController.dispose === "function") {
+                    session.inputController.dispose();
+                }
+            } catch (err) {
+                console.warn(
+                    `[switchSessionTransport] Type B dispose input session=${session.sessionId}:`,
+                    err?.message || err
+                );
+            }
+            session.inputController = null;
+        }
+        session._inputPrewarmStarted = false;
+
+        if (session.client) {
+            const oldClient = session.client;
+            session.client = null;
+            try {
+                oldClient.stop();
+            } catch (err) {
+                console.warn(
+                    `[switchSessionTransport] Type B stop ancien client session=${session.sessionId}:`,
+                    err?.message || err
+                );
+            }
+        }
+
+        try {
+            const attachOptions = {
+                ...(session.streamOptions || {}),
+                displayId: preservedDisplayId,
+                skipPackageLaunch: true
+            };
+            delete attachOptions.newDisplay;
+
+            await this._runClientStart(session, attachOptions);
+            await this._ensureSessionInputController(session, streamW, streamH);
+
+            this.endTransportReconnect(session, { success: true });
+            console.log(
+                `[switchSessionTransport] Type B ok session=${session.sessionId} newSerial=${newSerial} displayId=${preservedDisplayId}`
+            );
+            return { success: true };
+        } catch (err) {
+            try {
+                session.client?.stop?.();
+            } catch (_err) {
+                // noop
+            }
+            session.client = null;
+            this.endTransportReconnect(session, { success: false });
+            console.warn(
+                `[switchSessionTransport] Type B fail session=${session.sessionId}:`,
+                err?.message || err
+            );
+            return { success: false, error: err?.message || "Échec start vidéo" };
+        }
+    }
+
+    /**
+     * Switch toutes les sessions Type B en state=reconnecting pour ce device.
+     * @returns {{ success: boolean, count: number }}
+     */
+    async switchTypeBSessionsForDevice(deviceId, newSerial) {
+        if (!deviceId || !newSerial) {
+            return { success: false, count: 0 };
+        }
+
+        const sessions = [];
+        for (const summary of this.listNewInstanceSessions() || []) {
+            if (summary.state !== "reconnecting") continue;
+            if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+            const session = this.getNewInstanceSession(summary.sessionId);
+            if (session) sessions.push(session);
+        }
+
+        console.log(
+            `[switchSessionTransport] Type B device=${deviceId} sessions=${sessions.length} newSerial=${newSerial}`
+        );
+
+        if (sessions.length === 0) {
+            return { success: true, count: 0 };
+        }
+
+        let allOk = true;
+        for (const session of sessions) {
+            const outcome = await this.switchSessionTransportTypeB(session, newSerial);
+            if (!outcome?.success) {
+                allOk = false;
+            }
+        }
+        return { success: allOk, count: sessions.length };
     }
 
     async _runClientStart(session, scrcpyOptions = {}) {

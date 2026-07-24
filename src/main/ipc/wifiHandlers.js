@@ -389,8 +389,9 @@ function registerWifiHandlers(deps) {
                 });
 
                 wifiManager.setWifiEnabled(targetDeviceId, true);
+                let wifiSerialFromConnect = null;
                 try {
-                    await wifiService.reconnectSaved(targetDeviceId, {
+                    wifiSerialFromConnect = await wifiService.reconnectSaved(targetDeviceId, {
                         usbSerial: liveUsbSerial || undefined
                     });
                     // Course OFF concurrent : abandonner le retour WiFi.
@@ -426,8 +427,89 @@ function registerWifiHandlers(deps) {
                         );
                     } else {
                         markAllSessionsReconnecting(reattachDeps, targetDeviceId);
-                        console.warn("[wifi] marked only — switchSessionTransport pending device=" + targetDeviceId);
-                        failAllSessionsReconnecting(reattachDeps, targetDeviceId);
+
+                        const updated = wifiManager.getByDeviceId(targetDeviceId);
+                        let newSerial = wifiSerialFromConnect || null;
+                        if (!newSerial && (updated?.ip || config.ip)) {
+                            newSerial = wifiService.buildWifiSerial(
+                                updated?.ip || config.ip,
+                                updated?.port || config.port || 5555
+                            );
+                        }
+                        if (!newSerial && typeof registry.resolveEffectiveAdbSerial === "function") {
+                            newSerial = await registry.resolveEffectiveAdbSerial({
+                                deviceId: targetDeviceId
+                            });
+                        }
+
+                        if (!newSerial) {
+                            console.warn(
+                                `[switchSessionTransport] abort — serial WiFi introuvable device=${targetDeviceId}`
+                            );
+                            failAllSessionsReconnecting(reattachDeps, targetDeviceId);
+                        } else {
+                            let typeAOk = true;
+                            if (typeof global.switchTypeASessionsForDevice === "function") {
+                                const typeAResult = await global.switchTypeASessionsForDevice(
+                                    targetDeviceId,
+                                    newSerial
+                                );
+                                typeAOk = typeAResult?.success !== false;
+                                console.log(
+                                    `[switchSessionTransport] Type A device done ok=${typeAOk} count=${typeAResult?.count ?? 0} serial=${newSerial}`
+                                );
+                            } else {
+                                console.warn(
+                                    "[switchSessionTransport] Type A — switchTypeASessionsForDevice indisponible"
+                                );
+                                typeAOk = false;
+                            }
+
+                            let typeBOk = true;
+                            const niManager = typeof reattachDeps.getNewInstanceManager === "function"
+                                ? reattachDeps.getNewInstanceManager()
+                                : null;
+                            if (typeof niManager?.switchTypeBSessionsForDevice === "function") {
+                                const typeBResult = await niManager.switchTypeBSessionsForDevice(
+                                    targetDeviceId,
+                                    newSerial
+                                );
+                                typeBOk = typeBResult?.success !== false;
+                                console.log(
+                                    `[switchSessionTransport] Type B device done ok=${typeBOk} count=${typeBResult?.count ?? 0} serial=${newSerial}`
+                                );
+                            } else {
+                                console.warn(
+                                    "[switchSessionTransport] Type B — switchTypeBSessionsForDevice indisponible"
+                                );
+                                failTypeBSessionsReconnecting(
+                                    reattachDeps.getNewInstanceManager,
+                                    targetDeviceId
+                                );
+                                typeBOk = false;
+                            }
+
+                            if (typeAOk && typeBOk) {
+                                notifyTransportReattachState(reattachDeps.getMainWindow, {
+                                    deviceId: targetDeviceId,
+                                    phase: "end"
+                                });
+                            } else {
+                                if (!typeAOk && typeof global.failTypeASessionsReconnecting === "function") {
+                                    global.failTypeASessionsReconnecting(targetDeviceId);
+                                }
+                                if (!typeBOk) {
+                                    failTypeBSessionsReconnecting(
+                                        reattachDeps.getNewInstanceManager,
+                                        targetDeviceId
+                                    );
+                                }
+                                notifyTransportReattachState(reattachDeps.getMainWindow, {
+                                    deviceId: targetDeviceId,
+                                    phase: "error"
+                                });
+                            }
+                        }
                     }
                 } catch (switchErr) {
                     failAllSessionsReconnecting(reattachDeps, targetDeviceId);
@@ -613,4 +695,4 @@ function registerWifiHandlers(deps) {
     });
 }
 
-module.exports = { registerWifiHandlers };
+module.exports = { registerWifiHandlers, notifySessionStreamRestarting };
