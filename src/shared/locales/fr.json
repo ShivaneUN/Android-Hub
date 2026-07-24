@@ -177,20 +177,28 @@
     "seeMore": "Voir ›",
     "clearHistory": "Effacer l'historique",
     "autoOptions": "Options auto",
-    "aboutTagline": "Un hub pour connecter, lancer et contrôler vos tablettes Android.",
+    "aboutTagline": "Un hub pour connecter, lancer et contrôler vos tablettes Android — USB, Wi‑Fi, mirroring et multi-sessions.",
     "aboutFeaturesTitle": "Ce que fait le Hub",
     "aboutFeat1Title": "Connexion USB / Wi‑Fi",
-    "aboutFeat1Desc": "Détection des appareils, renommage, statut en direct et bascule USB ↔ Wi‑Fi.",
+    "aboutFeat1Desc": "Détection live, renommage, couleurs et toggle ADB Wi‑Fi. En mirroring, le passage USB ↔ Wi‑Fi ne met à jour que l’identifiant de connexion : le flux se poursuit sans coupure.",
     "aboutFeat2Title": "Nouvelle instance",
-    "aboutFeat2Desc": "Lancez une app en display virtuel dédié, y compris clones et profils Android.",
-    "aboutFeat3Title": "Mirroring & contrôle",
-    "aboutFeat3Desc": "Stream scrcpy avec presets résolution, DPI, FPS, bitrate et codec par session.",
-    "aboutFeat4Title": "Dock & batteries",
-    "aboutFeat4Desc": "Surveillez charge, Muet et Wi‑Fi depuis le dock flottant pendant le stream.",
-    "aboutFeat5Title": "Historique & récents",
-    "aboutFeat5Desc": "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
-    "aboutFeat6Title": "Maintenance",
-    "aboutFeat6Desc": "Nettoyage logs, cache et historique, manuel ou automatique au démarrage."
+    "aboutFeat2Desc": "Lancez une app en display virtuel (clones & profils), avec sélection appareil / apps et récents. Un changement USB ↔ Wi‑Fi relance la session pour rattacher le display.",
+    "aboutFeat3Title": "Mirroring & presets",
+    "aboutFeat3Desc": "Stream scrcpy contrôlable, avec presets résolution, DPI, FPS, bitrate, GOP et codec. En mirroring, USB ↔ Wi‑Fi reste transparent : seul l’ID de connexion est rafraîchi.",
+    "aboutFeat4Title": "Mode Stream Deck",
+    "aboutFeat4Desc": "Affichez plusieurs sessions en grille, focus ou duo, avec tuile active pour le contrôle.",
+    "aboutFeat5Title": "Dock & batteries",
+    "aboutFeat5Desc": "Dock flottant : écran, portrait, audio, Accueil. Batteries + Muet / Wi‑Fi par appareil pendant le stream.",
+    "aboutFeat6Title": "Interface classique / Nouvelle",
+    "aboutFeat6Desc": "Rail classique, ou style tablette plein écran avec Accueil enrichi (appareils, récents, choix d’UI).",
+    "aboutFeat7Title": "Historique & récents",
+    "aboutFeat7Desc": "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
+    "aboutFeat8Title": "Aide & guides",
+    "aboutFeat8Desc": "Raccourcis, guide mirroring pas à pas, connexion Wi‑Fi et dépannage intégrés.",
+    "aboutFeat9Title": "Maintenance",
+    "aboutFeat9Desc": "Nettoyage logs, cache et historique — manuel ou automatique au démarrage.",
+    "aboutFeat10Title": "Mises à jour",
+    "aboutFeat10Desc": "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -566,6 +574,12 @@
                 "Langue"
               ],
               "desc": "Basculer l'interface entre français et anglais."
+            },
+            {
+              "keys": [
+                "Muet (appareil)"
+              ],
+              "desc": "Couper l’audio PC pour un appareil depuis la carte Appareils connectés."
             }
           ]
         },
@@ -682,12 +696,75 @@
               "desc": "Fermer la session vidéo et retirer l'onglet."
             }
           ]
+        },
+        {
+          "title": "Interface & Accueil",
+          "items": [
+            {
+              "keys": [
+                "Interface classique"
+              ],
+              "desc": "Afficher le rail complet (vue classique)."
+            },
+            {
+              "keys": [
+                "Nouvelle interface"
+              ],
+              "desc": "Passer au style tablette plein écran avec Accueil enrichi."
+            },
+            {
+              "keys": [
+                "Accueil"
+              ],
+              "desc": "Revenir à la vue Accueil (appareils, récents, choix d’interface) depuis le dock."
+            }
+          ]
+        },
+        {
+          "title": "Dock batteries",
+          "items": [
+            {
+              "keys": [
+                "Chip batterie"
+              ],
+              "desc": "Ouvrir le flyout appareil : Muet et toggle Wi‑Fi pendant le stream."
+            },
+            {
+              "keys": [
+                "Muet appareil"
+              ],
+              "desc": "Couper ou réactiver l’audio PC pour un appareil précis (sidebar ou chip dock)."
+            }
+          ]
+        },
+        {
+          "title": "Session vidéo",
+          "items": [
+            {
+              "keys": [
+                "Molette"
+              ],
+              "desc": "Zoomer / dézoomer le flux vidéo (pointeur sur le canvas)."
+            },
+            {
+              "keys": [
+                "USB débranché"
+              ],
+              "desc": "En mirroring : continuer en Wi‑Fi sans couper le flux (seul l’ID de connexion change). En instance d’app : la session est relancée pour rattacher le display."
+            },
+            {
+              "keys": [
+                "USB branché"
+              ],
+              "desc": "En mirroring : repasser en USB ou rester en Wi‑Fi sans interruption du flux. En instance d’app : la session est rafraîchie pour suivre la nouvelle liaison."
+            }
+          ]
         }
       ]
     },
     "wifi": {
       "title": "Connecter un appareil en WiFi",
-      "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, reconnectez l'appareil via le toggle.",
+      "note": "Si le réseau ou l’IP change, reconnectez via le toggle. En mirroring, USB ↔ Wi‑Fi ne rafraîchit que l’ID de connexion (pas de coupure). Pour une app en display virtuel, le changement de liaison relance la session.",
       "steps": [
         {
           "chipLabel": "USB",
@@ -808,9 +885,11 @@
           "steps": [
             "L'appareil apparaît dans le panneau « Appareils connectés » à gauche.",
             "Ouvrez « Nouvelle instance », sélectionnez l'appareil puis une application — ou cliquez « Mirroring » pour afficher l'écran complet.",
-            "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier."
+            "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier.",
+            "Activez le mode Stream Deck pour voir plusieurs sessions (grille, focus, duo).",
+            "Ajustez résolution / DPI / FPS dans Paramètres → Contrôle (presets)."
           ],
-          "tip": "Double-cliquez une entrée de l'historique pour relancer rapidement une application déjà utilisée."
+          "tip": "Choisissez Interface classique ou Nouvelle interface depuis l’Accueil. Double-cliquez un récent pour relancer une app."
         }
       ]
     },
@@ -824,7 +903,12 @@
         "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
         "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
         "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
-        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
+        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste.",
+        "Wi‑Fi impossible : même réseau que le PC, Wi‑Fi actif sur le téléphone, évitez VPN / réseau invité.",
+        "IP introuvable au toggle Wi‑Fi : activez le Wi‑Fi du téléphone puis réessayez.",
+        "Batterie absente sur le dock : l’appareil doit être connecté (USB ou Wi‑Fi) et visible dans Appareils connectés.",
+        "Zoom molette ne répond pas : cliquez d’abord sur le flux vidéo pour le focaliser.",
+        "Mirroring USB↔Wi‑Fi : le flux ne doit pas se couper (seul l’ID change). Instance d’app : un bref refresh de session est normal pour rattacher le display."
       ]
     }
   }

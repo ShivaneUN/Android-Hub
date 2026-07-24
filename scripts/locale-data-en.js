@@ -158,20 +158,28 @@ module.exports = {
         maintCacheHint: "Temporary files",
         clearHistory: "Clear history",
         autoOptions: "Auto options",
-        aboutTagline: "A hub to connect, launch and control your Android tablets.",
+        aboutTagline: "A hub to connect, launch and control your Android tablets — USB, Wi‑Fi, mirroring and multi-session.",
         aboutFeaturesTitle: "What the Hub does",
         aboutFeat1Title: "USB / Wi‑Fi connection",
-        aboutFeat1Desc: "Device detection, renaming, live status and USB ↔ Wi‑Fi switching.",
+        aboutFeat1Desc: "Live detection, renaming, colors, and Wi‑Fi ADB toggle. In mirroring, USB ↔ Wi‑Fi only updates the connection ID — the stream continues without interruption.",
         aboutFeat2Title: "New instance",
-        aboutFeat2Desc: "Launch an app on a dedicated virtual display, including clones and Android profiles.",
-        aboutFeat3Title: "Mirroring & control",
-        aboutFeat3Desc: "scrcpy stream with resolution, DPI, FPS, bitrate and codec presets per session.",
-        aboutFeat4Title: "Dock & batteries",
-        aboutFeat4Desc: "Monitor charge, Mute and Wi‑Fi from the floating dock during stream.",
-        aboutFeat5Title: "History & recents",
-        aboutFeat5Desc: "Quickly find and relaunch recently used apps and profiles.",
-        aboutFeat6Title: "Maintenance",
-        aboutFeat6Desc: "Clean logs, cache and history manually or automatically on startup."
+        aboutFeat2Desc: "Launch an app on a virtual display (clones & profiles), with device/app picker and recents. A USB ↔ Wi‑Fi switch relaunches the session to reattach the display.",
+        aboutFeat3Title: "Mirroring & presets",
+        aboutFeat3Desc: "Controllable scrcpy stream with resolution, DPI, FPS, bitrate, GOP, and codec presets. In mirroring, USB ↔ Wi‑Fi stays seamless: only the connection ID is refreshed.",
+        aboutFeat4Title: "Stream Deck mode",
+        aboutFeat4Desc: "Show multiple sessions in grid, focus or duo, with an active tile for control.",
+        aboutFeat5Title: "Dock & batteries",
+        aboutFeat5Desc: "Floating dock: screen, portrait, audio, Home. Batteries plus per-device Mute / Wi‑Fi during stream.",
+        aboutFeat6Title: "Classic / New interface",
+        aboutFeat6Desc: "Classic rail, or full-screen tablet style with a richer Home (devices, recents, UI choice).",
+        aboutFeat7Title: "History & recents",
+        aboutFeat7Desc: "Quickly find and relaunch recently used apps and profiles.",
+        aboutFeat8Title: "Help & guides",
+        aboutFeat8Desc: "Shortcuts, step-by-step mirroring guide, Wi‑Fi setup and built-in troubleshooting.",
+        aboutFeat9Title: "Maintenance",
+        aboutFeat9Desc: "Clean logs, cache and history — manually or automatically on startup.",
+        aboutFeat10Title: "Updates",
+        aboutFeat10Desc: "Check, download and install new versions from About."
     },
     devicePanel: {
         wifiEnabled: "WiFi enabled",
@@ -421,77 +429,297 @@ module.exports = {
             intro: "Hub shortcuts and actions. Disabled while typing in a text field. Right-click a device or session tab for the context menu.",
             groups: [
                 {
-                    title: "Navigation",
-                    items: [
-                        { keys: ["Ctrl", "Tab"], desc: "Switch to the next session tab." },
-                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous session tab." },
-                        { keys: ["Ctrl", "B"], desc: "Show or hide the sidebar." },
-                        { keys: ["Ctrl", "Shift", "L"], desc: "Cycle Stream Deck display layout (grid, focus, duo). Only active when Stream Deck mode is enabled." }
+                    "title": "Navigation",
+                    "items": [
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Tab"
+                            ],
+                            "desc": "Switch to the next session tab."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Shift",
+                                "Tab"
+                            ],
+                            "desc": "Switch to the previous session tab."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "B"
+                            ],
+                            "desc": "Show or hide the sidebar."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Shift",
+                                "L"
+                            ],
+                            "desc": "Cycle Stream Deck display layout (grid, focus, duo). Only active when Stream Deck mode is enabled."
+                        }
                     ]
                 },
                 {
-                    title: "Stream Deck mode",
-                    items: [
-                        { keys: ["Stream Deck mode"], desc: "Enable or disable multi-device display from the sidebar (off by default on startup)." },
-                        { keys: ["Grid"], desc: "Show all active sessions in a grid — each tile displays one device or app instance stream." },
-                        { keys: ["Focus"], desc: "Large view of one main device and a side rail of other sessions. Click a mini tile to change focus." },
-                        { keys: ["Duo"], desc: "Show two devices side by side. Enables duo layout and opens the selection menu below the layout buttons." },
-                        { keys: ["Click Duo"], desc: "Reopen or close the Duo selection menu when duo layout is already active." },
-                        { keys: ["Outside click"], desc: "Close the Duo selection menu." },
-                        { keys: ["Click tile"], desc: "Activate the session for mouse/keyboard control (green border on the active tile)." }
+                    "title": "Stream Deck mode",
+                    "items": [
+                        {
+                            "keys": [
+                                "Stream Deck mode"
+                            ],
+                            "desc": "Enable or disable multi-device display from the sidebar (off by default on startup)."
+                        },
+                        {
+                            "keys": [
+                                "Grid"
+                            ],
+                            "desc": "Show all active sessions in a grid — each tile displays one device or app instance stream."
+                        },
+                        {
+                            "keys": [
+                                "Focus"
+                            ],
+                            "desc": "Large view of one main device and a side rail of other sessions. Click a mini tile to change focus."
+                        },
+                        {
+                            "keys": [
+                                "Duo"
+                            ],
+                            "desc": "Show two devices side by side. Enables duo layout and opens the selection menu below the layout buttons."
+                        },
+                        {
+                            "keys": [
+                                "Click Duo"
+                            ],
+                            "desc": "Reopen or close the Duo selection menu when duo layout is already active."
+                        },
+                        {
+                            "keys": [
+                                "Outside click"
+                            ],
+                            "desc": "Close the Duo selection menu."
+                        },
+                        {
+                            "keys": [
+                                "Click tile"
+                            ],
+                            "desc": "Activate the session for mouse/keyboard control (green border on the active tile)."
+                        }
                     ]
                 },
                 {
-                    title: "Sidebar — Global controls",
-                    items: [
-                        { keys: ["Screen"], desc: "Turn the active mirroring session's device screen off or on." },
-                        { keys: ["Portrait"], desc: "Toggle portrait video layout for the active session." },
-                        { keys: ["Audio"], desc: "Mute or unmute audio for all sessions at once." },
-                        { keys: ["Language"], desc: "Switch the interface between French and English." }
+                    "title": "Sidebar — Global controls",
+                    "items": [
+                        {
+                            "keys": [
+                                "Screen"
+                            ],
+                            "desc": "Turn the active mirroring session's device screen off or on."
+                        },
+                        {
+                            "keys": [
+                                "Portrait"
+                            ],
+                            "desc": "Toggle portrait video layout for the active session."
+                        },
+                        {
+                            "keys": [
+                                "Audio"
+                            ],
+                            "desc": "Mute or unmute audio for all sessions at once."
+                        },
+                        {
+                            "keys": [
+                                "Language"
+                            ],
+                            "desc": "Switch the interface between French and English."
+                        },
+                        {
+                            "keys": [
+                                "Mute (device)"
+                            ],
+                            "desc": "Mute PC audio for one device from its Connected devices card."
+                        }
                     ]
                 },
                 {
-                    title: "Stream control (active session)",
-                    items: [
-                        { keys: ["Click"], desc: "Tap / click on the Android screen (focused video canvas)." },
-                        { keys: ["Right-click"], desc: "Android Back button." }
+                    "title": "Stream control (active session)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Click"
+                            ],
+                            "desc": "Tap / click on the Android screen (focused video canvas)."
+                        },
+                        {
+                            "keys": [
+                                "Right-click"
+                            ],
+                            "desc": "Android Back button."
+                        }
                     ]
                 },
                 {
-                    title: "New instance",
-                    items: [
-                        { keys: ["Double-click"], desc: "Relaunch an application from the History section." }
+                    "title": "New instance",
+                    "items": [
+                        {
+                            "keys": [
+                                "Double-click"
+                            ],
+                            "desc": "Relaunch an application from the History section."
+                        }
                     ]
                 },
                 {
-                    title: "Dialogs",
-                    items: [
-                        { keys: ["Enter"], desc: "Confirm renaming a session or device." },
-                        { keys: ["Esc"], desc: "Cancel renaming." }
+                    "title": "Dialogs",
+                    "items": [
+                        {
+                            "keys": [
+                                "Enter"
+                            ],
+                            "desc": "Confirm renaming a session or device."
+                        },
+                        {
+                            "keys": [
+                                "Esc"
+                            ],
+                            "desc": "Cancel renaming."
+                        }
                     ]
                 },
                 {
-                    title: "Connected devices (sidebar)",
-                    items: [
-                        { keys: ["Double-click"], desc: "Start full-screen mirroring for the device (same as the Mirroring button)." },
-                        { keys: ["WiFi toggle"], desc: "Set up or enable ADB WiFi connection for the device (see the WiFi connection help tab)." }
+                    "title": "Connected devices (sidebar)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Double-click"
+                            ],
+                            "desc": "Start full-screen mirroring for the device (same as the Mirroring button)."
+                        },
+                        {
+                            "keys": [
+                                "WiFi toggle"
+                            ],
+                            "desc": "Set up or enable ADB WiFi connection for the device (see the WiFi connection help tab)."
+                        }
                     ]
                 },
                 {
-                    title: "Right-click — Connected devices (sidebar)",
-                    items: [
-                        { keys: ["Rename"], desc: "Open the dialog to customize the name shown in the device list." },
-                        { keys: ["Reset name"], desc: "Restore the original name (shown only if the device was renamed)." },
-                        { keys: ["Color → Auto"], desc: "Automatically assign a distinct color to each connected device." },
-                        { keys: ["Color → shade"], desc: "Choose a fixed color (Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Brown, Slate) to identify the device in the sidebar and tabs." }
+                    "title": "Right-click — Connected devices (sidebar)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Rename"
+                            ],
+                            "desc": "Open the dialog to customize the name shown in the device list."
+                        },
+                        {
+                            "keys": [
+                                "Reset name"
+                            ],
+                            "desc": "Restore the original name (shown only if the device was renamed)."
+                        },
+                        {
+                            "keys": [
+                                "Color → Auto"
+                            ],
+                            "desc": "Automatically assign a distinct color to each connected device."
+                        },
+                        {
+                            "keys": [
+                                "Color → shade"
+                            ],
+                            "desc": "Choose a fixed color (Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Brown, Slate) to identify the device in the sidebar and tabs."
+                        }
                     ]
                 },
                 {
-                    title: "Right-click — Session tabs",
-                    items: [
-                        { keys: ["Rename"], desc: "Customize the tab label (mirroring or application instance)." },
-                        { keys: ["Reset name"], desc: "Restore the original label (shown only if the tab was renamed)." },
-                        { keys: ["Close"], desc: "Close the video session and remove the tab." }
+                    "title": "Right-click — Session tabs",
+                    "items": [
+                        {
+                            "keys": [
+                                "Rename"
+                            ],
+                            "desc": "Customize the tab label (mirroring or application instance)."
+                        },
+                        {
+                            "keys": [
+                                "Reset name"
+                            ],
+                            "desc": "Restore the original label (shown only if the tab was renamed)."
+                        },
+                        {
+                            "keys": [
+                                "Close"
+                            ],
+                            "desc": "Close the video session and remove the tab."
+                        }
+                    ]
+                },
+                {
+                    "title": "Interface & Home",
+                    "items": [
+                        {
+                            "keys": [
+                                "Classic interface"
+                            ],
+                            "desc": "Show the full classic rail."
+                        },
+                        {
+                            "keys": [
+                                "New interface"
+                            ],
+                            "desc": "Switch to full-screen tablet style with a richer Home."
+                        },
+                        {
+                            "keys": [
+                                "Home"
+                            ],
+                            "desc": "Return to Home (devices, recents, UI choice) from the dock."
+                        }
+                    ]
+                },
+                {
+                    "title": "Dock batteries",
+                    "items": [
+                        {
+                            "keys": [
+                                "Battery chip"
+                            ],
+                            "desc": "Open the device flyout: Mute and Wi‑Fi toggle during stream."
+                        },
+                        {
+                            "keys": [
+                                "Device mute"
+                            ],
+                            "desc": "Mute or unmute PC audio for a specific device (sidebar or dock chip)."
+                        }
+                    ]
+                },
+                {
+                    "title": "Video session",
+                    "items": [
+                        {
+                            "keys": [
+                                "Scroll wheel"
+                            ],
+                            "desc": "Zoom the video stream in/out (pointer over the canvas)."
+                        },
+                        {
+                            "keys": [
+                                "USB unplugged"
+                            ],
+                            "desc": "Offer to continue the session over Wi‑Fi or disconnect."
+                        },
+                        {
+                            "keys": [
+                                "USB plugged"
+                            ],
+                            "desc": "Offer to switch the session back to USB or stay on Wi‑Fi."
+                        }
                     ]
                 }
             ]

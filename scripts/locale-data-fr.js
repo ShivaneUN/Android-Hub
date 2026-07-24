@@ -158,20 +158,28 @@ module.exports = {
         maintCacheHint: "Fichiers temporaires",
         clearHistory: "Effacer l'historique",
         autoOptions: "Options auto",
-        aboutTagline: "Un hub pour connecter, lancer et contrôler vos tablettes Android.",
+        aboutTagline: "Un hub pour connecter, lancer et contrôler vos tablettes Android — USB, Wi‑Fi, mirroring et multi-sessions.",
         aboutFeaturesTitle: "Ce que fait le Hub",
         aboutFeat1Title: "Connexion USB / Wi‑Fi",
-        aboutFeat1Desc: "Détection des appareils, renommage, statut en direct et bascule USB ↔ Wi‑Fi.",
+        aboutFeat1Desc: "Détection live, renommage, couleurs et toggle ADB Wi‑Fi. En mirroring, le passage USB ↔ Wi‑Fi ne met à jour que l’identifiant de connexion : le flux se poursuit sans coupure.",
         aboutFeat2Title: "Nouvelle instance",
-        aboutFeat2Desc: "Lancez une app en display virtuel dédié, y compris clones et profils Android.",
-        aboutFeat3Title: "Mirroring & contrôle",
-        aboutFeat3Desc: "Stream scrcpy avec presets résolution, DPI, FPS, bitrate et codec par session.",
-        aboutFeat4Title: "Dock & batteries",
-        aboutFeat4Desc: "Surveillez charge, Muet et Wi‑Fi depuis le dock flottant pendant le stream.",
-        aboutFeat5Title: "Historique & récents",
-        aboutFeat5Desc: "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
-        aboutFeat6Title: "Maintenance",
-        aboutFeat6Desc: "Nettoyage logs, cache et historique, manuel ou automatique au démarrage."
+        aboutFeat2Desc: "Lancez une app en display virtuel (clones & profils), avec sélection appareil / apps et récents. Un changement USB ↔ Wi‑Fi relance la session pour rattacher le display.",
+        aboutFeat3Title: "Mirroring & presets",
+        aboutFeat3Desc: "Stream scrcpy contrôlable, avec presets résolution, DPI, FPS, bitrate, GOP et codec. En mirroring, USB ↔ Wi‑Fi reste transparent : seul l’ID de connexion est rafraîchi.",
+        aboutFeat4Title: "Mode Stream Deck",
+        aboutFeat4Desc: "Affichez plusieurs sessions en grille, focus ou duo, avec tuile active pour le contrôle.",
+        aboutFeat5Title: "Dock & batteries",
+        aboutFeat5Desc: "Dock flottant : écran, portrait, audio, Accueil. Batteries + Muet / Wi‑Fi par appareil pendant le stream.",
+        aboutFeat6Title: "Interface classique / Nouvelle",
+        aboutFeat6Desc: "Rail classique, ou style tablette plein écran avec Accueil enrichi (appareils, récents, choix d’UI).",
+        aboutFeat7Title: "Historique & récents",
+        aboutFeat7Desc: "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
+        aboutFeat8Title: "Aide & guides",
+        aboutFeat8Desc: "Raccourcis, guide mirroring pas à pas, connexion Wi‑Fi et dépannage intégrés.",
+        aboutFeat9Title: "Maintenance",
+        aboutFeat9Desc: "Nettoyage logs, cache et historique — manuel ou automatique au démarrage.",
+        aboutFeat10Title: "Mises à jour",
+        aboutFeat10Desc: "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos."
     },
     devicePanel: {
         wifiEnabled: "WiFi activé",
@@ -421,77 +429,297 @@ module.exports = {
             intro: "Raccourcis et actions du Hub. Inactifs dans un champ texte. Clic droit sur un appareil ou un onglet de session pour le menu contextuel.",
             groups: [
                 {
-                    title: "Navigation",
-                    items: [
-                        { keys: ["Ctrl", "Tab"], desc: "Passer à l'onglet session suivant." },
-                        { keys: ["Ctrl", "Shift", "Tab"], desc: "Revenir à l'onglet session précédent." },
-                        { keys: ["Ctrl", "B"], desc: "Afficher ou masquer la barre latérale." },
-                        { keys: ["Ctrl", "Shift", "L"], desc: "Changer le mode d'affichage Stream Deck (grille, focus, duo). Actif uniquement quand le mode Stream Deck est activé." }
+                    "title": "Navigation",
+                    "items": [
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Tab"
+                            ],
+                            "desc": "Passer à l'onglet session suivant."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Shift",
+                                "Tab"
+                            ],
+                            "desc": "Revenir à l'onglet session précédent."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "B"
+                            ],
+                            "desc": "Afficher ou masquer la barre latérale."
+                        },
+                        {
+                            "keys": [
+                                "Ctrl",
+                                "Shift",
+                                "L"
+                            ],
+                            "desc": "Changer le mode d'affichage Stream Deck (grille, focus, duo). Actif uniquement quand le mode Stream Deck est activé."
+                        }
                     ]
                 },
                 {
-                    title: "Mode Stream Deck",
-                    items: [
-                        { keys: ["Mode Stream Deck"], desc: "Activer ou désactiver l'affichage multi-appareils depuis la barre latérale (désactivé par défaut au démarrage)." },
-                        { keys: ["Grille"], desc: "Afficher toutes les sessions actives en grille — chaque tuile montre le flux d'un appareil ou d'une instance." },
-                        { keys: ["Focus"], desc: "Grande vue sur un appareil principal et bande latérale des autres sessions. Cliquez une mini-tuile pour changer le focus." },
-                        { keys: ["Duo"], desc: "Afficher deux appareils côte à côte. Active le mode duo et ouvre le menu de sélection sous les boutons de layout." },
-                        { keys: ["Clic Duo"], desc: "Rouvrir ou fermer le menu de sélection Duo lorsque le mode duo est déjà actif." },
-                        { keys: ["Clic extérieur"], desc: "Fermer le menu de sélection Duo." },
-                        { keys: ["Clic tuile"], desc: "Activer la session pour le contrôle souris/clavier (bordure verte sur la tuile active)." }
+                    "title": "Mode Stream Deck",
+                    "items": [
+                        {
+                            "keys": [
+                                "Mode Stream Deck"
+                            ],
+                            "desc": "Activer ou désactiver l'affichage multi-appareils depuis la barre latérale (désactivé par défaut au démarrage)."
+                        },
+                        {
+                            "keys": [
+                                "Grille"
+                            ],
+                            "desc": "Afficher toutes les sessions actives en grille — chaque tuile montre le flux d'un appareil ou d'une instance."
+                        },
+                        {
+                            "keys": [
+                                "Focus"
+                            ],
+                            "desc": "Grande vue sur un appareil principal et bande latérale des autres sessions. Cliquez une mini-tuile pour changer le focus."
+                        },
+                        {
+                            "keys": [
+                                "Duo"
+                            ],
+                            "desc": "Afficher deux appareils côte à côte. Active le mode duo et ouvre le menu de sélection sous les boutons de layout."
+                        },
+                        {
+                            "keys": [
+                                "Clic Duo"
+                            ],
+                            "desc": "Rouvrir ou fermer le menu de sélection Duo lorsque le mode duo est déjà actif."
+                        },
+                        {
+                            "keys": [
+                                "Clic extérieur"
+                            ],
+                            "desc": "Fermer le menu de sélection Duo."
+                        },
+                        {
+                            "keys": [
+                                "Clic tuile"
+                            ],
+                            "desc": "Activer la session pour le contrôle souris/clavier (bordure verte sur la tuile active)."
+                        }
                     ]
                 },
                 {
-                    title: "Barre latérale — Contrôles globaux",
-                    items: [
-                        { keys: ["Écran"], desc: "Éteindre ou rallumer l'écran de l'appareil de la session mirroring active." },
-                        { keys: ["Portrait"], desc: "Basculer l'affichage vidéo en mode portrait pour la session active." },
-                        { keys: ["Audio"], desc: "Couper ou réactiver l'audio de toutes les sessions en une fois." },
-                        { keys: ["Langue"], desc: "Basculer l'interface entre français et anglais." }
+                    "title": "Barre latérale — Contrôles globaux",
+                    "items": [
+                        {
+                            "keys": [
+                                "Écran"
+                            ],
+                            "desc": "Éteindre ou rallumer l'écran de l'appareil de la session mirroring active."
+                        },
+                        {
+                            "keys": [
+                                "Portrait"
+                            ],
+                            "desc": "Basculer l'affichage vidéo en mode portrait pour la session active."
+                        },
+                        {
+                            "keys": [
+                                "Audio"
+                            ],
+                            "desc": "Couper ou réactiver l'audio de toutes les sessions en une fois."
+                        },
+                        {
+                            "keys": [
+                                "Langue"
+                            ],
+                            "desc": "Basculer l'interface entre français et anglais."
+                        },
+                        {
+                            "keys": [
+                                "Muet (appareil)"
+                            ],
+                            "desc": "Couper l’audio PC pour un appareil depuis la carte Appareils connectés."
+                        }
                     ]
                 },
                 {
-                    title: "Contrôle du flux (session active)",
-                    items: [
-                        { keys: ["Clic"], desc: "Taper / cliquer sur l'écran Android (canvas vidéo focalisé)." },
-                        { keys: ["Clic droit"], desc: "Touche Retour Android." }
+                    "title": "Contrôle du flux (session active)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Clic"
+                            ],
+                            "desc": "Taper / cliquer sur l'écran Android (canvas vidéo focalisé)."
+                        },
+                        {
+                            "keys": [
+                                "Clic droit"
+                            ],
+                            "desc": "Touche Retour Android."
+                        }
                     ]
                 },
                 {
-                    title: "Nouvelle instance",
-                    items: [
-                        { keys: ["Double-clic"], desc: "Relancer une application depuis la section Historique." }
+                    "title": "Nouvelle instance",
+                    "items": [
+                        {
+                            "keys": [
+                                "Double-clic"
+                            ],
+                            "desc": "Relancer une application depuis la section Historique."
+                        }
                     ]
                 },
                 {
-                    title: "Dialogues",
-                    items: [
-                        { keys: ["Entrée"], desc: "Valider le renommage d'une session ou d'un appareil." },
-                        { keys: ["Échap"], desc: "Annuler le renommage." }
+                    "title": "Dialogues",
+                    "items": [
+                        {
+                            "keys": [
+                                "Entrée"
+                            ],
+                            "desc": "Valider le renommage d'une session ou d'un appareil."
+                        },
+                        {
+                            "keys": [
+                                "Échap"
+                            ],
+                            "desc": "Annuler le renommage."
+                        }
                     ]
                 },
                 {
-                    title: "Appareils connectés (sidebar)",
-                    items: [
-                        { keys: ["Double-clic"], desc: "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)." },
-                        { keys: ["Toggle WiFi"], desc: "Configurer ou activer la connexion ADB WiFi pour l'appareil (voir l'onglet Connexion WiFi de l'aide)." }
+                    "title": "Appareils connectés (sidebar)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Double-clic"
+                            ],
+                            "desc": "Lancer le mirroring de l'écran complet pour l'appareil (équivalent au bouton Mirroring)."
+                        },
+                        {
+                            "keys": [
+                                "Toggle WiFi"
+                            ],
+                            "desc": "Configurer ou activer la connexion ADB WiFi pour l'appareil (voir l'onglet Connexion WiFi de l'aide)."
+                        }
                     ]
                 },
                 {
-                    title: "Clic droit — Appareils connectés (sidebar)",
-                    items: [
-                        { keys: ["Renommer"], desc: "Ouvrir le dialogue pour personnaliser le nom affiché dans la liste des appareils." },
-                        { keys: ["Réinitialiser le nom"], desc: "Revenir au nom d'origine (visible uniquement si l'appareil a été renommé)." },
-                        { keys: ["Couleur → Auto"], desc: "Attribuer automatiquement une couleur distincte à chaque appareil connecté." },
-                        { keys: ["Couleur → teinte"], desc: "Choisir une couleur fixe (Rouge, Orange, Jaune, Vert, Turquoise, Bleu, Violet, Rose, Marron, Ardoise) pour identifier l'appareil dans la sidebar et les onglets." }
+                    "title": "Clic droit — Appareils connectés (sidebar)",
+                    "items": [
+                        {
+                            "keys": [
+                                "Renommer"
+                            ],
+                            "desc": "Ouvrir le dialogue pour personnaliser le nom affiché dans la liste des appareils."
+                        },
+                        {
+                            "keys": [
+                                "Réinitialiser le nom"
+                            ],
+                            "desc": "Revenir au nom d'origine (visible uniquement si l'appareil a été renommé)."
+                        },
+                        {
+                            "keys": [
+                                "Couleur → Auto"
+                            ],
+                            "desc": "Attribuer automatiquement une couleur distincte à chaque appareil connecté."
+                        },
+                        {
+                            "keys": [
+                                "Couleur → teinte"
+                            ],
+                            "desc": "Choisir une couleur fixe (Rouge, Orange, Jaune, Vert, Turquoise, Bleu, Violet, Rose, Marron, Ardoise) pour identifier l'appareil dans la sidebar et les onglets."
+                        }
                     ]
                 },
                 {
-                    title: "Clic droit — Onglets de session",
-                    items: [
-                        { keys: ["Renommer"], desc: "Personnaliser le libellé de l'onglet (mirroring ou instance d'application)." },
-                        { keys: ["Réinitialiser le nom"], desc: "Restaurer le libellé d'origine (visible uniquement si l'onglet a été renommé)." },
-                        { keys: ["Fermer"], desc: "Fermer la session vidéo et retirer l'onglet." }
+                    "title": "Clic droit — Onglets de session",
+                    "items": [
+                        {
+                            "keys": [
+                                "Renommer"
+                            ],
+                            "desc": "Personnaliser le libellé de l'onglet (mirroring ou instance d'application)."
+                        },
+                        {
+                            "keys": [
+                                "Réinitialiser le nom"
+                            ],
+                            "desc": "Restaurer le libellé d'origine (visible uniquement si l'onglet a été renommé)."
+                        },
+                        {
+                            "keys": [
+                                "Fermer"
+                            ],
+                            "desc": "Fermer la session vidéo et retirer l'onglet."
+                        }
+                    ]
+                },
+                {
+                    "title": "Interface & Accueil",
+                    "items": [
+                        {
+                            "keys": [
+                                "Interface classique"
+                            ],
+                            "desc": "Afficher le rail complet (vue classique)."
+                        },
+                        {
+                            "keys": [
+                                "Nouvelle interface"
+                            ],
+                            "desc": "Passer au style tablette plein écran avec Accueil enrichi."
+                        },
+                        {
+                            "keys": [
+                                "Accueil"
+                            ],
+                            "desc": "Revenir à la vue Accueil (appareils, récents, choix d’interface) depuis le dock."
+                        }
+                    ]
+                },
+                {
+                    "title": "Dock batteries",
+                    "items": [
+                        {
+                            "keys": [
+                                "Chip batterie"
+                            ],
+                            "desc": "Ouvrir le flyout appareil : Muet et toggle Wi‑Fi pendant le stream."
+                        },
+                        {
+                            "keys": [
+                                "Muet appareil"
+                            ],
+                            "desc": "Couper ou réactiver l’audio PC pour un appareil précis (sidebar ou chip dock)."
+                        }
+                    ]
+                },
+                {
+                    "title": "Session vidéo",
+                    "items": [
+                        {
+                            "keys": [
+                                "Molette"
+                            ],
+                            "desc": "Zoomer / dézoomer le flux vidéo (pointeur sur le canvas)."
+                        },
+                        {
+                            "keys": [
+                                "USB débranché"
+                            ],
+                            "desc": "Proposer de continuer la session en Wi‑Fi ou de déconnecter."
+                        },
+                        {
+                            "keys": [
+                                "USB branché"
+                            ],
+                            "desc": "Proposer de repasser la session en USB ou de rester en Wi‑Fi."
+                        }
                     ]
                 }
             ]
