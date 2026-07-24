@@ -129,15 +129,16 @@ function scheduleResyncWifiTogglesFromSessionState(data = {}) {
     }, 150);
 }
 
-/** deviceId → prompt USB unplug visible (évite les doublons topologie). */
+/** deviceId → prompt USB unplug / replug visible (évite les doublons topologie). */
 const usbUnplugPromptByDevice = new Map();
+const usbReplugPromptByDevice = new Map();
 
-function isUsbUnplugPromptVisible() {
-    return usbUnplugPromptByDevice.size > 0;
+function isUsbTransportPromptVisible() {
+    return usbUnplugPromptByDevice.size > 0 || usbReplugPromptByDevice.size > 0;
 }
 
 function syncUsbUnplugPromptOverlayFlag() {
-    window.__hubUsbUnplugPromptOpen = isUsbUnplugPromptVisible();
+    window.__hubUsbUnplugPromptOpen = isUsbTransportPromptVisible();
 }
 
 async function suppressFluxForUsbUnplugPrompt() {
@@ -151,7 +152,7 @@ async function suppressFluxForUsbUnplugPrompt() {
 
 async function restoreFluxAfterUsbUnplugPrompt() {
     syncUsbUnplugPromptOverlayFlag();
-    if (isUsbUnplugPromptVisible()) {
+    if (isUsbTransportPromptVisible()) {
         await suppressFluxForUsbUnplugPrompt();
         return;
     }
@@ -178,6 +179,18 @@ function dismissUsbUnplugPrompt(deviceId, { restoreFlux = true } = {}) {
     }
 }
 
+function dismissUsbReplugPrompt(deviceId, { restoreFlux = true } = {}) {
+    if (!deviceId) return;
+    const el = usbReplugPromptByDevice.get(deviceId);
+    if (el?.parentNode) el.parentNode.removeChild(el);
+    usbReplugPromptByDevice.delete(deviceId);
+    if (restoreFlux) {
+        void restoreFluxAfterUsbUnplugPrompt();
+    } else {
+        syncUsbUnplugPromptOverlayFlag();
+    }
+}
+
 function ensureUsbUnplugPromptHost() {
     let host = document.getElementById("usb-unplug-prompt-host");
     if (host) return host;
@@ -190,6 +203,7 @@ function ensureUsbUnplugPromptHost() {
 
 function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
     if (!deviceId) return;
+    dismissUsbReplugPrompt(deviceId, { restoreFlux: false });
     dismissUsbUnplugPrompt(deviceId, { restoreFlux: false });
 
     const host = ensureUsbUnplugPromptHost();
@@ -219,6 +233,42 @@ function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
 
     host.appendChild(card);
     usbUnplugPromptByDevice.set(deviceId, card);
+    void suppressFluxForUsbUnplugPrompt();
+}
+
+/** 4d — WiFi + USB branché : Passer en USB / Rester en WiFi (avant basculement). */
+function showUsbReplugPrompt({ deviceId, deviceName, usbSerial } = {}) {
+    if (!deviceId) return;
+    dismissUsbUnplugPrompt(deviceId, { restoreFlux: false });
+    dismissUsbReplugPrompt(deviceId, { restoreFlux: false });
+
+    const host = ensureUsbUnplugPromptHost();
+    const card = document.createElement("div");
+    card.className = "usb-unplug-prompt";
+    card.dataset.deviceId = deviceId;
+    card.innerHTML = `
+        <div class="usb-unplug-prompt-title">${dt("devicePanel.usbRepluggedTitle")}</div>
+        <div class="usb-unplug-prompt-name">${deviceName || deviceId}</div>
+        <p class="usb-unplug-prompt-body">${dt("devicePanel.usbRepluggedBody")}</p>
+        <div class="usb-unplug-prompt-actions">
+            <button type="button" class="usb-unplug-prompt-btn primary" data-action="switch-usb">
+                ${dt("devicePanel.switchToUsb")}
+            </button>
+            <button type="button" class="usb-unplug-prompt-btn" data-action="stay-wifi">
+                ${dt("devicePanel.stayOnWifi")}
+            </button>
+        </div>
+    `;
+
+    card.querySelector('[data-action="switch-usb"]')?.addEventListener("click", () => {
+        void handleUsbReplugSwitchToUsb(deviceId, card, usbSerial);
+    });
+    card.querySelector('[data-action="stay-wifi"]')?.addEventListener("click", () => {
+        void handleUsbReplugStayOnWifi(deviceId, card);
+    });
+
+    host.appendChild(card);
+    usbReplugPromptByDevice.set(deviceId, card);
     void suppressFluxForUsbUnplugPrompt();
 }
 
@@ -274,6 +324,58 @@ async function handleUsbUnplugPlayOnDevice(deviceId, card) {
                 await window.goToLaunchHome?.();
             }
             window.showHubToast?.(dt("devicePanel.disconnectedToast"), "info", 2800);
+            await resyncWifiTogglesFromLiveDevices(deviceId);
+            return;
+        }
+        window.showHubToast?.(result?.error || dt("devicePanel.wifiError"), "error", 4500);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    } catch (err) {
+        window.showHubToast?.(err.message || dt("devicePanel.wifiError"), "error", 4500);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    }
+}
+
+async function handleUsbReplugSwitchToUsb(deviceId, card, usbSerial = null) {
+    if (!deviceId || !window.wifiAPI?.switchToUsb) return;
+    const buttons = card?.querySelectorAll("button");
+    buttons?.forEach((btn) => { btn.disabled = true; });
+
+    window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
+        timeoutMs: 120000,
+        timeoutMessage: dt("devicePanel.switchFailed"),
+        errorAutoCloseMs: 2800
+    });
+
+    try {
+        const result = await window.wifiAPI.switchToUsb({ deviceId, usbSerial });
+        dismissUsbReplugPrompt(deviceId);
+        if (result?.success) {
+            window.hideHubLoadingOverlay?.();
+            window.showHubToast?.(dt("devicePanel.switchedToUsb"), "success", 2800);
+            await resyncWifiTogglesFromLiveDevices(deviceId);
+            return;
+        }
+        window.showHubLoadingOverlayError?.(
+            result?.error || dt("devicePanel.switchFailed"),
+            2800
+        );
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    } catch (err) {
+        window.showHubLoadingOverlayError?.(err.message || dt("devicePanel.wifiError"), 2800);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    }
+}
+
+async function handleUsbReplugStayOnWifi(deviceId, card) {
+    if (!deviceId || !window.wifiAPI?.stayOnWifi) return;
+    const buttons = card?.querySelectorAll("button");
+    buttons?.forEach((btn) => { btn.disabled = true; });
+
+    try {
+        const result = await window.wifiAPI.stayOnWifi({ deviceId });
+        dismissUsbReplugPrompt(deviceId);
+        if (result?.success) {
+            window.showHubToast?.(dt("devicePanel.stayedOnWifi"), "info", 2400);
             await resyncWifiTogglesFromLiveDevices(deviceId);
             return;
         }
@@ -717,18 +819,24 @@ function initDevicePanel() {
         });
     }
 
-    // 4c — USB débranché + sessions actives → choix Continuer WiFi / Jouer sur l'appareil.
+    // 4c — USB débranché + sessions actives → choix Continuer WiFi / Déconnecter.
     if (window.wifiAPI?.onUsbUnplugged) {
         window.wifiAPI.onUsbUnplugged((payload = {}) => {
             showUsbUnplugPrompt(payload);
         });
     }
 
-    // 4d — USB revenu → retirer le prompt 4c ; forcer resync toggle (pas seulement le label).
+    // 4d — USB revenu : retirer le prompt 4c ; si sessions WiFi → choix Passer USB / Rester WiFi.
     if (window.wifiAPI?.onUsbRegained) {
         window.wifiAPI.onUsbRegained(({ deviceId } = {}) => {
             if (deviceId) dismissUsbUnplugPrompt(deviceId);
             void resyncWifiTogglesFromLiveDevices(deviceId || null);
+        });
+    }
+
+    if (window.wifiAPI?.onUsbReplugChoice) {
+        window.wifiAPI.onUsbReplugChoice((payload = {}) => {
+            showUsbReplugPrompt(payload);
         });
     }
 }

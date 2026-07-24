@@ -204,8 +204,15 @@ contextBridge.exposeInMainWorld("wifiAPI", {
         ipcRenderer.on("transport:usb-regained", handler);
         return () => ipcRenderer.removeListener("transport:usb-regained", handler);
     },
+    onUsbReplugChoice: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("transport:usb-replug-choice", handler);
+        return () => ipcRenderer.removeListener("transport:usb-replug-choice", handler);
+    },
     continueOnWifi: (payload) => ipcRenderer.invoke("wifi:continue-on-wifi", payload),
-    playOnDevice: (payload) => ipcRenderer.invoke("wifi:play-on-device", payload)
+    playOnDevice: (payload) => ipcRenderer.invoke("wifi:play-on-device", payload),
+    stayOnWifi: (payload) => ipcRenderer.invoke("wifi:stay-on-wifi", payload),
+    switchToUsb: (payload) => ipcRenderer.invoke("wifi:switch-to-usb", payload)
 });
 
 contextBridge.exposeInMainWorld("launchHistoryAPI", {

@@ -205,6 +205,12 @@
     "continueWifi": "Continue on WiFi",
     "playOnDevice": "Disconnect",
     "disconnectedToast": "Session disconnected",
+    "usbRepluggedTitle": "USB connected",
+    "usbRepluggedBody": "Switch the session to USB, or stay on WiFi?",
+    "switchToUsb": "Switch to USB",
+    "stayOnWifi": "Stay on WiFi",
+    "switchedToUsb": "Connected over USB",
+    "stayedOnWifi": "Session left on WiFi",
     "errors": {
       "tcpip": "Unable to enable WiFi mode on this device",
       "ip": "IP address not found — make sure WiFi is enabled on the phone",

@@ -205,6 +205,12 @@
     "continueWifi": "Continuer en WiFi",
     "playOnDevice": "Déconnecter",
     "disconnectedToast": "Session déconnectée",
+    "usbRepluggedTitle": "USB branché",
+    "usbRepluggedBody": "Passer la session en USB, ou rester en WiFi ?",
+    "switchToUsb": "Passer en USB",
+    "stayOnWifi": "Rester en WiFi",
+    "switchedToUsb": "Connecté en USB",
+    "stayedOnWifi": "Session laissée en WiFi",
     "errors": {
       "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
       "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
