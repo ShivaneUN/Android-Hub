@@ -2698,15 +2698,46 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     global.switchTypeASessionsForDevice = switchTypeASessionsForDevice;
 
     /**
-     * Ferme toutes les sessions Hub (Type A + B) pour un device — choix « Jouer sur l'appareil » (4c).
+     * Ferme toutes les sessions Hub (Type A + B) pour un device — choix « Déconnecter » (4c).
      */
     async function closeHubSessionsForDevice(deviceId) {
         if (!deviceId) return { success: false, closed: 0 };
 
+        const aliases = new Set([String(deviceId)]);
+        try {
+            const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
+            if (cfg?.usbSerialHint) aliases.add(String(cfg.usbSerialHint));
+            if (cfg?.ip) {
+                const wifiSerial = global.wifiAdbService?.buildWifiSerial?.(
+                    cfg.ip,
+                    cfg.port || 5555
+                );
+                if (wifiSerial) aliases.add(String(wifiSerial));
+            }
+            const unified = await global.deviceRegistry?.listUnifiedDevices?.({ forceFresh: true });
+            const entry = Array.isArray(unified)
+                ? unified.find((d) => d?.deviceId === deviceId)
+                : null;
+            if (entry?.serial) aliases.add(String(entry.serial));
+            if (entry?.usbSerial) aliases.add(String(entry.usbSerial));
+            if (entry?.wifiSerial) aliases.add(String(entry.wifiSerial));
+        } catch (_err) {
+            // noop — matching best-effort
+        }
+
+        const matchesDevice = (summary) => {
+            if (!summary) return false;
+            if (aliases.has(summary.stableDeviceId) || aliases.has(summary.deviceId)) return true;
+            if (summary.serial && aliases.has(summary.serial)) return true;
+            const client = videoClients[summary.sessionId];
+            const shell = client?.shellSerial || client?.serial || null;
+            return Boolean(shell && aliases.has(String(shell)));
+        };
+
         let closed = 0;
         const sessions = global.browserViewManager?.getAllSessions?.() || [];
         for (const summary of sessions) {
-            if (summary?.stableDeviceId !== deviceId && summary?.deviceId !== deviceId) continue;
+            if (!matchesDevice(summary)) continue;
             const sessionId = summary.sessionId;
             if (!sessionId) continue;
             try {
@@ -2723,7 +2754,6 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             const isTypeB = sessionId.startsWith("new-instance-") || entry?.type === "B";
             if (global.browserViewManager?.closeSessionView?.(sessionId)) {
                 global.sessionStreamRegistry?.remove?.(sessionId);
-                global.streamParamsManager?.notifySessionListChanged?.();
                 closed += 1;
             }
             if (isTypeB && newInstanceManager) {
@@ -2742,7 +2772,12 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         // Sessions Type B encore dans le manager sans vue listée.
         for (const summary of newInstanceManager?.listNewInstanceSessions?.() || []) {
             if (summary.state === "stopped" || summary.state === "stopping") continue;
-            if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+            if (
+                !aliases.has(summary.stableDeviceId)
+                && !aliases.has(summary.serial)
+            ) {
+                continue;
+            }
             try {
                 await newInstanceManager.stopNewInstanceSession(summary.sessionId);
                 closed += 1;
@@ -2751,7 +2786,11 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             }
         }
 
-        console.log(`[switchSessionTransport] closeHubSessionsForDevice device=${deviceId} closed≈${closed}`);
+        global.streamParamsManager?.notifySessionListChanged?.();
+        console.log(
+            `[switchSessionTransport] closeHubSessionsForDevice device=${deviceId} `
+            + `aliases=${[...aliases].join(",")} closed≈${closed}`
+        );
         return { success: true, closed };
     }
 

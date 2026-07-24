@@ -168,29 +168,43 @@ function notifyTransportUsbRegained(getMainWindow, payload) {
     }
 }
 
-function deviceHasActiveHubSessions(getNewInstanceManager, deviceId) {
-    if (!deviceId) return false;
+function deviceHasActiveHubSessions(getNewInstanceManager, deviceId, aliases = []) {
+    if (!deviceId && (!aliases || aliases.length === 0)) return false;
+
+    const ids = new Set(
+        [deviceId, ...(Array.isArray(aliases) ? aliases : [])]
+            .map((value) => (value == null ? "" : String(value).trim()))
+            .filter(Boolean)
+    );
+    if (ids.size === 0) return false;
 
     const sessions = global.browserViewManager?.getAllSessions?.() || [];
     for (const summary of sessions) {
-        if (summary?.stableDeviceId === deviceId || summary?.deviceId === deviceId) {
+        if (
+            ids.has(summary?.stableDeviceId)
+            || ids.has(summary?.deviceId)
+            || ids.has(summary?.serial)
+            || ids.has(summary?.sessionId)
+        ) {
             return true;
         }
     }
 
-    const expectedWifiSerial = (() => {
-        const cfg = global.wifiDevicesManager?.getByDeviceId?.(deviceId);
-        if (!cfg?.ip) return null;
-        return global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555) || null;
-    })();
+    const expectedWifiSerials = new Set();
+    for (const id of ids) {
+        const cfg = global.wifiDevicesManager?.getByDeviceId?.(id);
+        if (!cfg?.ip) continue;
+        const serial = global.wifiAdbService?.buildWifiSerial?.(cfg.ip, cfg.port || 5555);
+        if (serial) expectedWifiSerials.add(serial);
+    }
 
     const manager = typeof getNewInstanceManager === "function" ? getNewInstanceManager() : null;
     for (const summary of manager?.listNewInstanceSessions?.() || []) {
         if (summary.state === "stopped" || summary.state === "stopping") continue;
         if (
-            summary.stableDeviceId === deviceId
-            || summary.serial === deviceId
-            || (expectedWifiSerial && summary.serial === expectedWifiSerial)
+            ids.has(summary.stableDeviceId)
+            || ids.has(summary.serial)
+            || expectedWifiSerials.has(summary.serial)
         ) {
             return true;
         }
@@ -268,40 +282,63 @@ async function switchDeviceSessionsToWifi(deps, deviceId, newSerial) {
 
 /** USB débranché / rebranché — 4c prompt, 4d bascule silencieuse vers USB. */
 async function handleTopologyChangeForWifiSessions(deps, unified, previousUnified = []) {
-    if (!Array.isArray(unified) || unified.length === 0) return;
+    if (!Array.isArray(unified)) return;
 
-    const prevById = new Map(
-        (previousUnified || []).map((d) => [d.deviceId, d])
+    const prevList = Array.isArray(previousUnified) ? previousUnified : [];
+    const prevById = new Map(prevList.map((d) => [d.deviceId, d]));
+    const currById = new Map(
+        (unified || []).filter((d) => d?.deviceId).map((d) => [d.deviceId, d])
     );
     const registry = typeof deps.getDeviceRegistry === "function"
         ? deps.getDeviceRegistry()
         : null;
 
+    const sessionAliasesFor = (prev, curr) => ([
+        prev?.deviceId,
+        prev?.serial,
+        prev?.usbSerial,
+        prev?.wifiSerial,
+        curr?.deviceId,
+        curr?.serial,
+        curr?.usbSerial,
+        curr?.wifiSerial
+    ]);
+
+    // 4c — partir du snapshot précédent : un device peut disparaître de unified
+    // (USB parti, WiFi pas encore / pas configuré) et on doit quand même ouvrir l'overlay.
+    for (const prev of prevList) {
+        if (!prev?.deviceId || !prev.usbAvailable) continue;
+        const curr = currById.get(prev.deviceId) || null;
+        const usbLost = !curr || !curr.usbAvailable;
+        if (!usbLost) continue;
+
+        const aliases = sessionAliasesFor(prev, curr);
+        if (!deviceHasActiveHubSessions(deps.getNewInstanceManager, prev.deviceId, aliases)) {
+            console.log(
+                `[wifi][topology] USB débranché device=${prev.deviceId} — aucune session Hub, ignore`
+            );
+            continue;
+        }
+
+        const device = curr || prev;
+        console.log(
+            `[wifi][topology] USB débranché device=${prev.deviceId} — prompt Continuer WiFi / Jouer appareil`
+            + ` wifiEnabled=${Boolean(device.wifiEnabled)} wifiAvailable=${Boolean(device.wifiAvailable)}`
+        );
+        notifyTransportUsbUnplugged(deps.getMainWindow, {
+            deviceId: prev.deviceId,
+            deviceName: device.name || prev.name || prev.deviceId,
+            wifiSerial: device.wifiSerial || prev.wifiSerial || device.serial || null
+        });
+    }
+
+    if (!Array.isArray(unified) || unified.length === 0) return;
+
     for (const device of unified) {
         if (!device?.deviceId) continue;
 
         const prev = prevById.get(device.deviceId);
-        const usbLost = Boolean(prev?.usbAvailable) && !device.usbAvailable;
         const usbRegained = Boolean(!prev?.usbAvailable) && Boolean(device.usbAvailable);
-
-        // 4c — USB perdu, WiFi armé+online, sessions Hub → prompt.
-        if (usbLost && device.wifiEnabled && device.wifiAvailable) {
-            if (!deviceHasActiveHubSessions(deps.getNewInstanceManager, device.deviceId)) {
-                console.log(
-                    `[wifi][topology] USB débranché device=${device.deviceId} — aucune session Hub, ignore`
-                );
-            } else {
-                console.log(
-                    `[wifi][topology] USB débranché device=${device.deviceId} — prompt Continuer WiFi / Jouer appareil`
-                );
-                notifyTransportUsbUnplugged(deps.getMainWindow, {
-                    deviceId: device.deviceId,
-                    deviceName: device.name || device.deviceId,
-                    wifiSerial: device.wifiSerial || device.serial || null
-                });
-            }
-            continue;
-        }
 
         // 4d — USB revenu → transport USB (+ switch sessions si shell WiFi).
         // Doit aussi marcher sans aucune session ouverte (toggle / wifiEnabled → USB).
@@ -372,9 +409,11 @@ async function handleTopologyChangeForWifiSessions(deps, unified, previousUnifie
             });
         };
 
+        const aliases = sessionAliasesFor(prev, device);
         const hasSessions = deviceHasActiveHubSessions(
             deps.getNewInstanceManager,
-            device.deviceId
+            device.deviceId,
+            aliases
         );
         const onWifiShell = hasSessions
             && typeof global.deviceHubSessionsOnWifiShell === "function"

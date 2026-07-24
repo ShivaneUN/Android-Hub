@@ -262,7 +262,18 @@ async function handleUsbUnplugPlayOnDevice(deviceId, card) {
         const result = await window.wifiAPI.playOnDevice({ deviceId });
         dismissUsbUnplugPrompt(deviceId);
         if (result?.success) {
-            window.showHubToast?.(dt("devicePanel.playOnDevice"), "info", 2800);
+            try {
+                await window.renderSidebar?.();
+            } catch (_err) {
+                // noop
+            }
+            const sessions = typeof window.sessionAPI?.list === "function"
+                ? await window.sessionAPI.list()
+                : [];
+            if (!Array.isArray(sessions) || sessions.length === 0) {
+                await window.goToLaunchHome?.();
+            }
+            window.showHubToast?.(dt("devicePanel.disconnectedToast"), "info", 2800);
             await resyncWifiTogglesFromLiveDevices(deviceId);
             return;
         }

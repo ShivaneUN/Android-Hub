@@ -201,9 +201,10 @@
     "switchInProgress": "Changement de connexion en cours…",
     "switchFailed": "Échec du changement",
     "usbUnpluggedTitle": "USB débranché",
-    "usbUnpluggedBody": "Continuer la session en WiFi, ou la fermer et jouer sur le téléphone ?",
+    "usbUnpluggedBody": "Continuer la session en WiFi, ou déconnecter ?",
     "continueWifi": "Continuer en WiFi",
-    "playOnDevice": "Jouer sur l'appareil",
+    "playOnDevice": "Déconnecter",
+    "disconnectedToast": "Session déconnectée",
     "errors": {
       "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
       "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",

@@ -201,9 +201,10 @@
     "switchInProgress": "Switching connection…",
     "switchFailed": "Connection switch failed",
     "usbUnpluggedTitle": "USB disconnected",
-    "usbUnpluggedBody": "Keep this session over WiFi, or close it and use the phone?",
+    "usbUnpluggedBody": "Continue the session over WiFi, or disconnect?",
     "continueWifi": "Continue on WiFi",
-    "playOnDevice": "Play on device",
+    "playOnDevice": "Disconnect",
+    "disconnectedToast": "Session disconnected",
     "errors": {
       "tcpip": "Unable to enable WiFi mode on this device",
       "ip": "IP address not found — make sure WiFi is enabled on the phone",

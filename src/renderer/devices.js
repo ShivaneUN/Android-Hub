@@ -24,9 +24,13 @@ function deviceSnapshotKey(device) {
 }
 
 function isWifiTransportWatchActive(devices = currentDevices) {
-    return (devices || []).some((device) =>
+    if ((devices || []).some((device) =>
         Boolean(device?.wifiEnabled || device?.wifiActive || device?.transport === "wifi")
-    );
+    )) {
+        return true;
+    }
+    // Session ouverte : poll rapide pour détecter débranchement USB → overlay 4c.
+    return Boolean(document.querySelector(".content.content--session-view"));
 }
 
 function resolvePollIntervalMs(devices = currentDevices) {
