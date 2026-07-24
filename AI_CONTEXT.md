@@ -14,11 +14,17 @@ Destroy+recreate Type A (`switchSessionTransportTypeA` / `switchTypeASessionsFor
 
 ### Suite 4a — Type B (2026-07-24)
 
-**Statut : implémenté (pas encore commité).**
+**Statut : commité** (`87c7562` + stub `6a301a5`).
 
 `switchSessionTransportTypeB` / `switchTypeBSessionsForDevice` dans `new-instance-manager.js` (attach `display_id`, dispose input, pas de new VD). Branche toggle ON USB absent : Type A + Type B ; overlay `end` seulement si les deux OK.
 
-Plan produit 4a–4d : 4a mécanique A+B (en cours) → 4b sync toggle UI sur état session → 4c USB débranché + infobulle → 4d USB rebranché silencieux.
+### 4b — Toggle UI sync état session (2026-07-24)
+
+**Statut : implémenté (WC).**
+
+Le toggle WiFi se resynchronise depuis l’état réel : `new-instance:state` (begin/endTransportReconnect + `stableDeviceId`) et `transport:reattach-state` end/error → `refreshDevices` + `syncWifiToggleChecked`. Ignore les deviceId en toggle manuel in-flight. Prépare 4c/4d (sources non-clic).
+
+Plan produit : 4a ✅ → 4b (WC) → 4c USB débranché + infobulle → 4d USB rebranché silencieux.
 
 ---
 
@@ -387,6 +393,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf UI — debounce recherche apps** — `AppLauncherSearch.js` + `AppList.js` : 100 ms (`clearTimeout`/`setTimeout`) sur handler `input` uniquement ; filtre/tri/render inchangés ; timer nettoyé dans `destroy()`. Commits `aad55b3`, `28344f4`. LOCK intact.
+- 2026-07-24 — **switchSessionTransport 4b** — Toggle WiFi resync depuis `new-instance:state` + `transport:reattach-state` (pas seulement le clic). `stableDeviceId` dans begin/endTransportReconnect.
 - 2026-07-24 — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` (attach display_id) + branchement toggle ON sans USB avec Type A ; overlay end si A+B OK. Stub closed USB→WiFi déjà neutralisé. 4b/4c/4d à venir.
 - 2026-07-23 — **switchSessionTransport Commit 1/3** — Type A destroy+recreate (`switchSessionTransportTypeA`) + branchement `wifi:toggle` ON sans USB ; overlay phase `end` ; Type B encore mark/TODO/fail ; topologie auto non branchée.
 - 2026-07-23 — **Audit catégorie (b) point 3** — Fix orientation Type B (letterbox) validé par test manuel (portrait plein cadre, Type A non affecté ; sans WiFi : lancement nominal + restart paramètres + garde-fou Type A). Comportement LOCK dans `applyTypeBLaunchOrientation` (`null` lock) + `hasOwnProperty` (`scrcpy-socket.js`). Pas de commit isolé — hunks présents dans `a8940ec` (WIP mélangé).

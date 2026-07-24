@@ -70,6 +70,63 @@ const TRANSPORT_SWITCH_TIMEOUT_MS = 18000;
 /** deviceId → true pendant un wifi:toggle (home + sidebar partagent le lock). */
 const wifiToggleInFlightIds = new Set();
 
+/** Debounce resync toggle depuis l'état session / reattach (4b). */
+let wifiToggleResyncTimer = null;
+
+function wifiToggleCheckedFromDevice(device) {
+    return Boolean(
+        device?.wifiActive
+        ?? (device?.wifiEnabled && device?.transport === "wifi" && device?.connected !== false)
+    );
+}
+
+/**
+ * Resynchronise les toggles WiFi depuis l'état appareil réel (pas seulement le clic).
+ * Ignore les deviceId en cours de toggle manuel pour ne pas écraser l'optimisme UI.
+ */
+async function resyncWifiTogglesFromLiveDevices(preferredDeviceId = null) {
+    if (preferredDeviceId && wifiToggleInFlightIds.has(preferredDeviceId)) {
+        return;
+    }
+
+    try {
+        if (typeof window.refreshDevicesForce === "function") {
+            await window.refreshDevicesForce();
+        } else if (typeof window.refreshDevices === "function") {
+            await window.refreshDevices();
+        }
+    } catch (_err) {
+        // noop — sync visuelle best-effort
+    }
+
+    const devices = typeof window.getCurrentDevices === "function"
+        ? window.getCurrentDevices()
+        : [];
+
+    for (const device of devices) {
+        const deviceId = device?.deviceId || device?.serial;
+        if (!deviceId) continue;
+        if (wifiToggleInFlightIds.has(deviceId)) continue;
+        if (preferredDeviceId && deviceId !== preferredDeviceId
+            && device?.serial !== preferredDeviceId) {
+            continue;
+        }
+        syncWifiToggleChecked(deviceId, wifiToggleCheckedFromDevice(device));
+    }
+}
+
+function scheduleResyncWifiTogglesFromSessionState(data = {}) {
+    const deviceKey = data?.stableDeviceId || data?.serial || null;
+    // Pendant reconnecting le transport n'est pas encore stable — attendre started/stopped/error.
+    if (data?.state === "reconnecting") return;
+
+    if (wifiToggleResyncTimer) clearTimeout(wifiToggleResyncTimer);
+    wifiToggleResyncTimer = setTimeout(() => {
+        wifiToggleResyncTimer = null;
+        void resyncWifiTogglesFromLiveDevices(deviceKey);
+    }, 150);
+}
+
 function setWifiTogglesDisabled(deviceId, disabled) {
     if (!deviceId) return;
     for (const input of document.querySelectorAll(".sidebar-wifi-toggle-input")) {
@@ -167,10 +224,7 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         if (toggleInput) toggleInput.checked = !enabled;
         syncWifiToggleChecked(
             deviceId,
-            Boolean(
-                device?.wifiActive
-                ?? (device?.wifiEnabled && device?.transport === "wifi" && device?.connected !== false)
-            )
+            wifiToggleCheckedFromDevice(device)
         );
         return;
     }
@@ -264,10 +318,7 @@ function buildDeviceCardsHtml(connected) {
             || device.wifiConfigured
             || (device.transport === "wifi" && device.connected !== false)
         );
-        const wifiChecked = Boolean(
-            device.wifiActive
-            ?? (device.wifiEnabled && device.transport === "wifi" && device.connected !== false)
-        );
+        const wifiChecked = wifiToggleCheckedFromDevice(device);
         const wifiBusy = Boolean(device.deviceId && wifiToggleInFlightIds.has(device.deviceId));
         const showUsbBadge = device.usbAvailable && !(wifiChecked && device.transport === "wifi");
         const transportBadge = showUsbBadge && device.transport !== "wifi"
@@ -467,9 +518,9 @@ function initDevicePanel() {
         });
     }
 
-    // Commit 4e — overlay aligné sur la fenêtre réelle du reattach (mark → rebind).
+    // Overlay + resync toggle alignés sur la fenêtre réelle du reattach (4a/4b).
     if (window.wifiAPI?.onTransportReattachState) {
-        window.wifiAPI.onTransportReattachState(({ phase, error } = {}) => {
+        window.wifiAPI.onTransportReattachState(({ phase, error, deviceId } = {}) => {
             if (phase === "start") {
                 window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
                     timeoutMs: 120000,
@@ -480,6 +531,7 @@ function initDevicePanel() {
             }
             if (phase === "end") {
                 window.hideHubLoadingOverlay?.();
+                void resyncWifiTogglesFromLiveDevices(deviceId || null);
                 return;
             }
             if (phase === "error") {
@@ -487,7 +539,15 @@ function initDevicePanel() {
                     error || dt("devicePanel.switchFailed"),
                     2800
                 );
+                void resyncWifiTogglesFromLiveDevices(deviceId || null);
             }
+        });
+    }
+
+    // 4b — le toggle suit l'état session Type B (begin/endTransportReconnect), pas seulement le clic.
+    if (window.electronAPI?.onNewInstanceState) {
+        window.electronAPI.onNewInstanceState((data) => {
+            scheduleResyncWifiTogglesFromSessionState(data);
         });
     }
 }

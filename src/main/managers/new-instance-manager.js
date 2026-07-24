@@ -504,7 +504,13 @@ class NewInstanceManager extends EventEmitter {
             session._preReconnectState = session.state;
         }
         session.state = "reconnecting";
-        this.emit("state", { sessionId: session.sessionId, state: "reconnecting" });
+        this.emit("state", {
+            sessionId: session.sessionId,
+            state: "reconnecting",
+            serial: session.serial,
+            stableDeviceId: session.stableDeviceId || null,
+            packageName: session.packageName
+        });
     }
 
     /**
@@ -535,6 +541,7 @@ class NewInstanceManager extends EventEmitter {
             sessionId: session.sessionId,
             state: session.state,
             serial: session.serial,
+            stableDeviceId: session.stableDeviceId || null,
             packageName: session.packageName
         });
     }

@@ -8,7 +8,7 @@ Dernière mise à jour : 2026-07-23
 
 **Statut : implémenté (pas encore commité — review + test manuel requis).**
 
-`switchSessionTransport` Commit 1/3 : Type A + branchement toggle manuel WiFi ON sans USB. Stub `closed` USB→WiFi neutralisé. Type B ajouté (4a suite, 2026-07-24) : `switchSessionTransportTypeB` + même branchement toggle. Plan 4b sync toggle / 4c infobulle USB perdu / 4d USB rebranché à venir.
+`switchSessionTransport` Commit 1/3 : Type A + branchement toggle manuel WiFi ON sans USB. Stub `closed` USB→WiFi neutralisé. Type B (4a) : `switchSessionTransportTypeB` + même branchement. **4b** : toggle UI resync sur état session / reattach. Plan 4c infobulle USB perdu / 4d USB rebranché à venir.
 
 ---
 
@@ -4972,6 +4972,7 @@ execWithTimeout(command, timeoutMs, options?) // délègue à execPromise + Prom
 
 ---
 
+- **2026-07-24** — **switchSessionTransport 4b** — Toggle WiFi resync depuis état session (`new-instance:state`) + `transport:reattach-state` end/error.
 - **2026-07-24** — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` + toggle ON sans USB (A+B) ; overlay end si les deux OK. Stub closed déjà neutralisé. 4b/4c/4d à venir.
 - **2026-07-23** — **switchSessionTransport Commit 1/3** — Type A destroy+recreate + branchement `wifi:toggle` ON sans USB ; overlay `end` ; Type B mark/TODO/fail ; topologie auto non branchée.
 - **2026-07-23** — **Audit catégorie (b) point 3** — Fix orientation Type B (letterbox) validé (portrait plein cadre, Type A OK ; sans WiFi). LOCK comportement `null` lock + `hasOwnProperty`. Pas de commit isolé — hunks dans `a8940ec`.
