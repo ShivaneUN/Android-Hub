@@ -2658,6 +2658,66 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     global.switchSessionTransportTypeA = switchSessionTransportTypeA;
     global.switchTypeASessionsForDevice = switchTypeASessionsForDevice;
 
+    /**
+     * Ferme toutes les sessions Hub (Type A + B) pour un device — choix « Jouer sur l'appareil » (4c).
+     */
+    async function closeHubSessionsForDevice(deviceId) {
+        if (!deviceId) return { success: false, closed: 0 };
+
+        let closed = 0;
+        const sessions = global.browserViewManager?.getAllSessions?.() || [];
+        for (const summary of sessions) {
+            if (summary?.stableDeviceId !== deviceId && summary?.deviceId !== deviceId) continue;
+            const sessionId = summary.sessionId;
+            if (!sessionId) continue;
+            try {
+                await stopVideoStreamForTab(sessionId);
+            } catch (_err) {
+                // noop
+            }
+            try {
+                await stopSessionAudioPlayback(sessionId);
+            } catch (_err) {
+                // noop
+            }
+            const entry = global.browserViewManager?.getSessionEntry?.(sessionId);
+            const isTypeB = sessionId.startsWith("new-instance-") || entry?.type === "B";
+            if (global.browserViewManager?.closeSessionView?.(sessionId)) {
+                global.sessionStreamRegistry?.remove?.(sessionId);
+                global.streamParamsManager?.notifySessionListChanged?.();
+                closed += 1;
+            }
+            if (isTypeB && newInstanceManager) {
+                try {
+                    await newInstanceManager.stopNewInstanceSession?.(sessionId);
+                } catch (_err) {
+                    try {
+                        await newInstanceManager.ensureAppStoppedForSessionClose?.(sessionId);
+                    } catch (_err2) {
+                        // noop
+                    }
+                }
+            }
+        }
+
+        // Sessions Type B encore dans le manager sans vue listée.
+        for (const summary of newInstanceManager?.listNewInstanceSessions?.() || []) {
+            if (summary.state === "stopped" || summary.state === "stopping") continue;
+            if (summary.stableDeviceId !== deviceId && summary.serial !== deviceId) continue;
+            try {
+                await newInstanceManager.stopNewInstanceSession(summary.sessionId);
+                closed += 1;
+            } catch (_err) {
+                // noop
+            }
+        }
+
+        console.log(`[switchSessionTransport] closeHubSessionsForDevice device=${deviceId} closed≈${closed}`);
+        return { success: true, closed };
+    }
+
+    global.closeHubSessionsForDevice = closeHubSessionsForDevice;
+
     ipcMain.handle("start-video-stream", async (event, { serial, tabId, packageName, options = {} }) => {
         global.launchLatencyTracker?.mark?.({ sessionId: tabId, stage: "streamInvoke" });
         let streamOptions = { ...options };

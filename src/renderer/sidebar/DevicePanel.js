@@ -127,6 +127,111 @@ function scheduleResyncWifiTogglesFromSessionState(data = {}) {
     }, 150);
 }
 
+/** deviceId → prompt USB unplug visible (évite les doublons topologie). */
+const usbUnplugPromptByDevice = new Map();
+
+function dismissUsbUnplugPrompt(deviceId) {
+    if (!deviceId) return;
+    const el = usbUnplugPromptByDevice.get(deviceId);
+    if (el?.parentNode) el.parentNode.removeChild(el);
+    usbUnplugPromptByDevice.delete(deviceId);
+}
+
+function ensureUsbUnplugPromptHost() {
+    let host = document.getElementById("usb-unplug-prompt-host");
+    if (host) return host;
+    host = document.createElement("div");
+    host.id = "usb-unplug-prompt-host";
+    host.className = "usb-unplug-prompt-host";
+    document.body.appendChild(host);
+    return host;
+}
+
+function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
+    if (!deviceId) return;
+    dismissUsbUnplugPrompt(deviceId);
+
+    const host = ensureUsbUnplugPromptHost();
+    const card = document.createElement("div");
+    card.className = "usb-unplug-prompt";
+    card.dataset.deviceId = deviceId;
+    card.innerHTML = `
+        <div class="usb-unplug-prompt-title">${dt("devicePanel.usbUnpluggedTitle")}</div>
+        <div class="usb-unplug-prompt-name">${deviceName || deviceId}</div>
+        <p class="usb-unplug-prompt-body">${dt("devicePanel.usbUnpluggedBody")}</p>
+        <div class="usb-unplug-prompt-actions">
+            <button type="button" class="usb-unplug-prompt-btn primary" data-action="continue-wifi">
+                ${dt("devicePanel.continueWifi")}
+            </button>
+            <button type="button" class="usb-unplug-prompt-btn" data-action="play-on-device">
+                ${dt("devicePanel.playOnDevice")}
+            </button>
+        </div>
+    `;
+
+    card.querySelector('[data-action="continue-wifi"]')?.addEventListener("click", () => {
+        void handleUsbUnplugContinueWifi(deviceId, card);
+    });
+    card.querySelector('[data-action="play-on-device"]')?.addEventListener("click", () => {
+        void handleUsbUnplugPlayOnDevice(deviceId, card);
+    });
+
+    host.appendChild(card);
+    usbUnplugPromptByDevice.set(deviceId, card);
+}
+
+async function handleUsbUnplugContinueWifi(deviceId, card) {
+    if (!deviceId || !window.wifiAPI?.continueOnWifi) return;
+    const buttons = card?.querySelectorAll("button");
+    buttons?.forEach((btn) => { btn.disabled = true; });
+
+    window.showHubLoadingOverlay?.(dt("devicePanel.switchInProgress"), {
+        timeoutMs: 120000,
+        timeoutMessage: dt("devicePanel.switchFailed"),
+        errorAutoCloseMs: 2800
+    });
+
+    try {
+        const result = await window.wifiAPI.continueOnWifi({ deviceId });
+        dismissUsbUnplugPrompt(deviceId);
+        if (result?.success) {
+            window.hideHubLoadingOverlay?.();
+            window.showHubToast?.(dt("devicePanel.wifiConnected"), "success", 2800);
+            await resyncWifiTogglesFromLiveDevices(deviceId);
+            return;
+        }
+        window.showHubLoadingOverlayError?.(
+            result?.error || dt("devicePanel.switchFailed"),
+            2800
+        );
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    } catch (err) {
+        window.showHubLoadingOverlayError?.(err.message || dt("devicePanel.wifiError"), 2800);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    }
+}
+
+async function handleUsbUnplugPlayOnDevice(deviceId, card) {
+    if (!deviceId || !window.wifiAPI?.playOnDevice) return;
+    const buttons = card?.querySelectorAll("button");
+    buttons?.forEach((btn) => { btn.disabled = true; });
+
+    try {
+        const result = await window.wifiAPI.playOnDevice({ deviceId });
+        dismissUsbUnplugPrompt(deviceId);
+        if (result?.success) {
+            window.showHubToast?.(dt("devicePanel.playOnDevice"), "info", 2800);
+            await resyncWifiTogglesFromLiveDevices(deviceId);
+            return;
+        }
+        window.showHubToast?.(result?.error || dt("devicePanel.wifiError"), "error", 4500);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    } catch (err) {
+        window.showHubToast?.(err.message || dt("devicePanel.wifiError"), "error", 4500);
+        buttons?.forEach((btn) => { btn.disabled = false; });
+    }
+}
+
 function setWifiTogglesDisabled(deviceId, disabled) {
     if (!deviceId) return;
     for (const input of document.querySelectorAll(".sidebar-wifi-toggle-input")) {
@@ -548,6 +653,13 @@ function initDevicePanel() {
     if (window.electronAPI?.onNewInstanceState) {
         window.electronAPI.onNewInstanceState((data) => {
             scheduleResyncWifiTogglesFromSessionState(data);
+        });
+    }
+
+    // 4c — USB débranché + sessions actives → choix Continuer WiFi / Jouer sur l'appareil.
+    if (window.wifiAPI?.onUsbUnplugged) {
+        window.wifiAPI.onUsbUnplugged((payload = {}) => {
+            showUsbUnplugPrompt(payload);
         });
     }
 }

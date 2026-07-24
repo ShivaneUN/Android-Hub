@@ -186,7 +186,14 @@ contextBridge.exposeInMainWorld("wifiAPI", {
         const handler = (_event, data) => callback(data);
         ipcRenderer.on("transport:reattach-state", handler);
         return () => ipcRenderer.removeListener("transport:reattach-state", handler);
-    }
+    },
+    onUsbUnplugged: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("transport:usb-unplugged", handler);
+        return () => ipcRenderer.removeListener("transport:usb-unplugged", handler);
+    },
+    continueOnWifi: (payload) => ipcRenderer.invoke("wifi:continue-on-wifi", payload),
+    playOnDevice: (payload) => ipcRenderer.invoke("wifi:play-on-device", payload)
 });
 
 contextBridge.exposeInMainWorld("launchHistoryAPI", {

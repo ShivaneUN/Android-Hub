@@ -20,11 +20,15 @@ Destroy+recreate Type A (`switchSessionTransportTypeA` / `switchTypeASessionsFor
 
 ### 4b — Toggle UI sync état session (2026-07-24)
 
-**Statut : implémenté (WC).**
+**Statut : commité** (`ded97cf`).
 
-Le toggle WiFi se resynchronise depuis l’état réel : `new-instance:state` (begin/endTransportReconnect + `stableDeviceId`) et `transport:reattach-state` end/error → `refreshDevices` + `syncWifiToggleChecked`. Ignore les deviceId en toggle manuel in-flight. Prépare 4c/4d (sources non-clic).
+Le toggle WiFi se resynchronise depuis l’état réel : `new-instance:state` (begin/endTransportReconnect + `stableDeviceId`) et `transport:reattach-state` end/error → `refreshDevices` + `syncWifiToggleChecked`. Ignore les deviceId en toggle manuel in-flight.
 
-Plan produit : 4a ✅ → 4b (WC) → 4c USB débranché + infobulle → 4d USB rebranché silencieux.
+### 4c — USB débranché + infobulle de choix (2026-07-24)
+
+**Statut : implémenté (à committer).**
+
+Topologie USB perdu (WiFi armé + sessions Hub) → `transport:usb-unplugged` → prompt Continuer en WiFi / Jouer sur l'appareil. Continuer → `switchDeviceSessionsToWifi`. Jouer → ferme sessions + WiFi OFF. 4d USB rebranché silencieux à venir.
 
 ---
 
@@ -393,6 +397,7 @@ Référence : `PROGRESS_CHECK.md` § Presets d'affichage session.
 - 2026-07-12 — **Perf ADB — cache listUnifiedDevices** — `device-registry.js` : TTL 10 s, mutex scan (`_listUnifiedScanInProgress`), fingerprint raw USB/WiFi pour invalidation topologie, corps dans `_executeListUnifiedDevices`. Signature `listUnifiedDevices()` inchangée. `getDevicesPollState` reste séparé. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Diagnostic cache listUnifiedDevices (étape 1)** — signature, 5 appelants internes + `main.js` L1335 ; `getDevicesPollState` à garder séparé du mutex registry. Aucun patch code. LOCK / vidéo : non concernés.
 - 2026-07-12 — **Perf UI — debounce recherche apps** — `AppLauncherSearch.js` + `AppList.js` : 100 ms (`clearTimeout`/`setTimeout`) sur handler `input` uniquement ; filtre/tri/render inchangés ; timer nettoyé dans `destroy()`. Commits `aad55b3`, `28344f4`. LOCK intact.
+- 2026-07-24 — **switchSessionTransport 4c** — USB débranché + prompt Continuer WiFi / Jouer sur l'appareil (`transport:usb-unplugged`, `wifi:continue-on-wifi`, `wifi:play-on-device`).
 - 2026-07-24 — **switchSessionTransport 4b** — Toggle WiFi resync depuis `new-instance:state` + `transport:reattach-state` (pas seulement le clic). `stableDeviceId` dans begin/endTransportReconnect.
 - 2026-07-24 — **switchSessionTransport 4a Type B** — `switchSessionTransportTypeB` (attach display_id) + branchement toggle ON sans USB avec Type A ; overlay end si A+B OK. Stub closed USB→WiFi déjà neutralisé. 4b/4c/4d à venir.
 - 2026-07-23 — **switchSessionTransport Commit 1/3** — Type A destroy+recreate (`switchSessionTransportTypeA`) + branchement `wifi:toggle` ON sans USB ; overlay phase `end` ; Type B encore mark/TODO/fail ; topologie auto non branchée.
