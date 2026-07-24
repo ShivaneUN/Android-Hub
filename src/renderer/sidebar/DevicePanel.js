@@ -132,11 +132,50 @@ function scheduleResyncWifiTogglesFromSessionState(data = {}) {
 /** deviceId → prompt USB unplug visible (évite les doublons topologie). */
 const usbUnplugPromptByDevice = new Map();
 
-function dismissUsbUnplugPrompt(deviceId) {
+function isUsbUnplugPromptVisible() {
+    return usbUnplugPromptByDevice.size > 0;
+}
+
+function syncUsbUnplugPromptOverlayFlag() {
+    window.__hubUsbUnplugPromptOpen = isUsbUnplugPromptVisible();
+}
+
+async function suppressFluxForUsbUnplugPrompt() {
+    syncUsbUnplugPromptOverlayFlag();
+    try {
+        await window.sessionAPI?.suppressView?.();
+    } catch (_err) {
+        // noop
+    }
+}
+
+async function restoreFluxAfterUsbUnplugPrompt() {
+    syncUsbUnplugPromptOverlayFlag();
+    if (isUsbUnplugPromptVisible()) {
+        await suppressFluxForUsbUnplugPrompt();
+        return;
+    }
+    try {
+        if (typeof window.syncVideoWithSidebarModalsOrStreamDeck === "function") {
+            await window.syncVideoWithSidebarModalsOrStreamDeck();
+        } else {
+            await window.sessionAPI?.restoreView?.();
+        }
+    } catch (_err) {
+        // noop
+    }
+}
+
+function dismissUsbUnplugPrompt(deviceId, { restoreFlux = true } = {}) {
     if (!deviceId) return;
     const el = usbUnplugPromptByDevice.get(deviceId);
     if (el?.parentNode) el.parentNode.removeChild(el);
     usbUnplugPromptByDevice.delete(deviceId);
+    if (restoreFlux) {
+        void restoreFluxAfterUsbUnplugPrompt();
+    } else {
+        syncUsbUnplugPromptOverlayFlag();
+    }
 }
 
 function ensureUsbUnplugPromptHost() {
@@ -151,7 +190,7 @@ function ensureUsbUnplugPromptHost() {
 
 function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
     if (!deviceId) return;
-    dismissUsbUnplugPrompt(deviceId);
+    dismissUsbUnplugPrompt(deviceId, { restoreFlux: false });
 
     const host = ensureUsbUnplugPromptHost();
     const card = document.createElement("div");
@@ -180,6 +219,7 @@ function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
 
     host.appendChild(card);
     usbUnplugPromptByDevice.set(deviceId, card);
+    void suppressFluxForUsbUnplugPrompt();
 }
 
 async function handleUsbUnplugContinueWifi(deviceId, card) {

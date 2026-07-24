@@ -97,6 +97,15 @@ async function syncVideoWithSidebarModals() {
         return;
     }
 
+    // Prompt USB débranché : rester au-dessus du flux (ne pas restore pendant le choix).
+    if (window.__hubUsbUnplugPromptOpen) {
+        if (window.sessionAPI.suppressView) {
+            await window.sessionAPI.suppressView();
+        }
+        lastSingleBoundsKey = "";
+        return;
+    }
+
     if (window.sessionAPI.restoreView) {
         await window.sessionAPI.restoreView();
     }
@@ -117,6 +126,12 @@ async function syncVideoWithSidebarModals() {
 
 async function syncVideoWithSidebarModalsOrStreamDeck() {
     if (window.__hubShowingHome) {
+        await syncVideoWithSidebarModals();
+        return;
+    }
+
+    // Prompt USB : ne pas réappliquer le layout stream-deck par-dessus le choix.
+    if (window.__hubUsbUnplugPromptOpen) {
         await syncVideoWithSidebarModals();
         return;
     }

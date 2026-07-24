@@ -508,26 +508,32 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   padding-right: 2px;
 }
 
-/* 4c — choix USB débranché (Continuer WiFi / Jouer sur l'appareil) */
+/* 4c — choix USB débranché : overlay plein écran au-dessus du flux (views suppress). */
 .usb-unplug-prompt-host {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  inset: 0;
   z-index: 10050;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: min(340px, calc(100vw - 32px));
-  pointer-events: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: rgba(8, 10, 16, 0.45);
+}
+
+.usb-unplug-prompt-host:empty {
+  display: none;
+  background: transparent;
 }
 
 .usb-unplug-prompt {
   pointer-events: auto;
+  width: min(360px, 100%);
   background: #161b24;
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
-  border-radius: 10px;
-  padding: 12px 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   color: var(--text-primary, #e8ecf4);
 }
 
