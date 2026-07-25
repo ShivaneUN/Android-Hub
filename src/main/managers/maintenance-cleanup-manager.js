@@ -5,14 +5,13 @@ const DEFAULT_MAX_AGE_DAYS = 7;
 const DEFAULT_AUTO_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const CLEANUP_CATEGORIES = {
-    logs: { label: "Logs" },
     cache: { label: "Cache" },
     history: { label: "Historique des apps" }
 };
 
 const DEFAULT_PREFERENCES = {
     autoClean: {
-        logs: true,
+        enabled: true,
         cache: true,
         history: true
     }
@@ -42,10 +41,13 @@ function parseMaxAgeDaysFromEnv() {
 
 function normalizeCategories(categories = {}) {
     return {
-        logs: categories.logs !== false,
         cache: categories.cache !== false,
         history: categories.history !== false
     };
+}
+
+function respectsMaxAge(reason) {
+    return reason === "startup" || reason === "interval";
 }
 
 function createEmptyCategoryResult(selected = false) {
@@ -96,7 +98,7 @@ class MaintenanceCleanupManager {
 
             return {
                 autoClean: {
-                    logs: autoClean.logs !== false,
+                    enabled: autoClean.enabled !== false,
                     cache: autoClean.cache !== false,
                     history: autoClean.history !== false
                 }
@@ -119,26 +121,38 @@ class MaintenanceCleanupManager {
         return structuredClone(this.preferences);
     }
 
+    isAutoCleanupEnabled() {
+        return this.preferences?.autoClean?.enabled !== false;
+    }
+
     setPreferences(nextPreferences = {}) {
         const autoClean = nextPreferences?.autoClean && typeof nextPreferences.autoClean === "object"
             ? nextPreferences.autoClean
             : {};
+        const wasEnabled = this.isAutoCleanupEnabled();
 
         this.preferences = {
             autoClean: {
-                logs: autoClean.logs !== false,
+                enabled: autoClean.enabled !== false,
                 cache: autoClean.cache !== false,
                 history: autoClean.history !== false
             }
         };
         this.savePreferences();
+
+        const nowEnabled = this.isAutoCleanupEnabled();
+        if (!nowEnabled) {
+            this.stopAutoCleanup();
+        } else if (!wasEnabled || !this.autoTimer) {
+            void this.startAutoCleanup();
+        }
+
         return this.getPreferences();
     }
 
     getAutoCategories() {
         const { autoClean } = this.preferences;
         return {
-            logs: autoClean.logs !== false,
             cache: autoClean.cache !== false,
             history: autoClean.history !== false
         };
@@ -147,19 +161,6 @@ class MaintenanceCleanupManager {
     buildTargetsByCategory() {
         const resolve = (...parts) => path.join(this.userDataPath, ...parts);
         return {
-            logs: [
-                {
-                    key: "update-log",
-                    type: "file",
-                    rootPath: resolve("update.log")
-                },
-                {
-                    key: "logs-dir",
-                    type: "directory",
-                    rootPath: resolve("logs"),
-                    recursive: true
-                }
-            ],
             cache: [
                 {
                     key: "app-icons-dir",
@@ -202,16 +203,43 @@ class MaintenanceCleanupManager {
     }
 
     async startAutoCleanup() {
-        const categories = this.getAutoCategories();
-        await this.runCleanup({ reason: "startup", dryRun: false, categories });
         this.stopAutoCleanup();
+        if (!this.isAutoCleanupEnabled()) {
+            return;
+        }
+
+        const categories = this.getAutoCategories();
+        if (!categories.cache && !categories.history) {
+            return;
+        }
+
+        await this.runCleanup({ reason: "startup", dryRun: false, categories });
         this.autoTimer = setInterval(() => {
+            if (!this.isAutoCleanupEnabled()) {
+                this.stopAutoCleanup();
+                return;
+            }
+            const nextCategories = this.getAutoCategories();
+            if (!nextCategories.cache && !nextCategories.history) {
+                return;
+            }
             void this.runCleanup({
                 reason: "interval",
                 dryRun: false,
-                categories: this.getAutoCategories()
+                categories: nextCategories
             });
         }, this.autoIntervalMs);
+    }
+
+    applyAutoCleanupSchedule() {
+        if (!this.isAutoCleanupEnabled()) {
+            this.stopAutoCleanup();
+            return;
+        }
+        if (this.autoTimer) {
+            return;
+        }
+        void this.startAutoCleanup();
     }
 
     stopAutoCleanup() {
@@ -229,6 +257,14 @@ class MaintenanceCleanupManager {
         });
     }
 
+    resolveCutoff(reason) {
+        // Auto : conserve les N derniers jours. Manuel / preview : tout est éligible.
+        if (respectsMaxAge(reason)) {
+            return Date.now() - this.maxAgeMs;
+        }
+        return Date.now();
+    }
+
     async runCleanup({ reason = "manual", dryRun = false, categories } = {}) {
         if (this.cleanupInFlight) {
             return {
@@ -240,11 +276,10 @@ class MaintenanceCleanupManager {
         const selectedCategories = normalizeCategories(categories);
         this.cleanupInFlight = true;
         const startedAt = Date.now();
-        const cutoff = Date.now() - this.maxAgeMs;
+        const cutoff = this.resolveCutoff(reason);
 
         try {
             const categoryResults = {
-                logs: createEmptyCategoryResult(selectedCategories.logs),
                 cache: createEmptyCategoryResult(selectedCategories.cache),
                 history: createEmptyCategoryResult(selectedCategories.history)
             };
@@ -252,7 +287,7 @@ class MaintenanceCleanupManager {
             let filesScanned = 0;
             const touchedTargets = [];
 
-            if (selectedCategories.logs || selectedCategories.cache) {
+            if (selectedCategories.cache) {
                 const fileCandidates = await this.collectFileCandidates(selectedCategories, cutoff);
                 filesScanned += fileCandidates.scannedCount;
                 touchedTargets.push(...fileCandidates.touchedTargets);
@@ -293,15 +328,16 @@ class MaintenanceCleanupManager {
                 reason,
                 dryRun,
                 maxAgeDays: this.maxAgeDays,
+                respectMaxAge: respectsMaxAge(reason),
                 categories: selectedCategories,
                 categoryResults,
                 filesScanned,
-                matchedFiles: categoryResults.logs.matchedFiles + categoryResults.cache.matchedFiles,
-                deletedFiles: categoryResults.logs.deletedFiles + categoryResults.cache.deletedFiles,
-                skippedLocked: categoryResults.logs.skippedLocked + categoryResults.cache.skippedLocked,
-                skippedErrors: categoryResults.logs.skippedErrors + categoryResults.cache.skippedErrors,
-                bytesEligible: categoryResults.logs.bytesEligible + categoryResults.cache.bytesEligible,
-                bytesFreed: categoryResults.logs.bytesFreed + categoryResults.cache.bytesFreed,
+                matchedFiles: categoryResults.cache.matchedFiles,
+                deletedFiles: categoryResults.cache.deletedFiles,
+                skippedLocked: categoryResults.cache.skippedLocked,
+                skippedErrors: categoryResults.cache.skippedErrors,
+                bytesEligible: categoryResults.cache.bytesEligible,
+                bytesFreed: categoryResults.cache.bytesFreed,
                 historyEntriesEligible: categoryResults.history.entriesEligible,
                 historyEntriesRemoved: categoryResults.history.entriesRemoved,
                 touchedTargets,
@@ -534,5 +570,6 @@ module.exports = {
     DEFAULT_AUTO_INTERVAL_MS,
     DEFAULT_PREFERENCES,
     toBytes,
-    normalizeCategories
+    normalizeCategories,
+    respectsMaxAge
 };

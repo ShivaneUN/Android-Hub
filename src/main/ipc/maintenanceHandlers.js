@@ -76,7 +76,11 @@ function buildUiSummary(result) {
     };
 }
 
-function registerMaintenanceHandlers({ ipcMain, getMaintenanceCleanupManager } = {}) {
+function registerMaintenanceHandlers({
+    ipcMain,
+    getMaintenanceCleanupManager,
+    notifyCleanupCompleted
+} = {}) {
     ipcMain.handle("maintenance:cleanup-preview", async (_event, payload = {}) => {
         const manager = getMaintenanceCleanupManager?.();
         if (!manager) {
@@ -101,6 +105,13 @@ function registerMaintenanceHandlers({ ipcMain, getMaintenanceCleanupManager } =
         const reason = payload.reason || "manual";
         const categories = normalizeCategories(payload.categories);
         const result = await manager.runCleanup({ reason, dryRun: false, categories });
+        if (result?.success && typeof notifyCleanupCompleted === "function") {
+            try {
+                notifyCleanupCompleted(result);
+            } catch (err) {
+                console.warn("[maintenance] notifyCleanupCompleted:", err.message);
+            }
+        }
         return {
             ...result,
             summary: buildUiSummary(result),

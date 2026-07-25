@@ -542,7 +542,7 @@
 
 .maint-metrics {
   display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
+  grid-template-columns: 1fr !important;
   gap: 12px !important;
 }
 
@@ -712,6 +712,19 @@
 #settings-pane-maintenance .devices-maintenance-toggle {
   font-size: 13px;
   color: #e8ecf4;
+}
+
+#settings-pane-maintenance .devices-maintenance-toggle--master {
+  width: 100%;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+}
+
+#settings-pane-maintenance .devices-maintenance-toggle.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .maint-footer-hint {

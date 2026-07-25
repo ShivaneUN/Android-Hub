@@ -266,15 +266,6 @@
         <div class="maint-metrics">
           <div class="maint-metric-card">
             <div class="maint-metric-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-            </div>
-            <div class="maint-metric-label" data-i18n="devicesPanel.autoLogs">Logs</div>
-            <div class="maint-metric-value" id="settings-maint-logs-detail">—</div>
-            <div class="maint-metric-hint" data-i18n="settingsPanel.maintLogsHintShort" data-i18n-vars='{"days":7}'>plus de 7 jours</div>
-            <button type="button" class="maint-see-link" id="devices-cleanup-now-btn-logs" data-i18n="settingsPanel.seeMore">Voir ›</button>
-          </div>
-          <div class="maint-metric-card">
-            <div class="maint-metric-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
             </div>
             <div class="maint-metric-label" data-i18n="devicesPanel.autoCache">Cache</div>
@@ -296,15 +287,15 @@
         </div>
         <div class="devices-maintenance-auto" id="devices-maintenance-auto-panel" hidden>
           <div class="devices-maintenance-auto-title" data-i18n="devicesPanel.autoCleanup">Nettoyage automatique</div>
-          <label class="devices-maintenance-toggle">
-            <input type="checkbox" id="devices-auto-clean-logs" checked>
-            <span data-i18n="devicesPanel.autoLogs">Logs</span>
+          <label class="devices-maintenance-toggle devices-maintenance-toggle--master">
+            <input type="checkbox" id="devices-auto-clean-enabled" checked>
+            <span data-i18n="devicesPanel.autoCleanupEnabled" data-i18n-vars='{"days":7}'>Activer le nettoyage auto (7 jours)</span>
           </label>
-          <label class="devices-maintenance-toggle">
+          <label class="devices-maintenance-toggle" id="devices-auto-clean-cache-label">
             <input type="checkbox" id="devices-auto-clean-cache" checked>
             <span data-i18n="devicesPanel.autoCache">Cache</span>
           </label>
-          <label class="devices-maintenance-toggle">
+          <label class="devices-maintenance-toggle" id="devices-auto-clean-history-label">
             <input type="checkbox" id="devices-auto-clean-history" checked>
             <span data-i18n="devicesPanel.autoHistory">Historique des apps</span>
           </label>
@@ -316,7 +307,7 @@
           </button>
           <button type="button" class="devices-panel-btn devices-panel-btn-primary" id="devices-cleanup-now-btn" data-i18n="devicesPanel.cleanupNow">Nettoyer maintenant</button>
         </div>
-        <p class="maint-footer-hint" data-i18n="settingsPanel.maintKeepHint" data-i18n-vars='{"days":7}'>Conserve les 7 derniers jours de logs/cache</p>
+        <p class="maint-footer-hint" data-i18n="settingsPanel.maintKeepHint" data-i18n-vars='{"days":7}'>Auto : conserve les 7 derniers jours de cache. Manuel : tout peut être effacé.</p>
       </div>
       <div id="settings-pane-updates" class="settings-tab-pane" data-settings-pane="updates">
         <div class="about-layout">
@@ -389,7 +380,7 @@
                 <span class="about-feature-num">09</span>
                 <div>
                   <strong data-i18n="settingsPanel.aboutFeat9Title">Maintenance</strong>
-                  <p data-i18n="settingsPanel.aboutFeat9Desc">Nettoyage logs, cache et historique — manuel ou automatique au démarrage.</p>
+                  <p data-i18n="settingsPanel.aboutFeat9Desc">Nettoyage cache et historique — manuel ou automatique au démarrage.</p>
                 </div>
               </li>
               <li>
@@ -440,11 +431,6 @@
     </div>
     <div class="cleanup-category-list">
       <label class="cleanup-category-item">
-        <input type="checkbox" id="cleanup-category-logs" checked>
-        <span class="cleanup-category-label" data-i18n="maintenance.logs">Logs</span>
-        <span class="cleanup-category-detail" id="cleanup-category-logs-detail">—</span>
-      </label>
-      <label class="cleanup-category-item">
         <input type="checkbox" id="cleanup-category-cache" checked>
         <span class="cleanup-category-label" data-i18n="maintenance.cache">Cache</span>
         <span class="cleanup-category-detail" id="cleanup-category-cache-detail">—</span>
@@ -455,7 +441,7 @@
         <span class="cleanup-category-detail" id="cleanup-category-history-detail">—</span>
       </label>
     </div>
-    <p class="cleanup-modal-hint" data-i18n="maintenance.hint" data-i18n-vars='{"days":7}'>Logs et cache : fichiers de plus de 7 jours. Historique : toutes les entrées affichées.</p>
+    <p class="cleanup-modal-hint" data-i18n="maintenance.hint" data-i18n-vars='{"days":7}'>Nettoyage manuel : cache et historique sans attendre les 7 jours. L’auto conserve {days} jours de cache.</p>
     <div class="modal-actions">
       <button type="button" class="modal-btn modal-btn-cancel" id="cleanup-modal-cancel-btn" data-i18n="maintenance.cancel">Annuler</button>
       <button type="button" class="modal-btn modal-btn-launch" id="cleanup-modal-run-btn" data-i18n="maintenance.run">Nettoyer</button>

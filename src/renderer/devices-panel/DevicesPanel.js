@@ -136,10 +136,8 @@
     function getCleanupModalElements() {
         return {
             overlay: document.getElementById("cleanup-modal-overlay"),
-            logsCheckbox: document.getElementById("cleanup-category-logs"),
             cacheCheckbox: document.getElementById("cleanup-category-cache"),
             historyCheckbox: document.getElementById("cleanup-category-history"),
-            logsDetail: document.getElementById("cleanup-category-logs-detail"),
             cacheDetail: document.getElementById("cleanup-category-cache-detail"),
             historyDetail: document.getElementById("cleanup-category-history-detail"),
             selectAllBtn: document.getElementById("cleanup-select-all-btn"),
@@ -152,7 +150,6 @@
     function getSelectedCleanupCategories() {
         const els = getCleanupModalElements();
         return {
-            logs: Boolean(els.logsCheckbox?.checked),
             cache: Boolean(els.cacheCheckbox?.checked),
             history: Boolean(els.historyCheckbox?.checked)
         };
@@ -160,7 +157,6 @@
 
     function setCleanupCategoryChecks(checked) {
         const els = getCleanupModalElements();
-        if (els.logsCheckbox) els.logsCheckbox.checked = checked;
         if (els.cacheCheckbox) els.cacheCheckbox.checked = checked;
         if (els.historyCheckbox) els.historyCheckbox.checked = checked;
     }
@@ -169,9 +165,6 @@
         const els = getCleanupModalElements();
         const categoryPreview = preview?.summary?.categoryPreview || {};
 
-        if (els.logsDetail) {
-            els.logsDetail.textContent = categoryPreview.logs?.detail || "—";
-        }
         if (els.cacheDetail) {
             els.cacheDetail.textContent = categoryPreview.cache?.detail || "—";
         }
@@ -179,23 +172,18 @@
             els.historyDetail.textContent = categoryPreview.history?.detail || "—";
         }
 
-        const maintLogs = document.getElementById("settings-maint-logs-detail");
         const maintCache = document.getElementById("settings-maint-cache-detail");
         const maintHistory = document.getElementById("settings-maint-history-detail");
-        if (maintLogs) maintLogs.textContent = categoryPreview.logs?.detail || "—";
         if (maintCache) maintCache.textContent = categoryPreview.cache?.detail || "—";
         if (maintHistory) maintHistory.textContent = categoryPreview.history?.detail || "—";
     }
 
     function hasCleanupSelection(categories) {
-        return Boolean(categories.logs || categories.cache || categories.history);
+        return Boolean(categories.cache || categories.history);
     }
 
     function hasCleanupWork(preview, categories) {
         const categoryResults = preview?.categoryResults || {};
-        if (categories.logs && ((categoryResults.logs?.matchedFiles || 0) > 0 || (categoryResults.logs?.bytesEligible || 0) > 0)) {
-            return true;
-        }
         if (categories.cache && ((categoryResults.cache?.matchedFiles || 0) > 0 || (categoryResults.cache?.bytesEligible || 0) > 0)) {
             return true;
         }
@@ -220,13 +208,47 @@
     async function refreshCleanupPreview() {
         if (!window.maintenanceAPI?.previewCleanup) return null;
         const preview = await window.maintenanceAPI.previewCleanup({
-            categories: { logs: true, cache: true, history: true }
+            categories: { cache: true, history: true }
         });
         if (preview?.success) {
             cleanupPreviewCache = preview;
             updateCleanupModalDetails(preview);
         }
         return preview;
+    }
+
+    async function onClearHistoryNow() {
+        if (!window.maintenanceAPI?.previewCleanup || !window.maintenanceAPI?.runCleanup) {
+            window.showHubToast?.(t("devicesPanel.maintenanceUnavailable"), "error");
+            return;
+        }
+
+        const preview = await window.maintenanceAPI.previewCleanup({
+            categories: { cache: false, history: true }
+        });
+        if (!preview?.success) {
+            window.showHubToast?.(preview?.error || t("devicesPanel.previewFailed"), "error");
+            return;
+        }
+
+        const eligible = preview.categoryResults?.history?.entriesEligible || 0;
+        if (eligible <= 0) {
+            window.showHubToast?.(t("devicesPanel.nothingToClean"), "info");
+            await refreshCleanupPreview();
+            return;
+        }
+
+        const result = await window.maintenanceAPI.runCleanup({
+            reason: "manual-clear-history",
+            categories: { cache: false, history: true }
+        });
+        if (!result?.success) {
+            window.showHubToast?.(result?.error || t("devicesPanel.cleanupFailed"), "error");
+            return;
+        }
+
+        window.showHubToast?.(result.summary?.message || t("devicesPanel.cleanupDone"), "success");
+        await refreshCleanupPreview();
     }
 
     async function onCleanupNow() {
@@ -277,11 +299,13 @@
 
         if (!result?.success) {
             window.showHubToast?.(result?.error || t("devicesPanel.cleanupFailed"), "error");
+            await refreshCleanupPreview();
             return;
         }
 
         const summary = result.summary?.message || t("devicesPanel.cleanupDone");
         window.showHubToast?.(summary, "success");
+        await refreshCleanupPreview();
     }
 
     function bindCleanupModal() {
@@ -295,7 +319,6 @@
             // Les détails par catégorie restent affichés pour toutes les cases.
         };
 
-        els.logsCheckbox?.addEventListener("change", onCategoryChange);
         els.cacheCheckbox?.addEventListener("change", onCategoryChange);
         els.historyCheckbox?.addEventListener("change", onCategoryChange);
 
@@ -319,6 +342,18 @@
         });
     }
 
+    function syncAutoCleanCategoryControls(enabled) {
+        const cacheToggle = document.getElementById("devices-auto-clean-cache");
+        const historyToggle = document.getElementById("devices-auto-clean-history");
+        const cacheLabel = document.getElementById("devices-auto-clean-cache-label");
+        const historyLabel = document.getElementById("devices-auto-clean-history-label");
+
+        if (cacheToggle) cacheToggle.disabled = !enabled;
+        if (historyToggle) historyToggle.disabled = !enabled;
+        cacheLabel?.classList.toggle("is-disabled", !enabled);
+        historyLabel?.classList.toggle("is-disabled", !enabled);
+    }
+
     async function loadAutoCleanPreferences() {
         if (!window.maintenanceAPI?.getPreferences) return;
 
@@ -326,26 +361,31 @@
         if (!response?.success) return;
 
         const autoClean = response.preferences?.autoClean || {};
-        const logsToggle = document.getElementById("devices-auto-clean-logs");
+        const enabledToggle = document.getElementById("devices-auto-clean-enabled");
         const cacheToggle = document.getElementById("devices-auto-clean-cache");
         const historyToggle = document.getElementById("devices-auto-clean-history");
+        const enabled = autoClean.enabled !== false;
 
-        if (logsToggle) logsToggle.checked = autoClean.logs !== false;
+        if (enabledToggle) enabledToggle.checked = enabled;
         if (cacheToggle) cacheToggle.checked = autoClean.cache !== false;
         if (historyToggle) historyToggle.checked = autoClean.history !== false;
+        syncAutoCleanCategoryControls(enabled);
     }
 
     async function persistAutoCleanPreferences() {
         if (!window.maintenanceAPI?.setPreferences) return;
 
-        const logsToggle = document.getElementById("devices-auto-clean-logs");
+        const enabledToggle = document.getElementById("devices-auto-clean-enabled");
         const cacheToggle = document.getElementById("devices-auto-clean-cache");
         const historyToggle = document.getElementById("devices-auto-clean-history");
+        const enabled = Boolean(enabledToggle?.checked);
+
+        syncAutoCleanCategoryControls(enabled);
 
         await window.maintenanceAPI.setPreferences({
             preferences: {
                 autoClean: {
-                    logs: Boolean(logsToggle?.checked),
+                    enabled,
                     cache: Boolean(cacheToggle?.checked),
                     history: Boolean(historyToggle?.checked)
                 }
@@ -358,7 +398,7 @@
         autoCleanPrefsBound = true;
 
         const toggles = [
-            document.getElementById("devices-auto-clean-logs"),
+            document.getElementById("devices-auto-clean-enabled"),
             document.getElementById("devices-auto-clean-cache"),
             document.getElementById("devices-auto-clean-history")
         ];
@@ -377,6 +417,12 @@
         if (hint) hint.textContent = t("devicesPanel.maintenanceHint", { days });
         const modalHint = document.querySelector(".cleanup-modal-hint");
         if (modalHint) modalHint.textContent = t("maintenance.hint", { days });
+        const enabledLabel = document.querySelector("#devices-auto-clean-enabled + span");
+        if (enabledLabel) {
+            enabledLabel.textContent = t("devicesPanel.autoCleanupEnabled", { days });
+        }
+        const footerHint = document.querySelector(".maint-footer-hint");
+        if (footerHint) footerHint.textContent = t("settingsPanel.maintKeepHint", { days });
     }
 
     function bindCleanupAction() {
@@ -412,15 +458,7 @@
             historyHintBtn.dataset.bound = "1";
             historyHintBtn.disabled = false;
             historyHintBtn.addEventListener("click", () => {
-                void onCleanupNow();
-            });
-        }
-
-        const seeLogsBtn = document.getElementById("devices-cleanup-now-btn-logs");
-        if (seeLogsBtn && !seeLogsBtn.dataset.bound) {
-            seeLogsBtn.dataset.bound = "1";
-            seeLogsBtn.addEventListener("click", () => {
-                void onCleanupNow();
+                void onClearHistoryNow();
             });
         }
     }
