@@ -246,6 +246,7 @@ function fromScrcpyOptions(options = {}, sessionType = "A") {
     if (options.maxFps) base.maxFps = options.maxFps;
     if (options.bitRate) base.bitRateMbps = options.bitRate / 1_000_000;
     if (options.iFrameInterval) base.iFrameInterval = options.iFrameInterval;
+    if (options.videoCodec) base.videoCodec = options.videoCodec;
 
     return normalizeParams(base);
 }

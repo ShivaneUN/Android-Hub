@@ -387,9 +387,26 @@
         }
 
         const draft = validation.params;
+        const selectedId = els.presetSelect?.value || state.selectedPresetId || "";
         setStatus(t("controlPanel.presets.applyingAll"));
 
         try {
+            // updateDefaultFromParams mute TOUJOURS le preset déjà marqué défaut.
+            // Si un autre preset est sélectionné, le promouvoir d'abord — sinon on
+            // écrase le mauvais preset (ex. "Full HD" reçoit les valeurs H265).
+            if (selectedId && selectedId !== state.defaultPresetId) {
+                if (!window.displayPresetsAPI?.setDefault) {
+                    setStatus(t("controlPanel.validation.apiUnavailable"), "error");
+                    return;
+                }
+                const setResult = await window.displayPresetsAPI.setDefault(selectedId);
+                if (!setResult?.success) {
+                    setStatus(setResult?.error || t("controlPanel.presets.defaultSetFailed"), "error");
+                    return;
+                }
+                state.defaultPresetId = setResult.defaultPreset || selectedId;
+            }
+
             const result = await window.displayPresetsAPI.updateDefaultFromParams({
                 width: draft.width,
                 height: draft.height,
@@ -403,11 +420,12 @@
                 return;
             }
 
+            const focusId = selectedId || result.defaultPreset || state.defaultPresetId;
             state.defaultPresetId = result.defaultPreset || state.defaultPresetId;
-            state.selectedPresetId = result.defaultPreset || state.selectedPresetId;
+            state.selectedPresetId = focusId || null;
             await loadPresets();
-            if (els.presetSelect && result.defaultPreset) {
-                els.presetSelect.value = result.defaultPreset;
+            if (els.presetSelect && focusId) {
+                els.presetSelect.value = focusId;
             }
             syncPresetControls();
             setStatus(result.message || t("controlPanel.presets.appliedAll"), "success");
@@ -668,6 +686,30 @@
         updateSessionMeta();
     }
 
+    async function loadDefaultDraftFromPreset() {
+        try {
+            if (!window.displayPresetsAPI?.getDefault) return false;
+            const result = await window.displayPresetsAPI.getDefault();
+            if (!result?.success || !result.params) return false;
+
+            const params = SP.normalizeParams(result.params);
+            state.draftParams = SP.cloneParams(params);
+            // Référence = preset défaut pour que H265 validé ne paraisse pas « dirty » vs H264.
+            state.appliedParams = SP.cloneParams(params);
+            state.selectedPresetId = result.defaultPreset || state.selectedPresetId;
+            if (els.presetSelect && result.defaultPreset) {
+                els.presetSelect.value = result.defaultPreset;
+            }
+            syncPresetControls();
+            syncSegmentUI();
+            updateDirtyState();
+            return true;
+        } catch (err) {
+            console.warn("[ControlPanel] preset défaut indisponible:", err.message);
+            return false;
+        }
+    }
+
     async function loadSessionParams(sessionId) {
         if (!window.sessionAPI?.getStreamParams) {
             state.selectedSessionId = sessionId;
@@ -711,10 +753,10 @@
 
         if (state.sessions.length === 0) {
             state.selectedSessionId = null;
-            state.appliedParams = null;
+            state.sessionType = null;
             renderSessionList();
             updateAppliedDisplay();
-            updateDirtyState();
+            await loadDefaultDraftFromPreset();
             return;
         }
 
@@ -777,12 +819,20 @@
         if (state.appliedParams && state.selectedSessionId) {
             state.draftParams = SP.cloneParams(state.appliedParams);
             setStatus(t("controlPanel.validation.cancelWithSession"));
-        } else {
-            state.draftParams = SP.cloneParams(DEFAULT_PARAMS);
-            setStatus(t("controlPanel.validation.cancelDefault"));
+            syncSegmentUI();
+            updateDirtyState();
+            return;
         }
-        syncSegmentUI();
-        updateDirtyState();
+
+        loadDefaultDraftFromPreset().then((loaded) => {
+            if (!loaded) {
+                state.draftParams = SP.cloneParams(DEFAULT_PARAMS);
+                state.appliedParams = null;
+                syncSegmentUI();
+                updateDirtyState();
+            }
+            setStatus(t("controlPanel.validation.cancelDefault"));
+        }).catch(console.error);
     }
 
     async function resetToOriginal() {
@@ -872,7 +922,14 @@
                 refreshSessions().catch(console.error);
             });
             window.displayPresetsAPI?.onUpdated?.(() => {
-                loadPresets().catch(console.error);
+                loadPresets()
+                    .then(() => {
+                        if (!state.selectedSessionId) {
+                            return loadDefaultDraftFromPreset();
+                        }
+                        return null;
+                    })
+                    .catch(console.error);
             });
         }
     }
@@ -914,6 +971,9 @@
     async function ensureUIAsync() {
         if (!ensureUI()) return false;
         await loadPresets();
+        if (!state.selectedSessionId) {
+            await loadDefaultDraftFromPreset();
+        }
         return true;
     }
 
@@ -940,7 +1000,9 @@
     function boot() {
         try {
             ensureUI();
-            loadPresets().catch(console.error);
+            loadPresets()
+                .then(() => loadDefaultDraftFromPreset())
+                .catch(console.error);
             renderSessionList();
         } catch (err) {
             console.error("[ControlPanel] Erreur initialisation:", err);

@@ -66,6 +66,7 @@ class StreamParamsManager {
                 bitRate: base.bitRate,
                 maxFps: base.maxFps,
                 iFrameInterval: base.iFrameInterval,
+                videoCodec: base.videoCodec,
                 userId: base.userId,
                 captureOrientationLock: base.captureOrientationLock,
                 captureRotation: base.captureRotation || 0
@@ -98,6 +99,7 @@ class StreamParamsManager {
             bitRate: base.bitRate,
             maxFps: base.maxFps,
             iFrameInterval: base.iFrameInterval,
+            videoCodec: base.videoCodec,
             orientation: base.orientation,
             userId: base.userId,
             captureOrientationLock: base.captureOrientationLock,
@@ -195,10 +197,17 @@ class StreamParamsManager {
         let params = cloneParams(entry.streamParams);
 
         if (liveOptions) {
-            params = normalizeParams(fromScrcpyOptions(liveOptions, entry.type));
+            // Préserver le codec stocké si le flux live ne l'expose pas encore
+            // (évite de retomber sur H264 après un lancement H265 validé).
+            params = normalizeParams({
+                ...fromScrcpyOptions(liveOptions, entry.type),
+                videoCodec: liveOptions.videoCodec
+                    || entry.streamParams?.videoCodec
+                    || record?.streamParams?.videoCodec
+            });
             entry.streamParams = cloneParams(params);
-            entry.scrcpyOptions = { ...liveOptions };
-            registry?.setScrcpyOptions(sessionId, liveOptions);
+            entry.scrcpyOptions = { ...liveOptions, videoCodec: params.videoCodec };
+            registry?.setScrcpyOptions(sessionId, entry.scrcpyOptions);
         } else if (record?.streamParams) {
             params = cloneParams(record.streamParams);
         }

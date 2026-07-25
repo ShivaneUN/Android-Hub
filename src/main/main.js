@@ -2575,6 +2575,9 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
                     await codecRetryClient.start(serverJarPath, codecRetryOptions);
 
+                    // Persister le codec réellement utilisé pour le panneau Contrôle.
+                    options.videoCodec = "h264";
+
                     const codecFallbackPayload = {
                         tabId,
                         codecFallback: true,

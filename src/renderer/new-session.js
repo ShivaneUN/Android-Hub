@@ -812,14 +812,6 @@ function setStatus(message = "", isError = false) {
     status.classList.toggle("error", Boolean(isError));
 }
 
-function buildTypeBLaunchStreamOptions() {
-    return {
-        newDisplay: "1920x1080",
-        stayAwake: true,
-        turnScreenOff: true
-    };
-}
-
 const pendingDisplayIdWaiters = [];
 
 function resolveDisplayIdWaiters(data) {
@@ -851,15 +843,55 @@ function waitForVirtualDisplayId(serial, knownDisplayId, timeoutMs = 10000) {
     });
 }
 
-function formatTypeBLaunchCommand(packageName) {
-    const pkg = packageName || "";
-    return `scrcpy --new-display=1920x1080 --stay-awake --turn-screen-off --start-app=${pkg}`;
+function normalizePreviewParams(params) {
+    if (typeof StreamParams !== "undefined" && StreamParams.normalizeParams && params) {
+        return StreamParams.normalizeParams(params);
+    }
+    return {
+        width: params?.width ?? 1920,
+        height: params?.height ?? 1080,
+        dpi: params?.dpi ?? 240,
+        maxFps: params?.maxFps ?? 60,
+        bitRateMbps: params?.bitRateMbps ?? 8,
+        iFrameInterval: params?.iFrameInterval ?? 1,
+        videoCodec: params?.videoCodec ?? "h264"
+    };
 }
 
-function updateCommandPreview() {
+function resolvePreviewNewDisplay(params) {
+    if (typeof StreamParams !== "undefined" && StreamParams.formatNewDisplay && params) {
+        return StreamParams.formatNewDisplay(params);
+    }
+    if (params?.width && params?.height) {
+        return params.dpi
+            ? `${params.width}x${params.height}/${params.dpi}`
+            : `${params.width}x${params.height}`;
+    }
+    return "1920x1080/240";
+}
+
+function formatTypeBLaunchCommand(packageName, params) {
+    const pkg = packageName || "";
+    const p = normalizePreviewParams(params);
+    const newDisplay = resolvePreviewNewDisplay(p);
+    const parts = [
+        "scrcpy",
+        `--new-display=${newDisplay}`,
+        `--max-fps=${p.maxFps}`,
+        `--video-bit-rate=${p.bitRateMbps}M`
+    ];
+    if (p.videoCodec === "h265") {
+        parts.push("--video-codec=h265");
+    }
+    parts.push("--stay-awake", "--turn-screen-off", `--start-app=${pkg}`);
+    return parts.join(" ");
+}
+
+async function updateCommandPreview() {
     const { commandPreview } = getNewInstanceElements();
     if (!commandPreview) return;
-    commandPreview.textContent = formatTypeBLaunchCommand(selectedApp?.package || "");
+    const params = await resolveDefaultLaunchStreamParams();
+    commandPreview.textContent = formatTypeBLaunchCommand(selectedApp?.package || "", params);
 }
 
 function updateLaunchState() {
@@ -874,18 +906,18 @@ function updateLaunchState() {
 
     if (!hasDevice) {
         launchHint.textContent = t("newSession.selectDeviceFirst");
-        updateCommandPreview();
+        void updateCommandPreview();
         return;
     }
 
     if (!hasApp) {
         launchHint.textContent = t("newSession.selectApp");
-        updateCommandPreview();
+        void updateCommandPreview();
         return;
     }
 
     launchHint.textContent = t("newSession.readyToLaunch");
-    updateCommandPreview();
+    void updateCommandPreview();
 }
 
 function renderDeviceList(devices) {
@@ -1233,8 +1265,6 @@ async function launchTypeBSession({
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
     const tabLabel = buildTypeBTabLabel(deviceName, appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName);
 
-    setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName)}`);
-
     const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
 
     let latencyTraceId = null;
@@ -1245,8 +1275,12 @@ async function launchTypeBSession({
 
     // Lire le preset default AVANT le bootstrap externe pour que --new-display
     // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
-    const presetScrcpyOpts = await buildDefaultScrcpyOptions("B");
+    const launchParams = await resolveDefaultLaunchStreamParams();
+    const presetScrcpyOpts = (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions)
+        ? StreamParams.toScrcpyOptions(launchParams, "B")
+        : await buildDefaultScrcpyOptions("B");
     const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
+    setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName, launchParams)}`);
 
     const scrcpyLaunch = await window.electronAPI.launchNewInstance(
         serial,
@@ -1760,6 +1794,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.launchHistoryAPI?.onUpdated) {
         window.launchHistoryAPI.onUpdated(() => {
             scheduleLaunchHistoryRefresh();
+        });
+    }
+
+    if (window.displayPresetsAPI?.onUpdated) {
+        window.displayPresetsAPI.onUpdated(() => {
+            void updateCommandPreview();
         });
     }
 
