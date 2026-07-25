@@ -230,8 +230,8 @@ function createSessionTabElement({ sessionId, type, active, label, hasCustomName
             await closeNewInstanceSession(sessionId, "tab-close");
         } else {
             await window.sessionAPI.close(sessionId);
+            if (typeof renderSidebar === "function") renderSidebar();
         }
-        renderSidebar();
     });
 
     const previewHook = window.videoPreviewHook;
@@ -464,6 +464,18 @@ async function renderSidebar() {
 async function finalizeSessionUI(sessionId, options = {}) {
     if (!sessionId || !window.sessionAPI) return;
 
+    // Ne jamais recréer un onglet DOM si la BrowserView a déjà été fermée
+    // (finalize retardé après close → onglet fantôme noir / — fps).
+    try {
+        const listed = await window.sessionAPI.list();
+        if (!Array.isArray(listed) || !listed.some((session) => session?.sessionId === sessionId)) {
+            console.warn(`[Sidebar] finalizeSessionUI ignoré — session absente ${sessionId}`);
+            return;
+        }
+    } catch (_err) {
+        return;
+    }
+
     window.__hubShowingHome = false;
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
@@ -472,7 +484,12 @@ async function finalizeSessionUI(sessionId, options = {}) {
         restoreSessionView();
     }
 
-    await window.sessionAPI.switchTo(sessionId);
+    const switched = await window.sessionAPI.switchTo(sessionId);
+    if (!switched) {
+        console.warn(`[Sidebar] finalizeSessionUI annulé — switchTo échoué ${sessionId}`);
+        return;
+    }
+
     window.__sessionAudioHub?.setActiveSession?.(sessionId);
 
     if (sessionId.startsWith("instance-") && typeof activateInstance === "function") {

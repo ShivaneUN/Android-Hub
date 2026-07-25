@@ -474,10 +474,22 @@ class NewInstanceManager extends EventEmitter {
     async _onScrcpyClosed(session) {
         if (!session) return;
 
+        // Closed retardés post-rebind : déjà filtrés par `session.client !== client`
+        // dans le listener. Ne PAS ignorer ici via hasVideo/serverAlive — au moment du
+        // "closed", le socket peut encore être référencé et le process pas encore exit,
+        // ce qui laissait un onglet zombie (noir / — fps) en USB et WiFi.
+
         // Transport reattach (USB↔WiFi) : ne pas force-stop / delete / emit pendant reconnecting.
         if (session.state === "reconnecting" || session._transportRebindActive) {
             console.log(
                 `[NewInstanceManager] closed ignoré — reattach en cours (${session.sessionId}, state=${session.state})`
+            );
+            return;
+        }
+
+        if (session._scrcpyCloseHandling) {
+            console.log(
+                `[NewInstanceManager] closed ignoré — teardown déjà en cours (${session.sessionId})`
             );
             return;
         }
@@ -487,21 +499,6 @@ class NewInstanceManager extends EventEmitter {
             // (closed retardé de l'ancien client / blip ADB → destroy onglet).
             console.warn(
                 `[NewInstanceManager] closed ignoré — grace reattach ${session.sessionId} (pas de recovery destructive)`
-            );
-            return;
-        }
-
-        // Closed retardé de l'ancien process/socket après un rebind réussi :
-        // le même EventEmitter émet encore "closed" alors que le nouveau flux est vivant.
-        const conn = session.client?.getConnectionState?.();
-        const serverAlive = Boolean(
-            session.client?.serverProcess
-            && !session.client.serverProcess.killed
-            && session.client.serverProcess.exitCode == null
-        );
-        if (conn?.hasVideo || serverAlive) {
-            console.log(
-                `[NewInstanceManager] closed ignoré — flux encore actif (${session.sessionId}, video=${Boolean(conn?.hasVideo)}, server=${serverAlive})`
             );
             return;
         }
@@ -521,59 +518,140 @@ class NewInstanceManager extends EventEmitter {
             return;
         }
 
-        // USB mort (débranchement) : garder la session pour Continuer WiFi / soft-cut.
-        // Si toggle WiFi ON : hold silencieux (topologie rebind sans popup) — ne pas delete.
-        const shellSerial = session.client?.shellSerial || session.serial;
-        const onWifiShell = Boolean(global.wifiAdbService?.isWifiSerial?.(shellSerial));
-        const deviceId = session.stableDeviceId || null;
-        const wifiArmed = Boolean(
-            deviceId && global.wifiDevicesManager?.getByDeviceId?.(deviceId)?.wifiEnabled
-        );
-
-        if (!onWifiShell) {
-            session.client = null;
-            this.beginTransportReconnect(session);
-            notifySessionStreamRestarting(session.sessionId);
-            console.log(
-                `[NewInstanceManager] USB shell closed — hold session=${session.sessionId}`
-                + (wifiArmed ? " (WiFi armé → rebind silencieux)" : " pour Continuer WiFi")
+        session._scrcpyCloseHandling = true;
+        try {
+            // USB : hold Continuer WiFi seulement si le transport a disparu (débranchement).
+            // Si le device USB est encore online, scrcpy est mort pour une autre raison
+            // (app/VD quittée) → même teardown que sur WiFi (évite onglet zombie noir).
+            // Reattach intentionnel : déjà filtré plus haut (reconnecting / _transportRebindActive).
+            const shellSerial = session.client?.shellSerial || session.serial;
+            const onWifiShell = Boolean(global.wifiAdbService?.isWifiSerial?.(shellSerial));
+            const deviceId = session.stableDeviceId || null;
+            const wifiArmed = Boolean(
+                deviceId && global.wifiDevicesManager?.getByDeviceId?.(deviceId)?.wifiEnabled
             );
-            return;
-        }
 
-        const wasActive = session.state === "started"
-            || session.state === "starting"
-            || session.state === "display-ready";
-        if (!wasActive || !session.packageName || !session.serial) {
-            if (session.state !== "stopped") {
+            if (!onWifiShell) {
+                let usbStillOnline = await this._isUsbTransportStillOnline(session, shellSerial);
+
+                // Race débranchement : scrcpy peut mourir avant qu'ADB retire le serial.
+                // Court délai + re-check ; si la topologie a déjà posé reconnecting → ne pas teardown.
+                if (usbStillOnline) {
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    if (!this.sessions.has(session.sessionId)) return;
+                    if (session.state === "reconnecting" || session._transportRebindActive) {
+                        console.log(
+                            `[NewInstanceManager] closed ignoré — reattach pendant vérif USB (${session.sessionId})`
+                        );
+                        return;
+                    }
+                    if (session._intentionalStop || session._appForceStopped) {
+                        if (session.state !== "stopped" && session.state !== "stopping") {
+                            session.state = "stopped";
+                            this.emit("state", { sessionId: session.sessionId, state: session.state });
+                        }
+                        return;
+                    }
+                    if (session._ignoreScrcpyClosedUntil && Date.now() < session._ignoreScrcpyClosedUntil) {
+                        console.warn(
+                            `[NewInstanceManager] closed ignoré — ignoreScrcpyClosedUntil ${session.sessionId}`
+                        );
+                        return;
+                    }
+                    usbStillOnline = await this._isUsbTransportStillOnline(session, shellSerial);
+                }
+
+                if (!usbStillOnline) {
+                    session.client = null;
+                    this.beginTransportReconnect(session);
+                    notifySessionStreamRestarting(session.sessionId);
+                    console.log(
+                        `[NewInstanceManager] USB shell closed — hold session=${session.sessionId}`
+                        + (wifiArmed ? " (WiFi armé → rebind silencieux)" : " pour Continuer WiFi")
+                    );
+                    return;
+                }
+                console.log(
+                    `[NewInstanceManager] USB shell closed — device encore online,`
+                    + ` fermeture session=${session.sessionId}`
+                );
+            }
+
+            const wasActive = session.state === "started"
+                || session.state === "starting"
+                || session.state === "display-ready";
+            if (!wasActive || !session.packageName || !session.serial) {
                 session.state = "stopped";
+                session.client = null;
+                this.sessions.delete(session.sessionId);
                 this.emit("state", { sessionId: session.sessionId, state: session.state });
+                this.emit("scrcpy-closed", { sessionId: session.sessionId });
+                return;
             }
-            return;
-        }
 
-        console.log(`[NewInstanceManager] Scrcpy ferme — force-stop ${session.packageName} (${session.sessionId})`);
-        session._appForceStopped = true;
-        session.state = "stopped";
-        session.client = null;
+            console.log(`[NewInstanceManager] Scrcpy ferme — force-stop ${session.packageName} (${session.sessionId})`);
+            session._appForceStopped = true;
+            session.state = "stopped";
+            session.client = null;
 
-        await this.forceStopAppOnDevice({
-            serial: session.serial,
-            packageName: session.packageName,
-            userId: session.userId,
-            sessionId: session.sessionId
-        });
+            await this.forceStopAppOnDevice({
+                serial: session.serial,
+                packageName: session.packageName,
+                userId: session.userId,
+                sessionId: session.sessionId
+            });
 
-        if (session.inputController) {
-            if (typeof session.inputController.dispose === "function") {
-                session.inputController.dispose();
+            if (session.inputController) {
+                if (typeof session.inputController.dispose === "function") {
+                    session.inputController.dispose();
+                }
+                session.inputController = null;
             }
-            session.inputController = null;
-        }
 
-        this.sessions.delete(session.sessionId);
-        this.emit("state", { sessionId: session.sessionId, state: session.state });
-        this.emit("scrcpy-closed", { sessionId: session.sessionId });
+            this.sessions.delete(session.sessionId);
+            this.emit("state", { sessionId: session.sessionId, state: session.state });
+            this.emit("scrcpy-closed", { sessionId: session.sessionId });
+        } finally {
+            if (this.sessions.has(session.sessionId)) {
+                session._scrcpyCloseHandling = false;
+            }
+        }
+    }
+
+    /**
+     * True si un transport USB ADB est encore online pour cette session.
+     * En cas d'incertitude → false (conserve le hold Continuer WiFi historique).
+     */
+    async _isUsbTransportStillOnline(session, shellSerial = null) {
+        try {
+            const registry = global.deviceRegistry;
+            const deviceId = session?.stableDeviceId || null;
+            const preferred = shellSerial || session?.serial || null;
+
+            if (registry?.resolveLiveUsbSerial) {
+                const live = await registry.resolveLiveUsbSerial({
+                    deviceId,
+                    preferredSerial: preferred
+                });
+                return Boolean(live);
+            }
+
+            if (registry?.getRawAdbDevices && preferred) {
+                const raw = await registry.getRawAdbDevices();
+                return (raw || []).some((device) =>
+                    device?.serial === preferred
+                    && device.connected !== false
+                    && device.status === "green"
+                    && !global.wifiAdbService?.isWifiSerial?.(device.serial)
+                );
+            }
+        } catch (err) {
+            console.warn(
+                `[NewInstanceManager] USB presence check failed:`,
+                err?.message || err
+            );
+        }
+        return false;
     }
 
     /** Géométrie new_display pour recreate après mort du VD (stop scrcpy). */

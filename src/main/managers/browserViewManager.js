@@ -375,8 +375,18 @@ class BrowserViewManager {
         if (!entry) return false;
 
         const { view } = entry;
-        this.mainWindow.removeBrowserView(view);
-        view.webContents.destroy();
+        try {
+            this.mainWindow.removeBrowserView(view);
+        } catch (_err) {
+            // noop
+        }
+        try {
+            if (view?.webContents && !view.webContents.isDestroyed()) {
+                view.webContents.destroy();
+            }
+        } catch (_err) {
+            // noop
+        }
         this.views.delete(sessionId);
         this.earlyEvents.delete(sessionId);
 
@@ -386,12 +396,15 @@ class BrowserViewManager {
         }
 
         console.log(`[BrowserViewManager] Session ${sessionId} fermée (view destroyed, stream stopped by caller)`);
+        this._notifyMainWindowSessionUi();
         return true;
     }
 
     sendToSessionView(sessionId, channel, payload) {
         const entry = this.views.get(sessionId);
         if (!entry?.view?.webContents || entry.view.webContents.isDestroyed()) {
+            // Ne pas bufferiser pour une session déjà fermée (évite replay fantôme).
+            if (!this.views.has(sessionId)) return;
             this._stashEarlyEvent(sessionId, channel, payload);
             return;
         }

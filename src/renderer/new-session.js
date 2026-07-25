@@ -1063,75 +1063,120 @@ function activateNewInstanceSession(sessionId) {
 }
 
 async function closeNewInstanceSession(sessionId, reason = "unspecified") {
+    if (!sessionId) return;
+
+    if (!closeNewInstanceSession._inflight) {
+        closeNewInstanceSession._inflight = new Set();
+    }
+    if (closeNewInstanceSession._inflight.has(sessionId)) {
+        console.warn(`[NewSession] close déjà en cours ${sessionId} reason=${reason}`);
+        return;
+    }
+    closeNewInstanceSession._inflight.add(sessionId);
+
     console.warn(`[NewSession] closeNewInstanceSession ${sessionId} reason=${reason}`);
-    const entry = newInstanceSessions.get(sessionId);
+    scrcpyClosedGraceUntilBySession.delete(sessionId);
 
-    // Teardown UI immédiat (même rythme que Type A) — kill device en arrière-plan.
-    if (entry) {
-        const cleanup = {
-            serial: entry.serial,
-            packageName: entry.packageName,
-            userId: entry.userId ?? null,
-            stableDeviceId: entry.stableDeviceId || null,
-            sessionId
-        };
+    try {
+        const entry = newInstanceSessions.get(sessionId);
 
-        if (cleanup.serial && cleanup.packageName && window.electronAPI?.forceStopAppOnDevice) {
-            void window.electronAPI.forceStopAppOnDevice(cleanup).catch((err) => {
-                console.error(`[NewSession] force-stop app ${cleanup.packageName}:`, err);
+        // Teardown UI immédiat (même rythme que Type A) — kill device en arrière-plan.
+        if (entry) {
+            const cleanup = {
+                serial: entry.serial,
+                packageName: entry.packageName,
+                userId: entry.userId ?? null,
+                stableDeviceId: entry.stableDeviceId || null,
+                sessionId
+            };
+
+            if (cleanup.serial && cleanup.packageName && window.electronAPI?.forceStopAppOnDevice) {
+                void window.electronAPI.forceStopAppOnDevice(cleanup).catch((err) => {
+                    console.error(`[NewSession] force-stop app ${cleanup.packageName}:`, err);
+                });
+            }
+
+            try {
+                if (entry.player) {
+                    try {
+                        entry.player.stop();
+                    } catch (_err) {
+                        // noop
+                    }
+                }
+
+                if (entry.pipeline) {
+                    void entry.pipeline.stop().catch(() => {});
+                    entry.pipeline.dispose?.();
+                } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
+                    void window.electronAPI.newInstanceStop({ sessionId }).catch(() => {});
+                }
+            } catch (err) {
+                console.error(`[NewSession] Erreur fermeture session ${sessionId}:`, err);
+            }
+
+            if (entry.canvas) {
+                entry.canvas.remove();
+            }
+
+            if (window.__sessionStreamBridge) {
+                window.__sessionStreamBridge.unregisterSessionStreamHandle(sessionId);
+            }
+
+            newInstanceSessions.delete(sessionId);
+        } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
+            void window.electronAPI.newInstanceStop({ sessionId }).catch((err) => {
+                console.error(`[NewSession] Erreur arret backend ${sessionId}:`, err);
             });
         }
 
+        if (window.sessionAPI) {
+            await window.sessionAPI.close(sessionId);
+        }
+
+        if (activeNewInstanceSessionId === sessionId) {
+            activeNewInstanceSessionId = null;
+        }
+
+        // Toujours se baser sur les BrowserViews restantes (Type A + B), pas seulement
+        // la map locale Type B — sinon un miroir restant réapparaît noir / — fps.
+        let remaining = [];
         try {
-            if (entry.player) {
-                try {
-                    entry.player.stop();
-                } catch (_err) {
-                    // noop
-                }
-            }
-
-            if (entry.pipeline) {
-                void entry.pipeline.stop().catch(() => {});
-                entry.pipeline.dispose?.();
-            } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
-                void window.electronAPI.newInstanceStop({ sessionId }).catch(() => {});
-            }
-        } catch (err) {
-            console.error(`[NewSession] Erreur fermeture session ${sessionId}:`, err);
+            const listed = await window.sessionAPI?.list?.();
+            remaining = (Array.isArray(listed) ? listed : [])
+                .filter((session) => session?.sessionId && session.sessionId !== sessionId);
+        } catch (_err) {
+            remaining = [];
         }
 
-        if (entry.canvas) {
-            entry.canvas.remove();
-        }
-
-        if (window.__sessionStreamBridge) {
-            window.__sessionStreamBridge.unregisterSessionStreamHandle(sessionId);
-        }
-
-        newInstanceSessions.delete(sessionId);
-    } else if (sessionId.startsWith("new-instance-") && window.electronAPI?.newInstanceStop) {
-        void window.electronAPI.newInstanceStop({ sessionId }).catch((err) => {
-            console.error(`[NewSession] Erreur arret backend ${sessionId}:`, err);
-        });
-    }
-
-    if (window.sessionAPI) {
-        await window.sessionAPI.close(sessionId);
-    }
-
-    if (activeNewInstanceSessionId === sessionId) {
-        activeNewInstanceSessionId = null;
-        const remaining = Array.from(newInstanceSessions.keys());
         if (remaining.length > 0) {
-            activateNewInstanceSession(remaining[remaining.length - 1]);
+            const nextId = remaining[remaining.length - 1].sessionId;
+            if (typeof activateSessionTab === "function") {
+                await activateSessionTab(nextId);
+            } else if (nextId.startsWith("new-instance-")) {
+                activateNewInstanceSession(nextId);
+            }
+        } else if (typeof window.goToLaunchHome === "function") {
+            await window.goToLaunchHome();
         } else {
+            window.__hubShowingHome = true;
             showPage("page-new");
-            document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+            document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
+            document.querySelector(".content")?.classList.remove(
+                "content--session-view",
+                "content--session-focused"
+            );
+            if (window.sessionAPI?.suppressView) {
+                await window.sessionAPI.suppressView();
+            }
         }
-    }
 
-    if (typeof renderSidebar === "function") renderSidebar();
+        if (typeof renderSidebar === "function") {
+            await renderSidebar();
+        }
+    } finally {
+        closeNewInstanceSession._inflight.delete(sessionId);
+    }
 }
 
 function buildTypeBTabLabel(deviceName, appLabel) {
@@ -1594,36 +1639,45 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.electronAPI?.onNewInstanceScrcpyClosed && !isHubModalChildWindow()) {
         window.electronAPI.onNewInstanceScrcpyClosed(async ({ sessionId, ignoreScrcpyClosed } = {}) => {
             if (!sessionId) return;
-            // Ne pas fermer l'onglet pendant / juste après un reattach USB↔WiFi.
-            if (ignoreScrcpyClosed || shouldIgnoreScrcpyClosedLocally(sessionId)) {
-                console.warn(
-                    `[NewSession] scrcpy-closed ignoré (grace locale) ${sessionId}`
-                );
-                return;
-            }
+
+            let summary = null;
             try {
                 const listed = await window.electronAPI?.newInstanceList?.();
                 const sessions = listed?.sessions || listed || [];
-                const summary = Array.isArray(sessions)
+                summary = Array.isArray(sessions)
                     ? sessions.find((s) => s?.sessionId === sessionId)
                     : null;
-                if (summary?.state === "reconnecting" || summary?.ignoreScrcpyClosed) {
-                    markScrcpyClosedGrace(sessionId);
-                    console.warn(
-                        `[NewSession] scrcpy-closed ignoré (reattach/grace) ${sessionId} state=${summary?.state}`
-                    );
-                    return;
-                }
-                // Session toujours vivante côté main → closed parasite (pas une vraie mort).
-                if (summary && summary.state !== "stopped" && summary.state !== "error") {
-                    console.warn(
-                        `[NewSession] scrcpy-closed ignoré — session vivante state=${summary.state} ${sessionId}`
-                    );
-                    return;
-                }
             } catch (_err) {
                 // noop — fallback fermeture classique
             }
+
+            const mainGoneOrStopped = !summary
+                || summary.state === "stopped"
+                || summary.state === "error";
+
+            // Grace / ignore seulement si la session main est encore vivante (reattach).
+            // Si main a déjà supprimé/stopped la session, fermer l'onglet même sous grace
+            // locale — sinon BrowserView orpheline (écran noir + — fps).
+            if (!mainGoneOrStopped) {
+                if (
+                    ignoreScrcpyClosed
+                    || shouldIgnoreScrcpyClosedLocally(sessionId)
+                    || summary.state === "reconnecting"
+                    || summary.ignoreScrcpyClosed
+                ) {
+                    markScrcpyClosedGrace(sessionId);
+                    console.warn(
+                        `[NewSession] scrcpy-closed ignoré (reattach/grace) ${sessionId} state=${summary.state}`
+                    );
+                    return;
+                }
+                console.warn(
+                    `[NewSession] scrcpy-closed ignoré — session vivante state=${summary.state} ${sessionId}`
+                );
+                return;
+            }
+
+            scrcpyClosedGraceUntilBySession.delete(sessionId);
             console.log(`[NewSession] Scrcpy ferme, fermeture session ${sessionId}`);
             await closeNewInstanceSession(sessionId, "scrcpy-closed");
         });

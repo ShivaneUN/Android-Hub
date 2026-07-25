@@ -569,6 +569,7 @@ class ScrcpySocketClient extends EventEmitter {
 
     this.videoSocket.on("close", () => {
         console.log(`[ScrcpySocketClient] Socket vidéo fermé pour ${this.serial}`);
+        this.videoSocket = null;
         if (!this._suppressClosedEvent) {
             this.emit("closed");
         }
