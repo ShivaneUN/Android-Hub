@@ -762,6 +762,275 @@ body.theme-tablet .empty-state-mascot {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
+.home-sessions-section {
+  width: 100%;
+  max-width: 520px;
+}
+
+.home-sessions-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.home-sessions-empty {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.home-session-tile {
+  position: relative;
+  width: 148px;
+  border: 1.5px solid color-mix(in srgb, var(--accent-blue) 55%, #2a3344);
+  border-radius: 12px;
+  background: #12171f;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition: border-color 0.15s, transform 0.12s;
+  outline: none;
+}
+
+.home-session-tile:hover {
+  border-color: color-mix(in srgb, var(--accent-blue) 85%, #fff);
+  transform: translateY(-1px);
+}
+
+.home-session-tile.is-active {
+  border-color: #3fb950;
+  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.home-session-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: #0b1018;
+}
+
+.home-session-thumb-fallback {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #151b26, #0c1018);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.home-session-live {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.92);
+  color: #04110a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.home-session-fps {
+  position: absolute;
+  top: 6px;
+  right: 28px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8ecf4;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.home-session-close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 20, 0.82);
+  color: #f5f7fb;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.home-session-close:hover {
+  background: #c4314b;
+  border-color: #c4314b;
+}
+
+.home-session-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.home-session-name {
+  font-size: 11px;
+  font-weight: 650;
+  color: #f5f7fb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.home-action-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.home-action-card {
+  width: 168px;
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 12px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: #161b24;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.home-action-card:hover {
+  background: #1c2230;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.home-action-card--accent {
+  border-color: #3fb950;
+  background: #142018;
+}
+
+.home-action-card--accent:hover {
+  background: #18261e;
+}
+
+.home-action-card-icon {
+  color: #3fb950;
+  display: inline-flex;
+}
+
+.home-action-card-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #f5f7fb;
+}
+
+.home-action-card-desc {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.home-session-close-confirm {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  width: min(300px, calc(100% - 24px));
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #161b24;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.home-session-close-confirm.hidden {
+  display: none;
+}
+
+.home-session-close-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f5f7fb;
+}
+
+.home-session-close-lead {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.home-session-close-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.home-session-close-btn {
+  min-width: 88px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a2130;
+  color: #e8ecf4;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.home-session-close-btn:hover {
+  background: #232a36;
+}
+
+.home-session-close-btn--danger {
+  background: #c4314b;
+  border-color: #c4314b;
+  color: #fff;
+}
+
+.home-session-close-btn--danger:hover {
+  background: #d43d57;
+}
+
+body.theme-tablet .empty-state {
+  position: relative;
+}
+
+body.theme-tablet .home-sessions-section,
+body.theme-tablet .home-actions-section {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 0 18px;
+  text-align: center;
+}
+
+body.theme-tablet .home-sessions-section[hidden],
+body.theme-tablet .home-actions-section[hidden] {
+  display: none !important;
+}
+
 /* -- Commit C : masquer le rail latéral en thème tablette.
       Le dock (#quick-actions-dock) est un sibling de .sidebar-shell
       (placé hors du rail via placeDock), donc il n'est pas affecté. -- */

@@ -184,9 +184,40 @@
             <p class="subtitle" data-i18n="emptyState.subtitle">Affichage et contrôle multi-appareils Android</p>
             <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
           </div>
+          <div class="home-dashboard-section home-sessions-section tablet-only" hidden>
+            <p class="home-dashboard-label" data-i18n="homeDashboard.activeSessions">Sessions actives</p>
+            <div class="home-sessions-grid" id="home-sessions-grid"></div>
+            <p class="home-sessions-empty" id="home-sessions-empty" hidden data-i18n="homeDashboard.noSessions">Aucune session ouverte</p>
+          </div>
+          <div class="home-dashboard-section home-actions-section tablet-only" hidden>
+            <div class="home-action-cards">
+              <button type="button" class="home-action-card" id="home-action-new-instance">
+                <span class="home-action-card-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
+                </span>
+                <span class="home-action-card-title" data-i18n="homeDashboard.newInstance">Nouvelle instance</span>
+                <span class="home-action-card-desc" data-i18n="homeDashboard.newInstanceDesc">Lancer une app</span>
+              </button>
+              <button type="button" class="home-action-card" id="home-action-stream-deck">
+                <span class="home-action-card-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                </span>
+                <span class="home-action-card-title" data-i18n="homeDashboard.streamDeck">Stream Deck</span>
+                <span class="home-action-card-desc" data-i18n="homeDashboard.streamDeckDesc">Grille · Focus · Duo</span>
+              </button>
+            </div>
+          </div>
           <div class="home-dashboard-section home-apps-section tablet-only" hidden>
             <p class="home-dashboard-label" data-i18n="homeDashboard.recentApps">Applications récentes</p>
             <div class="home-apps-recent" id="home-apps-recent"></div>
+          </div>
+          <div class="home-session-close-confirm hidden" id="home-session-close-confirm" role="dialog" aria-modal="true" aria-labelledby="home-session-close-title">
+            <p class="home-session-close-title" id="home-session-close-title" data-i18n="homeDashboard.closeSessionTitle">Fermer la session ?</p>
+            <p class="home-session-close-lead" id="home-session-close-lead"></p>
+            <div class="home-session-close-actions">
+              <button type="button" class="home-session-close-btn" id="home-session-close-cancel" data-i18n="homeDashboard.closeSessionCancel">Annuler</button>
+              <button type="button" class="home-session-close-btn home-session-close-btn--danger" id="home-session-close-ok" data-i18n="homeDashboard.closeSessionConfirm">Fermer</button>
+            </div>
           </div>
         </div>
       </div>
@@ -340,6 +371,9 @@
       }
       if (typeof window.syncDockBatteries === "function") {
         void window.syncDockBatteries();
+      }
+      if (typeof window.syncHomeSessions === "function") {
+        void window.syncHomeSessions();
       }
     } catch (err) {
       console.error("[goToLaunchHome]", err);

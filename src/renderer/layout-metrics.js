@@ -136,6 +136,11 @@ async function syncVideoWithSidebarModalsOrStreamDeck() {
         return;
     }
 
+    // Lever le suppress Accueil avant tout layout (sinon Stream Deck reste noir).
+    if (window.sessionAPI?.restoreView) {
+        await window.sessionAPI.restoreView();
+    }
+
     if (window.getStreamDeckMode?.() === true && typeof window.syncStreamDeckLayout === "function") {
         await window.syncStreamDeckLayout();
         return;

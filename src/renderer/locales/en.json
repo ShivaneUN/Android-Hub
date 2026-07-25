@@ -37,7 +37,17 @@
     }
   },
   "homeDashboard": {
-    "recentApps": "Recent apps"
+    "recentApps": "Recent apps",
+    "activeSessions": "Active sessions",
+    "noSessions": "No open sessions",
+    "newInstance": "New instance",
+    "newInstanceDesc": "Launch an app",
+    "streamDeck": "Stream Deck",
+    "streamDeckDesc": "Grid · Focus · Duo",
+    "live": "LIVE",
+    "closeSessionTitle": "Close this session?",
+    "closeSessionCancel": "Cancel",
+    "closeSessionConfirm": "Close"
   },
   "uiTheme": {
     "classicTitle": "Classic interface",

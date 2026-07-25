@@ -69,6 +69,8 @@ class BrowserViewManager {
         const next = mode === "multi" ? "multi" : "single";
         if (next === this.layoutMode) return;
         this.layoutMode = next;
+        // Un layout explicite doit toujours réafficher les vues (sortie Accueil / Stream Deck).
+        this.viewSuppressed = false;
         if (next === "single") {
             this.multiSessionBounds.clear();
             this._updateActiveBounds();
@@ -93,7 +95,11 @@ class BrowserViewManager {
             });
         }
 
+        // Même carte de bounds : il faut quand même lever suppress (retour Accueil → Stream Deck).
+        this.viewSuppressed = false;
+
         if (this.layoutMode === "multi" && this._multiBoundsMapsEqual(this.multiSessionBounds, nextMap)) {
+            this._applyMultiLayoutBounds();
             return;
         }
 
@@ -113,9 +119,13 @@ class BrowserViewManager {
     }
 
     restoreActiveView() {
-        if (!this.activeSessionId) return;
-        console.log("[BrowserViewManager] restoreActiveView", this.activeSessionId);
+        console.log("[BrowserViewManager] restoreActiveView", this.activeSessionId, this.layoutMode);
         this.viewSuppressed = false;
+        if (this.layoutMode === "multi" && this.multiSessionBounds.size > 0) {
+            this._applyMultiLayoutBounds();
+            return;
+        }
+        if (!this.activeSessionId) return;
         this._updateActiveBounds();
     }
 

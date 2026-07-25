@@ -3,6 +3,12 @@
   /** Nombre max de pastilles compactes visibles ; le reste passe dans +N. */
   const DOCK_BATTERY_VISIBLE_MAX = 5;
   let dockMoreOpen = false;
+  let homeSessionsCache = [];
+  let homeSessionsKey = "";
+  let homeFpsBySession = {};
+  let homePreviewTimer = null;
+  let homePreviewInFlight = false;
+  let pendingCloseSessionId = null;
 
   function escapeAttr(value) {
     return String(value || "")
@@ -69,10 +75,358 @@
     const intro = document.getElementById("empty-state-intro");
     const appsSection = document.querySelector(".home-apps-section");
     const devicesSection = document.querySelector(".home-devices-section");
+    const sessionsSection = document.querySelector(".home-sessions-section");
+    const actionsSection = document.querySelector(".home-actions-section");
     const connected = hasConnectedDevice();
     if (intro) intro.hidden = connected;
     if (appsSection) appsSection.hidden = !connected;
     if (devicesSection) devicesSection.hidden = !connected;
+    if (sessionsSection) sessionsSection.hidden = !connected;
+    if (actionsSection) actionsSection.hidden = !connected;
+    if (connected) {
+      void syncHomeSessions();
+    } else {
+      stopHomePreviewPolling();
+      homeSessionsKey = "";
+      homeSessionsCache = [];
+      const grid = document.getElementById("home-sessions-grid");
+      const empty = document.getElementById("home-sessions-empty");
+      if (grid) grid.innerHTML = "";
+      if (empty) empty.hidden = true;
+      syncHomeMascot(0);
+      hideCloseConfirm();
+    }
+  }
+
+  function syncHomeMascot(sessionCount) {
+    const mascot = document.querySelector(".empty-state-mascot");
+    if (!mascot) return;
+    // Logo visible tant qu'aucune session n'est ouverte (même avec appareil connecté).
+    mascot.hidden = Number(sessionCount) > 0;
+  }
+
+  function tHome(key, fallback) {
+    return globalThis.HubI18n?.t?.(key) || fallback;
+  }
+
+  function sessionsFromTabBar() {
+    const tabs = document.querySelectorAll(".scrcpy-tab");
+    return Array.from(tabs).map((tab) => {
+      const labelEl = tab.querySelector(".tab-label");
+      const raw = labelEl?.textContent?.replace(/\s+/g, " ").trim() || tab.dataset.tabId;
+      const badge = labelEl?.querySelector(".session-type-badge");
+      const label = badge ? raw.replace(badge.textContent, "").trim() : raw;
+      return {
+        sessionId: tab.dataset.tabId,
+        type: tab.dataset.sessionType || "A",
+        label: label || tab.dataset.tabId,
+        active: tab.classList.contains("active")
+      };
+    }).filter((session) => session.sessionId);
+  }
+
+  async function fetchHomeSessions() {
+    let list = [];
+    try {
+      if (window.sessionAPI?.list) {
+        list = await window.sessionAPI.list();
+      }
+    } catch (_err) {
+      list = [];
+    }
+    if (Array.isArray(list) && list.length) return list;
+    return sessionsFromTabBar();
+  }
+
+  function isHomeVisible() {
+    const page = document.getElementById("page-new");
+    return Boolean(
+      document.body.classList.contains("theme-tablet")
+      && page
+      && !page.classList.contains("hidden")
+      && window.__hubShowingHome
+    );
+  }
+
+  function hideCloseConfirm() {
+    pendingCloseSessionId = null;
+    document.getElementById("home-session-close-confirm")?.classList.add("hidden");
+  }
+
+  function showCloseConfirm(sessionId, label) {
+    pendingCloseSessionId = sessionId;
+    const dialog = document.getElementById("home-session-close-confirm");
+    const lead = document.getElementById("home-session-close-lead");
+    if (lead) lead.textContent = label || sessionId || "";
+    dialog?.classList.remove("hidden");
+  }
+
+  async function closeHomeSession(sessionId) {
+    if (!sessionId) return;
+    try {
+      if (sessionId.startsWith("instance-") && typeof closeInstance === "function") {
+        await closeInstance(sessionId);
+      } else if (typeof closeNewInstanceSession === "function") {
+        await closeNewInstanceSession(sessionId, "home-session-close");
+      } else if (window.sessionAPI?.close) {
+        await window.sessionAPI.close(sessionId);
+        if (typeof renderSidebar === "function") await renderSidebar();
+      }
+    } catch (err) {
+      console.error("[HomeDashboard] closeHomeSession:", err);
+    }
+    hideCloseConfirm();
+    await syncHomeSessions();
+  }
+
+  function homeSessionsSignature(sessions) {
+    return (Array.isArray(sessions) ? sessions : [])
+      .map((session) => `${session.sessionId}:${session.active ? 1 : 0}:${session.label || ""}`)
+      .join("|");
+  }
+
+  function bindHomeSessionTile(tile) {
+    const activate = () => {
+      const sessionId = tile.dataset.sessionId;
+      if (!sessionId) return;
+      if (typeof window.activateSessionTab === "function") {
+        void window.activateSessionTab(sessionId);
+      } else if (window.sessionAPI?.switchTo) {
+        void window.sessionAPI.switchTo(sessionId);
+      }
+    };
+    tile.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-home-session-close]")) return;
+      activate();
+    });
+    tile.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      activate();
+    });
+    tile.querySelector("[data-home-session-close]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const sessionId = event.currentTarget.getAttribute("data-home-session-close");
+      const session = homeSessionsCache.find((item) => item.sessionId === sessionId);
+      showCloseConfirm(sessionId, session?.label || sessionId);
+    });
+  }
+
+  function renderHomeSessions(sessions) {
+    const grid = document.getElementById("home-sessions-grid");
+    const empty = document.getElementById("home-sessions-empty");
+    if (!grid || !empty) return;
+
+    homeSessionsCache = Array.isArray(sessions) ? sessions : [];
+    syncHomeMascot(homeSessionsCache.length);
+
+    if (!homeSessionsCache.length) {
+      homeSessionsKey = "";
+      grid.innerHTML = "";
+      empty.hidden = false;
+      stopHomePreviewPolling();
+      return;
+    }
+
+    empty.hidden = true;
+    const nextKey = homeSessionsSignature(homeSessionsCache);
+    if (nextKey === homeSessionsKey && grid.querySelector(".home-session-tile")) {
+      homeSessionsCache.forEach((session) => {
+        const tile = grid.querySelector(`.home-session-tile[data-session-id="${CSS.escape(session.sessionId)}"]`);
+        if (!tile) return;
+        tile.classList.toggle("is-active", Boolean(session.active));
+        const name = tile.querySelector(".home-session-name");
+        if (name && session.label) name.textContent = session.label;
+        const fpsBadge = tile.querySelector("[data-session-fps]");
+        if (fpsBadge) {
+          const fps = homeFpsBySession[session.sessionId];
+          fpsBadge.textContent = fps === null || fps === undefined ? "— fps" : `${fps} fps`;
+        }
+      });
+      startHomePreviewPolling();
+      return;
+    }
+
+    homeSessionsKey = nextKey;
+    const liveLabel = tHome("homeDashboard.live", "LIVE");
+    const previousThumbs = new Map();
+    grid.querySelectorAll(".home-session-tile").forEach((tile) => {
+      const id = tile.dataset.sessionId;
+      const img = tile.querySelector("img.home-session-thumb");
+      if (id && img?.src) previousThumbs.set(id, img.src);
+    });
+
+    grid.innerHTML = homeSessionsCache.map((session) => {
+      const id = session.sessionId;
+      const label = session.label || id;
+      const fps = homeFpsBySession[id];
+      const fpsText = fps === null || fps === undefined ? "— fps" : `${fps} fps`;
+      const activeClass = session.active ? " is-active" : "";
+      const keptSrc = previousThumbs.get(id);
+      const thumbHtml = keptSrc
+        ? `<img class="home-session-thumb" data-session-thumb="${escapeAttr(id)}" src="${escapeAttr(keptSrc)}" alt="">`
+        : `<div class="home-session-thumb-fallback" data-session-thumb="${escapeAttr(id)}">${escapeHtml(label)}</div>`;
+      return (
+        `<div class="home-session-tile${activeClass}" data-session-id="${escapeAttr(id)}" title="${escapeAttr(label)}" role="button" tabindex="0">` +
+        `<span class="home-session-live">${escapeHtml(liveLabel)}</span>` +
+        `<span class="home-session-fps" data-session-fps="${escapeAttr(id)}">${escapeHtml(fpsText)}</span>` +
+        `<button type="button" class="home-session-close" data-home-session-close="${escapeAttr(id)}" aria-label="${escapeAttr(tHome("homeDashboard.closeSessionConfirm", "Fermer"))}">&#10005;</button>` +
+        thumbHtml +
+        `<div class="home-session-meta"><span class="home-session-name">${escapeHtml(label)}</span></div>` +
+        `</div>`
+      );
+    }).join("");
+
+    grid.querySelectorAll(".home-session-tile").forEach(bindHomeSessionTile);
+    startHomePreviewPolling();
+    void refreshHomeSessionPreviews();
+  }
+
+  async function syncHomeSessions() {
+    if (!document.body.classList.contains("theme-tablet")) return;
+    if (!hasConnectedDevice()) {
+      syncHomeMascot(0);
+      return;
+    }
+    const sessions = await fetchHomeSessions();
+    renderHomeSessions(sessions);
+  }
+
+  async function refreshHomeSessionPreviews() {
+    if (!isHomeVisible() || !window.sessionAPI?.getPreviewFrame || homePreviewInFlight) return;
+    homePreviewInFlight = true;
+    try {
+      const hosts = document.querySelectorAll("#home-sessions-grid [data-session-thumb]");
+      for (const host of hosts) {
+        const sessionId = host.getAttribute("data-session-thumb");
+        if (!sessionId) continue;
+        try {
+          const result = await window.sessionAPI.getPreviewFrame(sessionId);
+          if (!result?.available || !result.dataUrl) continue;
+          if (host.tagName === "IMG") {
+            if (host.src !== result.dataUrl) host.src = result.dataUrl;
+            continue;
+          }
+          const tile = host.closest(".home-session-tile");
+          if (!tile) continue;
+          const img = document.createElement("img");
+          img.className = "home-session-thumb";
+          img.alt = "";
+          img.setAttribute("data-session-thumb", sessionId);
+          img.src = result.dataUrl;
+          host.replaceWith(img);
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+    } finally {
+      homePreviewInFlight = false;
+    }
+  }
+
+  function startHomePreviewPolling() {
+    if (homePreviewTimer) return;
+    homePreviewTimer = window.setInterval(() => {
+      if (!isHomeVisible()) {
+        stopHomePreviewPolling();
+        return;
+      }
+      void refreshHomeSessionPreviews();
+    }, 1500);
+  }
+
+  function stopHomePreviewPolling() {
+    if (!homePreviewTimer) return;
+    window.clearInterval(homePreviewTimer);
+    homePreviewTimer = null;
+  }
+
+  function updateHomeSessionFps(fpsBySession) {
+    homeFpsBySession = fpsBySession && typeof fpsBySession === "object" ? fpsBySession : {};
+    document.querySelectorAll("[data-session-fps]").forEach((badge) => {
+      const sessionId = badge.getAttribute("data-session-fps");
+      const fps = homeFpsBySession[sessionId];
+      badge.textContent = fps === null || fps === undefined ? "— fps" : `${fps} fps`;
+    });
+  }
+
+  async function openStreamDeckFromHome() {
+    try {
+      // Quitter l'accueil AVANT d'activer Stream Deck, sinon le layout
+      // se calcule avec __hubShowingHome=true et le flux reste suppressé.
+      window.__hubShowingHome = false;
+      stopHomePreviewPolling();
+      hideCloseConfirm();
+
+      document.querySelectorAll(".content > .page").forEach((page) => page.classList.add("hidden"));
+      document.getElementById("nav-home")?.classList.remove("active");
+
+      const content = document.querySelector(".content");
+      if (content) {
+        content.classList.add("content--session-view");
+      }
+
+      // Lever immédiatement le mask 0×0 laissé par l'Accueil.
+      if (window.sessionAPI?.restoreView) {
+        await window.sessionAPI.restoreView();
+      }
+
+      if (window.getStreamDeckMode?.() !== true) {
+        window.setStreamDeckMode?.(true);
+      }
+      window.updateStreamDeckToggle?.();
+
+      const sessions = await fetchHomeSessions();
+      if (sessions.length && typeof window.activateSessionTab === "function") {
+        const active = sessions.find((session) => session.active) || sessions[0];
+        await window.activateSessionTab(active.sessionId);
+      }
+
+      window.refreshStreamDeckBar?.();
+      window.refreshStreamDeckZone?.();
+
+      await new Promise((resolve) => setTimeout(resolve, 64));
+      window.refreshStreamDeckZone?.();
+      if (typeof window.invalidateVideoLayoutBoundsCache === "function") {
+        window.invalidateVideoLayoutBoundsCache();
+      }
+      if (window.sessionAPI?.restoreView) {
+        await window.sessionAPI.restoreView();
+      }
+      if (typeof reportContentBounds === "function") {
+        reportContentBounds();
+      }
+    } catch (err) {
+      console.error("[HomeDashboard] openStreamDeckFromHome:", err);
+    }
+  }
+
+  function bindHomeActions() {
+    const root = document.querySelector(".empty-state");
+    if (!root || root.dataset.homeActionsBound === "1") return;
+    root.dataset.homeActionsBound = "1";
+
+    document.getElementById("home-action-new-instance")?.addEventListener("click", () => {
+      if (typeof window.openNewSessionPanelFromMain === "function") {
+        void window.openNewSessionPanelFromMain();
+      } else if (typeof window.openNewSessionPanel === "function") {
+        void window.openNewSessionPanel();
+      }
+    });
+
+    document.getElementById("home-action-stream-deck")?.addEventListener("click", () => {
+      void openStreamDeckFromHome();
+    });
+
+    document.getElementById("home-session-close-cancel")?.addEventListener("click", () => {
+      hideCloseConfirm();
+    });
+
+    document.getElementById("home-session-close-ok")?.addEventListener("click", () => {
+      const sessionId = pendingCloseSessionId;
+      void closeHomeSession(sessionId);
+    });
   }
 
   function wifiIconSvg() {
@@ -548,6 +902,8 @@
     content.dataset.dockBatteryObserve = "1";
     const observer = new MutationObserver(() => {
       void syncDockBatteries();
+      if (isHomeVisible()) void syncHomeSessions();
+      else stopHomePreviewPolling();
     });
     observer.observe(content, { attributes: true, attributeFilter: ["class"] });
 
@@ -555,12 +911,16 @@
     if (tabs) {
       const tabsObserver = new MutationObserver(() => {
         void syncDockBatteries();
+        if (document.body.classList.contains("theme-tablet")) {
+          void syncHomeSessions();
+        }
       });
       tabsObserver.observe(tabs, { childList: true, subtree: true });
     }
   }
 
   window.syncDockBatteries = syncDockBatteries;
+  window.syncHomeSessions = syncHomeSessions;
   window.launchHistoryAPI?.onUpdated?.(syncRecentApps);
   window.electronAPI?.onAppMetadataUpdated?.(() => {
     void syncRecentApps();
@@ -568,6 +928,9 @@
   window.addEventListener("devices-refreshed", () => {
     void syncDockBatteries();
     syncEmptyStateIntro();
+  });
+  window.addEventListener("fps-updated", (event) => {
+    updateHomeSessionFps(event.detail || {});
   });
 
   if (window.deviceColorsAPI?.onUpdated) {
@@ -579,6 +942,7 @@
   window.HubI18n?.onChange?.(() => {
     void syncDockBatteries();
     void syncRecentApps();
+    void syncHomeSessions();
   });
 
   if (window.audioAPI?.onGlobalStateChanged) {
@@ -590,9 +954,36 @@
   document.addEventListener("DOMContentLoaded", () => {
     syncRecentApps();
     observeSessionView();
+    bindHomeActions();
     void syncDockBatteries();
     syncEmptyStateIntro();
   });
+
+  const originalGoHome = window.goToLaunchHome;
+  if (typeof originalGoHome === "function" && !originalGoHome.__homeSessionsWrapped) {
+    const wrapped = async (...args) => {
+      const result = await originalGoHome(...args);
+      syncEmptyStateIntro();
+      void syncHomeSessions();
+      return result;
+    };
+    wrapped.__homeSessionsWrapped = true;
+    window.goToLaunchHome = wrapped;
+  } else {
+    // goToLaunchHome may be defined later in index.html — hook after load
+    window.addEventListener("load", () => {
+      const goHome = window.goToLaunchHome;
+      if (typeof goHome !== "function" || goHome.__homeSessionsWrapped) return;
+      const wrapped = async (...args) => {
+        const result = await goHome(...args);
+        syncEmptyStateIntro();
+        void syncHomeSessions();
+        return result;
+      };
+      wrapped.__homeSessionsWrapped = true;
+      window.goToLaunchHome = wrapped;
+    });
+  }
 
   document.addEventListener("pointerdown", (event) => {
     if (!dockMoreOpen) return;
