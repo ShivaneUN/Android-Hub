@@ -47,7 +47,13 @@
     "live": "LIVE",
     "closeSessionTitle": "Fermer la session ?",
     "closeSessionCancel": "Annuler",
-    "closeSessionConfirm": "Fermer"
+    "closeSessionConfirm": "Fermer",
+    "wifiReconnectTip": "Reconnecter un appareil en Wi‑Fi",
+    "wifiReconnectTitle": "Appareils Wi‑Fi connus",
+    "wifiReconnectEmpty": "Aucun appareil Wi‑Fi enregistré",
+    "wifiReconnectAction": "Reconnecter",
+    "wifiReconnectLoading": "Chargement…",
+    "wifiReconnectError": "Impossible de charger la liste"
   },
   "uiTheme": {
     "classicTitle": "Interface classique",

@@ -236,6 +236,21 @@
 
 </div>
 
+<button type="button" id="home-wifi-reconnect-btn" class="home-wifi-reconnect-btn" data-i18n-dock-tip="homeDashboard.wifiReconnectTip" data-dock-tip="Reconnecter un appareil en Wi‑Fi" aria-haspopup="dialog" aria-controls="home-wifi-reconnect-popup">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M5 12.5a9 9 0 0 1 14 0"/>
+    <path d="M8.5 15.5a5 5 0 0 1 7 0"/>
+    <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>
+  </svg>
+</button>
+<div id="home-wifi-reconnect-popup" class="home-wifi-reconnect-popup hidden" role="dialog" aria-modal="true" aria-labelledby="home-wifi-reconnect-title" hidden>
+  <div class="home-wifi-reconnect-popup-head">
+    <p class="home-wifi-reconnect-popup-title" id="home-wifi-reconnect-title" data-i18n="homeDashboard.wifiReconnectTitle">Appareils Wi‑Fi connus</p>
+    <button type="button" class="home-wifi-reconnect-popup-close" id="home-wifi-reconnect-close" data-i18n-aria-label="streamDeck.close" aria-label="Fermer">&#10005;</button>
+  </div>
+  <div class="home-wifi-reconnect-list" id="home-wifi-reconnect-list"></div>
+</div>
+
 <script src="i18n/i18n.js"></script>
 <script src="../shared/app-name.js"></script>
 <script src="../shared/app-display.js"></script>

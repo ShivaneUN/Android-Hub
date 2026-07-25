@@ -47,7 +47,13 @@
     "live": "LIVE",
     "closeSessionTitle": "Close this session?",
     "closeSessionCancel": "Cancel",
-    "closeSessionConfirm": "Close"
+    "closeSessionConfirm": "Close",
+    "wifiReconnectTip": "Reconnect a device over Wi‑Fi",
+    "wifiReconnectTitle": "Known Wi‑Fi devices",
+    "wifiReconnectEmpty": "No saved Wi‑Fi devices",
+    "wifiReconnectAction": "Reconnect",
+    "wifiReconnectLoading": "Loading…",
+    "wifiReconnectError": "Could not load the list"
   },
   "uiTheme": {
     "classicTitle": "Classic interface",

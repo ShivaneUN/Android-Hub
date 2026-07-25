@@ -9,6 +9,9 @@ body.theme-tablet {
   --radius-pill: 22px;
   --radius-tile: 10px;
   --dock-reserve: 56px;
+  --home-wifi-btn-size: 40px;
+  /* Dock normal ~46px ; overlay agrandi ~108px — au-dessus de la zone d’expansion. */
+  --home-wifi-btn-bottom: 120px;
 }
 
 body.theme-tablet .titlebar {
@@ -204,6 +207,194 @@ body.theme-tablet .quick-actions-dock {
 body.theme-tablet .quick-actions-dock.dock-covered {
   opacity: 0;
   pointer-events: none;
+}
+
+/* Bouton Wi‑Fi : au-dessus du dock, hors zone d’agrandissement hover.
+   Hors de .main-layout (overflow:hidden) pour rester visible comme #nav-aide. */
+.home-wifi-reconnect-btn,
+.home-wifi-reconnect-popup {
+  display: none !important;
+}
+
+body.theme-tablet .home-wifi-reconnect-btn {
+  position: fixed;
+  left: 50%;
+  bottom: var(--home-wifi-btn-bottom);
+  z-index: 200;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: var(--home-wifi-btn-size);
+  height: var(--home-wifi-btn-size);
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(22, 27, 36, 0.96);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  color: #d5dde8;
+  transform: translateX(-50%);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+body.theme-tablet .home-wifi-reconnect-btn:hover {
+  color: #fff;
+  background: rgba(36, 44, 58, 0.98);
+  border-color: rgba(79, 140, 255, 0.45);
+}
+
+body.theme-tablet .home-wifi-reconnect-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
+}
+
+body.theme-tablet .home-wifi-reconnect-popup {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--home-wifi-btn-bottom, 120px) + var(--home-wifi-btn-size, 40px) + 10px);
+  z-index: 210;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 180px));
+  transform: translateX(-50%);
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 27, 36, 0.97);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  color: #e8ecf4;
+  pointer-events: auto;
+}
+
+body.theme-tablet .home-wifi-reconnect-popup.hidden,
+body.theme-tablet .home-wifi-reconnect-popup[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-wifi-reconnect-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.theme-tablet .home-wifi-reconnect-popup-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5f7fb;
+}
+
+body.theme-tablet .home-wifi-reconnect-popup-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa3b2;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+body.theme-tablet .home-wifi-reconnect-popup-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+body.theme-tablet .home-wifi-reconnect-list {
+  overflow: auto;
+  padding: 8px;
+}
+
+body.theme-tablet .home-wifi-reconnect-empty,
+body.theme-tablet .home-wifi-reconnect-status {
+  margin: 0;
+  padding: 16px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary, #9aa3b2);
+}
+
+body.theme-tablet .home-wifi-reconnect-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+body.theme-tablet .home-wifi-reconnect-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+body.theme-tablet .home-wifi-reconnect-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+body.theme-tablet .home-wifi-reconnect-row-name {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #f5f7fb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.theme-tablet .home-wifi-reconnect-row-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary, #9aa3b2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.theme-tablet .home-wifi-reconnect-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #9aa3b2;
+}
+
+body.theme-tablet .home-wifi-reconnect-row-status.is-online {
+  color: #5dcea0;
+}
+
+body.theme-tablet .home-wifi-reconnect-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+body.theme-tablet .home-wifi-reconnect-action {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a2130;
+  color: #e8ecf4;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body.theme-tablet .home-wifi-reconnect-action:hover:not(:disabled) {
+  background: #232a36;
+}
+
+body.theme-tablet .home-wifi-reconnect-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 /* Aide : bas gauche, toujours visible (y compris pendant un flux). */
