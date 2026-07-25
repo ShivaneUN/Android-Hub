@@ -1,6 +1,6 @@
 {
   "name": "android-hub",
-  "version": "1.1.52",
+  "version": "1.1.53",
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",
@@ -79,11 +79,13 @@
     "png-to-ico": "^3.0.1"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@yume-chan/adb": "^2.6.0",
     "@yume-chan/adb-scrcpy": "^2.3.2",
     "@yume-chan/scrcpy": "^2.3.0",
     "@yume-chan/scrcpy-decoder-webcodecs": "^2.5.3",
     "electron-updater": "^6.6.2",
-    "jmuxer": "^2.1.0"
+    "jmuxer": "^2.1.0",
+    "sharp": "^0.35.3"
   }
 }

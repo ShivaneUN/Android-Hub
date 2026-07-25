@@ -1,4 +1,4 @@
-const MIN_ICON_FILE_BYTES = 1024;
+const MIN_ICON_FILE_BYTES = 512;
 
 const APP_ICON_PLACEHOLDER_SVG = `<svg class="hub-app-icon-placeholder" viewBox="0 0 24 24" aria-hidden="true" role="img"><rect x="3" y="3" width="18" height="18" rx="5" fill="#3d4f6f"/><rect x="7" y="7" width="4" height="4" rx="1" fill="#cbd5e1"/><rect x="13" y="7" width="4" height="4" rx="1" fill="#94a3b8"/><rect x="7" y="13" width="4" height="4" rx="1" fill="#94a3b8"/><rect x="13" y="13" width="4" height="4" rx="1" fill="#64748b"/></svg>`;
 

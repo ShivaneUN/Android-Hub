@@ -1,0 +1,4 @@
+Android Asset Packaging Tool (aapt2)
+Copyright (C) The Android Open Source Project
+Licensed under the Apache License, Version 2.0
+https://source.android.com/

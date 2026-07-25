@@ -30,8 +30,8 @@ let activeNewInstanceSessionId = null;
 let historyAppList = null;
 let launcherIconPrefetchObserver = null;
 const prefetchedAppKeys = new Set();
-const VISIBLE_PREFETCH_COUNT = 10;
-const SCROLL_PREFETCH_ROOT_MARGIN = "120px 0px";
+const VISIBLE_PREFETCH_COUNT = 36;
+const SCROLL_PREFETCH_ROOT_MARGIN = "480px 0px";
 
 /** sessionId → timestamp : ignore scrcpy-closed pendant/après reattach USB↔WiFi. */
 const scrcpyClosedGraceUntilBySession = new Map();
@@ -320,7 +320,23 @@ function setupLauncherIconPrefetch(container, orderedApps = []) {
     disconnectLauncherIconPrefetchObserver();
     if (!container || !orderedApps.length) return;
 
+    // Permet une nouvelle passe sur les apps encore sans logo (échecs cache / heuristiques).
+    for (const app of orderedApps) {
+        if (!app.iconUrl && !app.iconPath) {
+            prefetchedAppKeys.delete(buildAppKey(app));
+        }
+    }
+
+    // Priorité UI : premières apps visibles.
     requestAppsMetadataPrefetch(orderedApps.slice(0, VISIBLE_PREFETCH_COUNT), { priority: "high" });
+
+    // Reste du catalogue en fond — après le batch visible (évite course IPC).
+    const backgroundApps = orderedApps.slice(VISIBLE_PREFETCH_COUNT);
+    if (backgroundApps.length) {
+        setTimeout(() => {
+            requestAppsMetadataPrefetch(backgroundApps, { priority: "normal" });
+        }, 0);
+    }
 
     if (typeof IntersectionObserver !== "function") return;
 

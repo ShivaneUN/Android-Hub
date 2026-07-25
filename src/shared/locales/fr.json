@@ -190,7 +190,7 @@
     "aboutFeat5Title": "Dock & batteries",
     "aboutFeat5Desc": "Dock flottant : écran, portrait, audio, Accueil. Batteries + Muet / Wi‑Fi par appareil pendant le stream.",
     "aboutFeat6Title": "Interface classique / Nouvelle",
-    "aboutFeat6Desc": "Rail classique ou interface tablette plein écran (Accueil enrichi, dock). Réglable dans Paramètres → Apparence, ou depuis l’écran d’accueil.",
+    "aboutFeat6Desc": "Rail classique ou interface tablette plein écran (Accueil enrichi, dock). Réglable dans Paramètres → Apparence.",
     "aboutFeat7Title": "Historique & récents",
     "aboutFeat7Desc": "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
     "aboutFeat8Title": "Aide & guides",
@@ -921,7 +921,7 @@
       "sections": [
         {
           "title": "Interface classique ou Nouvelle",
-          "body": "Interface classique conserve le rail latéral complet. Nouvelle interface passe en style tablette plein écran : Accueil enrichi (appareils connectés, applications récentes), dock flottant et navigation allégée. Vous pouvez aussi changer depuis l’écran d’accueil."
+          "body": "Interface classique conserve le rail latéral complet. Nouvelle interface passe en style tablette plein écran : Accueil enrichi (appareils connectés, applications récentes), dock flottant et navigation allégée. Le choix se fait dans Paramètres → Apparence."
         },
         {
           "title": "Couleur du Hub",

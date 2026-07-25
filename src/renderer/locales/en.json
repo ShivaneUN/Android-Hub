@@ -190,7 +190,7 @@
     "aboutFeat5Title": "Dock & batteries",
     "aboutFeat5Desc": "Floating dock: screen, portrait, audio, Home. Batteries plus per-device Mute / Wi‑Fi during stream.",
     "aboutFeat6Title": "Classic / New interface",
-    "aboutFeat6Desc": "Classic rail or full-screen tablet UI (richer Home, dock). Set in Settings → Appearance, or from the Home screen.",
+    "aboutFeat6Desc": "Classic rail or full-screen tablet UI (richer Home, dock). Set in Settings → Appearance.",
     "aboutFeat7Title": "History & recents",
     "aboutFeat7Desc": "Quickly find and relaunch recently used apps and profiles.",
     "aboutFeat8Title": "Help & guides",
@@ -921,7 +921,7 @@
       "sections": [
         {
           "title": "Classic or New interface",
-          "body": "Classic interface keeps the full side rail. New interface switches to a full-screen tablet layout: richer Home (connected devices, recent apps), floating dock, and lighter navigation. You can also switch from the Home screen."
+          "body": "Classic interface keeps the full side rail. New interface switches to a full-screen tablet layout: richer Home (connected devices, recent apps), floating dock, and lighter navigation. Choose it in Settings → Appearance."
         },
         {
           "title": "Hub color",

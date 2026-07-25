@@ -71,6 +71,10 @@ html[data-hub-wallpaper="1"] .tabs-bar {
   backdrop-filter: blur(8px);
 }
 
+html[data-hub-wallpaper="1"] .empty-state-mascot {
+  display: none !important;
+}
+
 .app {
   display: flex;
   flex-direction: column;

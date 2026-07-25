@@ -1,8 +1,14 @@
-const { app } = require("electron");
 const path = require("path");
 
+let electronApp = null;
+try {
+    electronApp = require("electron").app;
+} catch (_err) {
+    electronApp = null;
+}
+
 function getToolsDir() {
-    if (app.isPackaged) {
+    if (electronApp?.isPackaged) {
         return path.join(process.resourcesPath, "tools");
     }
     return path.join(__dirname, "..", "..", "tools");

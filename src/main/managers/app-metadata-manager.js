@@ -12,11 +12,15 @@ const { MIN_ICON_FILE_BYTES } = require("../../shared/app-icon-placeholder");
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DUMP_TIMEOUT_MS = 12000;
-const PREFETCH_CONCURRENCY = 4;
-const PREFETCH_PRIORITY_CONCURRENCY = 6;
-const DEFAULT_PREFETCH_MAX = 32;
+/** Fond : concurrence modérée (évite de saturer ADB). */
+const PREFETCH_CONCURRENCY = 8;
+/** Visibles / priorité UI. */
+const PREFETCH_PRIORITY_CONCURRENCY = 12;
+const DEFAULT_PREFETCH_MAX = 48;
 const MAX_ICON_EXTRACT_ATTEMPTS = 3;
 const INDEX_SAVE_DEBOUNCE_MS = 500;
+/** Bump to force re-extract when icon pipeline heuristics change. */
+const ICON_PIPELINE_VERSION = 4;
 
 function execPromise(command) {
     return new Promise((resolve, reject) => {
@@ -54,6 +58,8 @@ class AppMetadataManager {
         this._indexDirty = false;
         this._indexSaveTimer = null;
         this._stalePrunePromise = null;
+        /** @type {Map<string, Promise<{ iconPath: string|null, appName?: string|null }>>} */
+        this._inflightPackageExtract = new Map();
         this.loadIndex();
         fs.mkdirSync(this.cacheRoot, { recursive: true });
         void this.pruneStaleIconCacheEntries();
@@ -195,6 +201,7 @@ class AppMetadataManager {
     }
 
     async hasUsableIcon(entry) {
+        if (Number(entry?.iconPipelineVersion) !== ICON_PIPELINE_VERSION) return false;
         return this.isIconFileAccessible(entry?.iconPath);
     }
 
@@ -325,7 +332,7 @@ class AppMetadataManager {
             ? data.iconAttempts
             : (previous.iconAttempts || 0);
         const hasUsableSavedIcon = data.iconPath
-            ? await this.hasUsableIcon({ iconPath: data.iconPath })
+            ? await this.isIconFileAccessible(data.iconPath)
             : false;
 
         this.index[key] = {
@@ -336,6 +343,7 @@ class AppMetadataManager {
             iconPath: data.iconPath !== undefined ? data.iconPath : (previous.iconPath || null),
             iconAttempts: hasUsableSavedIcon ? 0 : iconAttempts,
             versionCode: data.versionCode !== undefined ? data.versionCode : (previous.versionCode ?? null),
+            iconPipelineVersion: hasUsableSavedIcon ? ICON_PIPELINE_VERSION : (data.iconPipelineVersion ?? previous.iconPipelineVersion ?? 0),
             fetchedAt: Date.now()
         };
         this.scheduleSaveIndex();
@@ -446,15 +454,63 @@ class AppMetadataManager {
             );
             if (!found?.entry || await this.hasUsableIcon(found.entry)) continue;
 
+            // Nouvelle passe d'extraction (heuristiques / aapt2) : reset échecs et vieux pipeline.
             const attempts = Number(found.entry.iconAttempts) || 0;
-            if (!found.entry.iconPath && attempts >= MAX_ICON_EXTRACT_ATTEMPTS) {
+            const stalePipeline = Number(found.entry.iconPipelineVersion) !== ICON_PIPELINE_VERSION;
+            if (!found.entry.iconPath || attempts > 0 || stalePipeline) {
+                if (stalePipeline && found.entry.iconPath) {
+                    await this.removeIconFileIfExists(found.entry.iconPath);
+                    found.entry.iconPath = null;
+                }
                 found.entry.iconAttempts = 0;
+                found.entry.iconPipelineVersion = 0;
                 changed = true;
             }
         }
 
         if (changed) {
             this.scheduleSaveIndex();
+        }
+    }
+
+    /**
+     * Réutilise l'icône déjà extraite pour le même package (autres profils / clones).
+     * Évite N pulls ADB pour Dofus×3, Contacts clonée, etc.
+     */
+    async findReusablePackageIcon(cacheDeviceId, packageName, excludeUserId = null, transportSerial = null) {
+        const packageNameStr = String(packageName || "");
+        if (!packageNameStr) return null;
+
+        const deviceIds = new Set(
+            [cacheDeviceId, transportSerial].filter(Boolean).map((id) => String(id))
+        );
+
+        for (const entry of Object.values(this.index)) {
+            if (!entry || entry.packageName !== packageNameStr) continue;
+            if (!deviceIds.has(String(entry.deviceId || ""))) continue;
+            if (
+                Number.isInteger(excludeUserId)
+                && Number(entry.userId) === excludeUserId
+            ) {
+                continue;
+            }
+            if (!(await this.hasUsableIcon(entry))) continue;
+            return entry;
+        }
+        return null;
+    }
+
+    async copyIconToPath(sourceIconPath, targetIconPath) {
+        if (!sourceIconPath || !targetIconPath) return null;
+        if (sourceIconPath === targetIconPath) {
+            return (await this.isIconFileAccessible(targetIconPath)) ? targetIconPath : null;
+        }
+        try {
+            await fs.promises.mkdir(path.dirname(targetIconPath), { recursive: true });
+            await fs.promises.copyFile(sourceIconPath, targetIconPath);
+            return (await this.isIconFileAccessible(targetIconPath)) ? targetIconPath : null;
+        } catch (_err) {
+            return null;
         }
     }
 
@@ -510,12 +566,13 @@ class AppMetadataManager {
             ctx.transportSerial
         );
         let appName = isUsableAppLabel(appNameHint) ? appNameHint.trim() : null;
-        if (!appName) {
+        if (!appName && !prefetch) {
             appName = await this.fetchLabelFromDump(ctx.adbSerial, packageName, userId);
         }
         if (!appName) {
             appName = refreshedFound?.entry?.appName
                 || found?.entry?.appName
+                || (isUsableAppLabel(appNameHint) ? appNameHint.trim() : null)
                 || humanizePackageName(packageName);
         }
 
@@ -533,18 +590,54 @@ class AppMetadataManager {
             || 0
         );
 
-        try {
-            savedIconPath = await this.iconExtractor.extractIcon(
-                ctx.adbSerial,
-                packageName,
-                iconPath,
-                userId
-            );
-        } catch (err) {
-            console.warn(`[AppMetadataManager] icone ${packageName}:`, err.message);
-            await this.invalidate(ctx.cacheDeviceId, packageName, userId, {
-                transportSerial: ctx.transportSerial
-            });
+        // 1) Copie depuis un autre profil / clone déjà extrait.
+        const reusable = await this.findReusablePackageIcon(
+            ctx.cacheDeviceId,
+            packageName,
+            Number.isInteger(userId) ? userId : null,
+            ctx.transportSerial
+        );
+        if (reusable?.iconPath) {
+            savedIconPath = await this.copyIconToPath(reusable.iconPath, iconPath);
+            if (!appName && reusable.appName) appName = reusable.appName;
+        }
+
+        // 2) Sinon extract ADB — dédupe concurrente par package (plusieurs profils en parallèle).
+        if (!savedIconPath) {
+            const inflightKey = `${ctx.cacheDeviceId}::${packageName}`;
+            let inflight = this._inflightPackageExtract.get(inflightKey);
+            if (!inflight) {
+                inflight = (async () => {
+                    try {
+                        const extracted = await this.iconExtractor.extractIcon(
+                            ctx.adbSerial,
+                            packageName,
+                            iconPath,
+                            userId
+                        );
+                        return { iconPath: extracted, appName };
+                    } catch (err) {
+                        console.warn(`[AppMetadataManager] icone ${packageName}:`, err.message);
+                        await this.invalidate(ctx.cacheDeviceId, packageName, userId, {
+                            transportSerial: ctx.transportSerial
+                        });
+                        return { iconPath: null, appName };
+                    } finally {
+                        this._inflightPackageExtract.delete(inflightKey);
+                    }
+                })();
+                this._inflightPackageExtract.set(inflightKey, inflight);
+            }
+
+            const shared = await inflight;
+            if (shared?.iconPath) {
+                if (shared.iconPath === iconPath) {
+                    savedIconPath = shared.iconPath;
+                } else {
+                    savedIconPath = await this.copyIconToPath(shared.iconPath, iconPath);
+                }
+            }
+            if (!appName && shared?.appName) appName = shared.appName;
         }
 
         const versionCode = prefetch
@@ -552,6 +645,7 @@ class AppMetadataManager {
                 this.index[this.buildKey(ctx.cacheDeviceId, packageName, userId)]?.versionCode
                 ?? refreshedFound?.entry?.versionCode
                 ?? found?.entry?.versionCode
+                ?? reusable?.versionCode
                 ?? null
             )
             : await this.fetchVersionCode(ctx.adbSerial, packageName, userId);
@@ -626,24 +720,34 @@ class AppMetadataManager {
         if (!pending.length) return;
 
         const queueKey = ctx.cacheDeviceId;
-        const existing = this.prefetchQueues.get(queueKey) || [];
-        const remaining = priority === "high"
-            ? maxCount
-            : Math.max(0, maxCount - existing.length);
-        if (remaining === 0) return;
-
-        const toAdd = pending.slice(0, remaining);
+        // maxCount s'applique à CE batch (pas au total file), pour pouvoir enfiler tout le catalogue.
+        const toAdd = pending.slice(0, maxCount);
         if (!toAdd.length) return;
+
+        const appKeyOf = (app) => {
+            const pkg = app.package || app.packageName || "";
+            const uid = Number.isInteger(app.userId) ? app.userId : 0;
+            return `${pkg}::${uid}`;
+        };
 
         if (this.prefetchQueues.has(queueKey)) {
             const queue = this.prefetchQueues.get(queueKey);
+            const queuedKeys = new Set(queue.map(appKeyOf));
+            const uniqueToAdd = toAdd.filter((app) => {
+                const key = appKeyOf(app);
+                if (queuedKeys.has(key)) return false;
+                queuedKeys.add(key);
+                return true;
+            });
+            if (!uniqueToAdd.length) return;
+
             if (priority === "high") {
-                queue.unshift(...toAdd);
+                queue.unshift(...uniqueToAdd);
                 const meta = this.prefetchQueueMeta.get(queueKey) || { concurrency };
                 meta.concurrency = Math.max(meta.concurrency || concurrency, concurrency);
                 this.prefetchQueueMeta.set(queueKey, meta);
             } else {
-                queue.push(...toAdd);
+                queue.push(...uniqueToAdd);
             }
             return;
         }
@@ -686,6 +790,10 @@ class AppMetadataManager {
                         console.warn(`[AppMetadataManager] prefetch ${packageName}:`, err.message);
                     }
                 }));
+                // Respirer l'event loop seulement tous les 2 batches (fallback main).
+                if ((this.prefetchQueues.get(queueKey)?.length || 0) % 2 === 1) {
+                    await new Promise((resolve) => setImmediate(resolve));
+                }
             }
 
             this.prefetchQueues.delete(queueKey);

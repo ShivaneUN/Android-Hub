@@ -5,7 +5,7 @@ const { LaunchHistoryManager } = require("./launch-history-manager");
 const WORKER_PATH = path.join(__dirname, "../workers/apps-worker.js");
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const APP_LIST_REQUEST_TIMEOUT_MS = 90000;
-const PREFETCH_REQUEST_TIMEOUT_MS = 15000;
+const PREFETCH_REQUEST_TIMEOUT_MS = 60000;
 const MAX_RESTART_ATTEMPTS = 3;
 
 class AppsWorkerBridge {
