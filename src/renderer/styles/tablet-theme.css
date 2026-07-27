@@ -239,7 +239,9 @@ body.theme-tablet .home-fab-bar {
 /* Pastilles Wi‑Fi / Stream Deck / + :
    hors accueil → masquées sauf si placées à gauche du dock central. */
 body.theme-tablet .home-fab-btn.is-hidden-off-home,
-body.theme-tablet .home-fab-group.is-hidden-off-home {
+body.theme-tablet .home-fab-group.is-hidden-off-home,
+body.theme-tablet .home-fab-btn.is-shortcut-disabled,
+body.theme-tablet .home-fab-btn[hidden] {
   display: none !important;
 }
 
@@ -301,9 +303,10 @@ body.theme-tablet .home-fab-group.is-dragging {
     0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
+/* Verrouillé : pas de contour — le lock reste via le menu contextuel. */
 body.theme-tablet .home-fab-group.is-group-locked {
-  border-color: rgba(34, 197, 94, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* Ligne-guide du bloc (axe barre centrale). */
@@ -312,6 +315,32 @@ body.theme-tablet .home-fab-guide-layer {
   inset: 0;
   z-index: 198;
   pointer-events: none;
+}
+
+body.theme-tablet .home-fab-slots-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  pointer-events: none;
+}
+
+body.theme-tablet .home-fab-slot {
+  position: fixed;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1.5px dashed rgba(125, 211, 252, 0.55);
+  background: rgba(56, 189, 248, 0.08);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+body.theme-tablet .home-fab-slot.is-active {
+  border-style: solid;
+  border-color: rgba(125, 211, 252, 0.95);
+  background: rgba(56, 189, 248, 0.22);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.35),
+    0 0 16px rgba(56, 189, 248, 0.35);
 }
 
 body.theme-tablet .home-fab-guide {
@@ -342,9 +371,6 @@ body.theme-tablet .home-fab-guide--dock.is-active {
 body.theme-tablet .home-fab-btn.is-locked,
 body.theme-tablet .home-wifi-reconnect-btn.is-locked {
   cursor: pointer;
-  box-shadow:
-    0 0 0 1px rgba(34, 197, 94, 0.35),
-    0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
 body.theme-tablet .home-fab-btn.is-dragging,

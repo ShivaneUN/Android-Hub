@@ -1,12 +1,6 @@
 const { BrowserWindow } = require("electron");
 const path = require("path");
 
-const PANEL_SIZES = {
-    "new-session": { width: 980, height: 700 },
-    settings: { width: 860, height: 760 },
-    help: { width: 960, height: 700 }
-};
-
 class HubModalOverlayManager {
     constructor(mainWindow) {
         this.mainWindow = mainWindow;
@@ -50,16 +44,13 @@ class HubModalOverlayManager {
         const win = this.overlayWindow;
         if (!win || win.isDestroyed() || !win.isVisible()) return;
 
-        const size = PANEL_SIZES[this.currentPanel] || { width: 480, height: 640 };
+        // Couvre toute la zone contenu pour permettre clic hors modale + fond assombri.
         const contentBounds = this.mainWindow.getContentBounds();
-        const x = contentBounds.x + Math.max(0, Math.round((contentBounds.width - size.width) / 2));
-        const y = contentBounds.y + Math.max(0, Math.round((contentBounds.height - size.height) / 2));
-
         win.setBounds({
-            x,
-            y,
-            width: size.width,
-            height: size.height
+            x: contentBounds.x,
+            y: contentBounds.y,
+            width: contentBounds.width,
+            height: contentBounds.height
         });
     }
 
@@ -81,7 +72,7 @@ class HubModalOverlayManager {
             focusable: true,
             skipTaskbar: true,
             show: false,
-            hasShadow: true,
+            hasShadow: false,
             thickFrame: false,
             backgroundColor: "#00000000",
             parent: this.mainWindow,

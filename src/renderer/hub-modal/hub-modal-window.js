@@ -49,12 +49,45 @@
         });
     }
 
+    function closeHubModal() {
+        window.stopDevicesPanelLiveRefresh?.();
+        window.hubModalWindowAPI?.close?.();
+    }
+
+    function isCleanupModalOpen() {
+        const overlay = document.getElementById("cleanup-modal-overlay");
+        return Boolean(overlay && !overlay.classList.contains("hidden"));
+    }
+
     function bindCloseButtons() {
         document.querySelectorAll("[data-hub-modal-close]").forEach((btn) => {
             btn.addEventListener("click", () => {
-                window.stopDevicesPanelLiveRefresh?.();
-                window.hubModalWindowAPI?.close?.();
+                closeHubModal();
             });
+        });
+    }
+
+    function bindDismissGestures() {
+        document.querySelectorAll(".hub-modal-panel").forEach((panel) => {
+            panel.addEventListener("mousedown", (event) => {
+                if (event.target !== panel) return;
+                if (isCleanupModalOpen()) return;
+                closeHubModal();
+            });
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key !== "Escape") return;
+            if (event.defaultPrevented) return;
+
+            if (isCleanupModalOpen()) {
+                document.getElementById("cleanup-modal-cancel-btn")?.click();
+                event.preventDefault();
+                return;
+            }
+
+            closeHubModal();
+            event.preventDefault();
         });
     }
 
@@ -86,6 +119,7 @@
     }
 
     bindCloseButtons();
+    bindDismissGestures();
     bindHubPanelRefreshButtons();
 
     if (window.hubModalWindowAPI?.onOpen) {

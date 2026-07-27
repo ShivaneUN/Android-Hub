@@ -40,6 +40,10 @@
         if (tab === "updates") {
             window.bindUpdateSettingsSection?.();
         }
+
+        if (tab === "home-shortcuts") {
+            window.bindHomeShortcutsSection?.();
+        }
     }
 
     function bindTabButtons() {

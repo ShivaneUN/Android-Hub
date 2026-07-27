@@ -584,6 +584,7 @@
         event.currentTarget.dataset.fabDidDrag = "0";
         return;
       }
+      if (!isHomeShortcutFabEnabled("new-instance")) return;
       openNewInstance();
     });
     document.getElementById("home-action-new-instance")?.addEventListener("click", openNewInstance);
@@ -593,10 +594,28 @@
         event.currentTarget.dataset.fabDidDrag = "0";
         return;
       }
+      if (!isHomeShortcutFabEnabled("stream-deck")) return;
       void openStreamDeckFromHome();
     });
     document.getElementById("home-action-stream-deck")?.addEventListener("click", () => {
       void openStreamDeckFromHome();
+    });
+
+    document.querySelectorAll(".home-fab-btn--shortcut").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        if (event.currentTarget?.dataset?.fabDidDrag === "1") {
+          event.currentTarget.dataset.fabDidDrag = "0";
+          return;
+        }
+        const fabId = btn.dataset.fabId;
+        if (!isHomeShortcutFabEnabled(fabId)) return;
+        const tab = btn.dataset.settingsTab || "devices";
+        if (typeof window.openSettingsPanelFromMain === "function") {
+          window.openSettingsPanelFromMain(tab);
+        } else if (typeof window.openSettingsPanel === "function") {
+          void window.openSettingsPanel({ tab });
+        }
+      });
     });
 
     document.getElementById("home-session-close-cancel")?.addEventListener("click", () => {
@@ -610,17 +629,132 @@
   }
 
   const HOME_FABS_STORAGE_KEY = "android-hub.home-fabs.v5";
+  const HOME_SHORTCUT_FABS_STORAGE_KEY = "android-hub.home-shortcut-fabs.v1";
   const HOME_FAB_SIZE = 40;
   /** Écart cible entre pastilles accrochées. */
   const HOME_FAB_GAP = 4;
   const HOME_FAB_SNAP = 96;
   /** Aimant du bloc sur l’axe de la barre centrale. */
   const HOME_FAB_GUIDE_SNAP = 56;
-  const HOME_FAB_IDS = ["new-instance", "stream-deck", "wifi"];
-
+  const HOME_FAB_CORE_IDS = ["new-instance", "stream-deck", "wifi"];
+  const HOME_FAB_OPTIONAL_IDS = [
+    "settings-devices",
+    "settings-appearance",
+    "settings-control",
+    "settings-maintenance"
+  ];
+  const HOME_FAB_TOGGLE_IDS = [...HOME_FAB_CORE_IDS, ...HOME_FAB_OPTIONAL_IDS];
+  const HOME_FAB_ALL_IDS = [...HOME_FAB_TOGGLE_IDS];
+  /** Liste active selon les cases Raccourcis Accueil. */
+  let HOME_FAB_IDS = [...HOME_FAB_CORE_IDS];
+  let homeShortcutFabPrefs = null;
   let homeFabsState = null;
   let homeFabDrag = null;
   let homeFabGroupDrag = null;
+
+  function defaultHomeShortcutFabPrefs() {
+    const prefs = {};
+    HOME_FAB_CORE_IDS.forEach((id) => {
+      prefs[id] = true;
+    });
+    HOME_FAB_OPTIONAL_IDS.forEach((id) => {
+      prefs[id] = false;
+    });
+    return prefs;
+  }
+
+  function loadHomeShortcutFabPrefs() {
+    try {
+      const raw = localStorage.getItem(HOME_SHORTCUT_FABS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      homeShortcutFabPrefs = { ...defaultHomeShortcutFabPrefs(), ...(parsed || {}) };
+      // Nettoyer d’anciennes clés retirées (À propos / Aide).
+      delete homeShortcutFabPrefs["settings-about"];
+      delete homeShortcutFabPrefs["open-help"];
+    } catch (_err) {
+      homeShortcutFabPrefs = defaultHomeShortcutFabPrefs();
+    }
+    syncActiveHomeFabIds();
+    return homeShortcutFabPrefs;
+  }
+
+  function saveHomeShortcutFabPrefs() {
+    if (!homeShortcutFabPrefs) return;
+    try {
+      localStorage.setItem(HOME_SHORTCUT_FABS_STORAGE_KEY, JSON.stringify(homeShortcutFabPrefs));
+    } catch (_err) {
+      /* ignore */
+    }
+  }
+
+  function syncActiveHomeFabIds() {
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
+    HOME_FAB_IDS = HOME_FAB_TOGGLE_IDS.filter((id) => Boolean(homeShortcutFabPrefs?.[id]));
+  }
+
+  function isHomeShortcutFabEnabled(fabId) {
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
+    return Boolean(homeShortcutFabPrefs?.[fabId]);
+  }
+
+  function setHomeShortcutFabEnabled(fabId, enabled) {
+    if (!HOME_FAB_TOGGLE_IDS.includes(fabId)) {
+      return getHomeShortcutFabPrefs();
+    }
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
+    const next = Boolean(enabled);
+    const wasEnabled = Boolean(homeShortcutFabPrefs[fabId]);
+    homeShortcutFabPrefs[fabId] = next;
+    saveHomeShortcutFabPrefs();
+    syncActiveHomeFabIds();
+
+    if (!homeFabsState) loadHomeFabsState();
+    if (next && !wasEnabled) {
+      ensureHomeShortcutFabPlacement(fabId);
+    }
+
+    applyHomeShortcutFabAvailability();
+    applyHomeFabsLayout();
+    syncHomeFabsVisibility();
+    return getHomeShortcutFabPrefs();
+  }
+
+  function getHomeShortcutFabPrefs() {
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
+    const prefs = {};
+    HOME_FAB_TOGGLE_IDS.forEach((id) => {
+      prefs[id] = Boolean(homeShortcutFabPrefs[id]);
+    });
+    return prefs;
+  }
+
+  function ensureHomeShortcutFabPlacement(fabId) {
+    if (!homeFabsState) loadHomeFabsState();
+    if (!homeFabsState[fabId]) {
+      homeFabsState[fabId] = { x: 24, y: 120, locked: false };
+    }
+    const next = resolveHomeFabPosition(
+      fabId,
+      homeFabsState[fabId].x,
+      homeFabsState[fabId].y,
+      HOME_FAB_SIZE
+    );
+    homeFabsState[fabId].x = next.x;
+    homeFabsState[fabId].y = next.y;
+    saveHomeFabsState();
+  }
+
+  function applyHomeShortcutFabAvailability() {
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
+    HOME_FAB_TOGGLE_IDS.forEach((fabId) => {
+      const btn = getHomeFabEl(fabId);
+      if (!btn) return;
+      const enabled = Boolean(homeShortcutFabPrefs[fabId]);
+      btn.hidden = !enabled;
+      btn.classList.toggle("is-shortcut-disabled", !enabled);
+      btn.setAttribute("aria-hidden", enabled ? "false" : "true");
+    });
+  }
 
   function defaultHomeFabsState() {
     const size = HOME_FAB_SIZE;
@@ -628,11 +762,21 @@
     const bottom = Math.max(80, window.innerHeight - 120 - size);
     const total = size * 3 + gap * 2;
     const startX = Math.max(12, Math.round((window.innerWidth - total) / 2));
-    return {
+    const leftStackX = 24;
+    const leftStackY = 100;
+    const state = {
       "new-instance": { x: startX, y: bottom, locked: false },
       "stream-deck": { x: startX + size + gap, y: bottom, locked: false },
       wifi: { x: startX + (size + gap) * 2, y: bottom, locked: false }
     };
+    HOME_FAB_OPTIONAL_IDS.forEach((id, index) => {
+      state[id] = {
+        x: leftStackX,
+        y: leftStackY + index * (size + gap),
+        locked: false
+      };
+    });
+    return state;
   }
 
   function loadHomeFabsState() {
@@ -642,14 +786,16 @@
       const parsed = raw ? JSON.parse(raw) : null;
       const defaults = defaultHomeFabsState();
       homeFabsState = {};
-      HOME_FAB_IDS.forEach((id) => {
+      HOME_FAB_ALL_IDS.forEach((id) => {
         homeFabsState[id] = { ...defaults[id], ...(parsed?.[id] || {}) };
         homeFabsState[id].x = Math.round(Number(homeFabsState[id].x) || 0);
         homeFabsState[id].y = Math.round(Number(homeFabsState[id].y) || 0);
+        homeFabsState[id].locked = Boolean(homeFabsState[id].locked);
       });
     } catch (_err) {
       homeFabsState = defaultHomeFabsState();
     }
+    syncActiveHomeFabIds();
     return homeFabsState;
   }
 
@@ -1011,66 +1157,118 @@
   function findHomeFabSnapCandidate(fabId, x, y) {
     if (!homeFabsState) loadHomeFabsState();
     const size = HOME_FAB_SIZE;
-    const gap = HOME_FAB_GAP;
-    const snap = HOME_FAB_SNAP;
     const next = resolveHomeFabPosition(fabId, x, y, size);
     const nextCx = next.x + size / 2;
     const nextCy = next.y + size / 2;
 
-    // Même ancre que les ghosts affichés (la plus proche)
-    let nearest = null;
-    let nearestDist = Infinity;
-    for (const otherId of HOME_FAB_IDS) {
-      if (otherId === fabId) continue;
-      const other = getHomeFabVisualBox(otherId);
-      if (!other) continue;
-      const dist = Math.hypot(nextCx - other.cx, nextCy - other.cy);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = other;
-      }
-    }
-    if (!nearest) return null;
-
-    const step = size + gap;
-    const centerCandidates = [
-      { cx: nearest.cx - step, cy: nearest.cy },
-      { cx: nearest.cx + step, cy: nearest.cy },
-      { cx: nearest.cx, cy: nearest.cy - step },
-      { cx: nearest.cx, cy: nearest.cy + step }
-    ];
-
     let best = null;
     let bestDist = Infinity;
-    for (const c of centerCandidates) {
-      // Autoriser le voisin d’accroche ; refuser si une 3e pastille occupe le slot
-      const topLeft = clampHomeFabPosition(c.cx - size / 2, c.cy - size / 2, size);
-      const cleared = pushFabAwayFromOthers(fabId, topLeft.x, topLeft.y, size, [nearest.id]);
-      if (Math.hypot(cleared.x - topLeft.x, cleared.y - topLeft.y) > 0.75) continue;
-      const finalPos = clampHomeFabPosition(cleared.x, cleared.y, size);
-      if (Math.hypot(finalPos.x - topLeft.x, finalPos.y - topLeft.y) > 0.75) continue;
-      const gotCx = finalPos.x + size / 2;
-      const gotCy = finalPos.y + size / 2;
-      if (Math.hypot(gotCx - c.cx, gotCy - c.cy) > 0.75) continue;
-      // Slot déjà occupé par une autre pastille ?
-      let occupied = false;
-      for (const otherId of HOME_FAB_IDS) {
-        if (otherId === fabId || otherId === nearest.id) continue;
-        const other = getFabStateBox(otherId);
-        if (!other) continue;
-        if (fabsOverlap({ x: finalPos.x, y: finalPos.y, w: size, h: size }, other, HOME_FAB_GAP)) {
-          occupied = true;
-          break;
-        }
-      }
-      if (occupied) continue;
-      const dist = Math.hypot(nextCx - gotCx, nextCy - gotCy);
-      if (dist <= snap && dist < bestDist) {
+    for (const slot of listHomeFabAttachSlots(fabId)) {
+      const dist = Math.hypot(nextCx - slot.cx, nextCy - slot.cy);
+      if (dist <= HOME_FAB_SNAP && dist < bestDist) {
         bestDist = dist;
-        best = { x: finalPos.x, y: finalPos.y, cx: gotCx, cy: gotCy, size };
+        best = slot;
       }
     }
     return best;
+  }
+
+  function listHomeFabAttachSlots(fabId) {
+    if (!homeFabsState) loadHomeFabsState();
+    const size = HOME_FAB_SIZE;
+    const gap = HOME_FAB_GAP;
+    const step = size + gap;
+    const slots = [];
+
+    for (const otherId of HOME_FAB_IDS) {
+      if (otherId === fabId) continue;
+      const otherEl = getHomeFabEl(otherId);
+      if (!otherEl || otherEl.hidden || otherEl.classList.contains("is-hidden-off-home")) continue;
+      const other = getHomeFabVisualBox(otherId);
+      if (!other) continue;
+
+      const centerCandidates = [
+        { cx: other.cx - step, cy: other.cy },
+        { cx: other.cx + step, cy: other.cy },
+        { cx: other.cx, cy: other.cy - step },
+        { cx: other.cx, cy: other.cy + step }
+      ];
+
+      for (const c of centerCandidates) {
+        const topLeft = clampHomeFabPosition(c.cx - size / 2, c.cy - size / 2, size);
+        const cleared = pushFabAwayFromOthers(fabId, topLeft.x, topLeft.y, size, [otherId]);
+        if (Math.hypot(cleared.x - topLeft.x, cleared.y - topLeft.y) > 0.75) continue;
+        const finalPos = clampHomeFabPosition(cleared.x, cleared.y, size);
+        if (Math.hypot(finalPos.x - topLeft.x, finalPos.y - topLeft.y) > 0.75) continue;
+        const gotCx = finalPos.x + size / 2;
+        const gotCy = finalPos.y + size / 2;
+        if (Math.hypot(gotCx - c.cx, gotCy - c.cy) > 0.75) continue;
+
+        let occupied = false;
+        for (const occId of HOME_FAB_IDS) {
+          if (occId === fabId || occId === otherId) continue;
+          const occ = getFabStateBox(occId);
+          if (!occ) continue;
+          if (fabsOverlap({ x: finalPos.x, y: finalPos.y, w: size, h: size }, occ, HOME_FAB_GAP)) {
+            occupied = true;
+            break;
+          }
+        }
+        if (occupied) continue;
+
+        const key = `${Math.round(gotCx)}:${Math.round(gotCy)}`;
+        if (slots.some((s) => s.key === key)) continue;
+        slots.push({
+          key,
+          x: finalPos.x,
+          y: finalPos.y,
+          cx: gotCx,
+          cy: gotCy,
+          size
+        });
+      }
+    }
+    return slots;
+  }
+
+  function ensureHomeFabSlotsLayer() {
+    const bar = document.getElementById("home-fab-bar");
+    if (!bar) return null;
+    let layer = bar.querySelector(".home-fab-slots-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.className = "home-fab-slots-layer";
+      layer.setAttribute("aria-hidden", "true");
+      bar.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function clearHomeFabAttachSlots() {
+    const layer = document.querySelector("#home-fab-bar .home-fab-slots-layer");
+    if (layer) layer.innerHTML = "";
+  }
+
+  function showHomeFabAttachSlots(fabId, activeSlot = null) {
+    const layer = ensureHomeFabSlotsLayer();
+    if (!layer) return;
+    layer.innerHTML = "";
+    const slots = listHomeFabAttachSlots(fabId);
+    slots.forEach((slot) => {
+      const ghost = document.createElement("div");
+      ghost.className = "home-fab-slot";
+      if (
+        activeSlot
+        && Math.hypot(activeSlot.cx - slot.cx, activeSlot.cy - slot.cy) <= 1
+      ) {
+        ghost.classList.add("is-active");
+      }
+      ghost.style.left = `${slot.cx}px`;
+      ghost.style.top = `${slot.cy}px`;
+      ghost.style.width = `${slot.size}px`;
+      ghost.style.height = `${slot.size}px`;
+      layer.appendChild(ghost);
+    });
   }
 
   function snapHomeFabPosition(fabId, x, y) {
@@ -1349,8 +1547,7 @@
   function clearHomeFabGuides() {
     const layer = document.querySelector("#home-fab-bar .home-fab-guide-layer");
     if (layer) layer.innerHTML = "";
-    // Nettoyer d’anciens emplacements s’il en reste
-    document.querySelector("#home-fab-bar .home-fab-slots-layer")?.remove();
+    clearHomeFabAttachSlots();
   }
 
   function showHomeFabDockGuide(activeX = null) {
@@ -1575,7 +1772,9 @@
   function syncHomeFabsVisibility() {
     const bar = document.getElementById("home-fab-bar");
     if (!bar) return;
+    if (!homeShortcutFabPrefs) loadHomeShortcutFabPrefs();
     if (!homeFabsState) loadHomeFabsState();
+    applyHomeShortcutFabAvailability();
 
     const content = document.querySelector(".content");
     const offHome = !isHomeVisible()
@@ -1586,7 +1785,7 @@
     HOME_FAB_IDS.forEach((fabId) => {
       const btn = getHomeFabEl(fabId);
       const state = homeFabsState?.[fabId];
-      if (!btn || !state) return;
+      if (!btn || !state || btn.hidden) return;
       // Accueil : tout visible. Session / Stream Deck : seulement à gauche du dock.
       const hide = offHome && !isFabInOffHomeKeepZone(state.x, state.y, HOME_FAB_SIZE);
       btn.classList.toggle("is-hidden-off-home", hide);
@@ -1596,9 +1795,10 @@
 
     bar.querySelectorAll(".home-fab-group").forEach((box) => {
       const ids = (box.dataset.fabIds || "").split(",").filter(Boolean);
-      const allHidden = ids.length > 0 && ids.every((id) => (
-        getHomeFabEl(id)?.classList.contains("is-hidden-off-home")
-      ));
+      const allHidden = ids.length > 0 && ids.every((id) => {
+        const el = getHomeFabEl(id);
+        return !el || el.hidden || el.classList.contains("is-hidden-off-home");
+      });
       box.classList.toggle("is-hidden-off-home", allHidden);
     });
 
@@ -1615,7 +1815,9 @@
     const bar = document.getElementById("home-fab-bar");
     if (!bar || bar.dataset.homeFabsBound === "1") return;
     bar.dataset.homeFabsBound = "1";
+    loadHomeShortcutFabPrefs();
     loadHomeFabsState();
+    applyHomeShortcutFabAvailability();
     applyHomeFabsLayout();
     syncHomeFabsVisibility();
 
@@ -1769,6 +1971,9 @@
       homeFabsState[homeFabDrag.fabId].y = next.y;
       btn.style.left = `${next.x}px`;
       btn.style.top = `${next.y}px`;
+      if (homeFabDrag.moved) {
+        showHomeFabAttachSlots(homeFabDrag.fabId, snapped);
+      }
       if (homeFabDrag.fabId === "wifi") positionWifiReconnectPopupNearFab();
     });
 
@@ -3496,6 +3701,22 @@
 
   window.syncDockBatteries = syncDockBatteries;
   window.syncHomeSessions = syncHomeSessions;
+  window.getHomeShortcutFabPrefs = getHomeShortcutFabPrefs;
+  window.setHomeShortcutFabEnabled = setHomeShortcutFabEnabled;
+  window.applyHomeShortcutFabs = () => {
+    loadHomeShortcutFabPrefs();
+    if (!homeFabsState) loadHomeFabsState();
+    applyHomeShortcutFabAvailability();
+    applyHomeFabsLayout();
+    syncHomeFabsVisibility();
+    return getHomeShortcutFabPrefs();
+  };
+  window.__hubModalMainActions = {
+    ...(window.__hubModalMainActions || {}),
+    getHomeShortcutFabPrefs,
+    setHomeShortcutFabEnabled,
+    applyHomeShortcutFabs: window.applyHomeShortcutFabs
+  };
   window.launchHistoryAPI?.onUpdated?.(syncRecentApps);
   window.namesAPI?.onUpdated?.(() => {
     void syncRecentApps();

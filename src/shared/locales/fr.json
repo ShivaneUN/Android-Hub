@@ -163,8 +163,37 @@
     "tabAppearance": "Apparence",
     "tabControl": "Contrôle",
     "tabMaintenance": "Nettoyage",
+    "tabHomeShortcuts": "Raccourcis Accueil",
     "tabUpdates": "Mise à jour",
     "tabAbout": "À propos",
+    "homeShortcutsLead": "Choisissez les pastilles affichées sur l’Accueil pour ouvrir rapidement une fonction.",
+    "homeShortcutsPreviewTitle": "Aperçu",
+    "homeShortcutsPreviewEmpty": "Aucune pastille sélectionnée",
+    "homeShortcutsButtonsTitle": "Pastilles Accueil",
+    "homeShortcutsButtonsHint": "Les pastilles se placent et se verrouillent comme les autres (Ctrl + clic).",
+    "homeShortcutsSaveFailed": "Impossible d’enregistrer le raccourci Accueil.",
+    "homeShortcutsModulesTitle": "Modules",
+    "homeShortcutsDragTitle": "Glisser le titre",
+    "homeShortcutsDragDesc": "Déplacer un module librement sur l’Accueil.",
+    "homeShortcutsMenuKey": "Menu ⋮",
+    "homeShortcutsMenuDesc": "Verrouiller, aligner les titres, passer en horizontal ou vertical.",
+    "homeShortcutsFabsTitle": "Pastilles",
+    "homeShortcutsLeftClick": "Clic gauche",
+    "homeShortcutsRightClick": "Clic droit",
+    "homeShortcutsFabMoveDesc": "Déplacer une pastille (ou le groupe attaché).",
+    "homeShortcutsFabLockDesc": "Verrouiller ou déverrouiller le groupe de pastilles.",
+    "homeShortcutsLeftOfDock": "À gauche du dock",
+    "homeShortcutsKeepVisibleDesc": "Les pastilles placées à gauche du dock restent visibles hors Accueil.",
+    "homeShortcutsDockTitle": "Dock & actions",
+    "homeShortcutsHomeKey": "Accueil",
+    "homeShortcutsHomeDesc": "Revenir à la vue Accueil depuis le dock.",
+    "homeShortcutsNewInstanceDesc": "Ouvrir Nouvelle instance.",
+    "homeShortcutsStreamDeckKey": "Stream Deck",
+    "homeShortcutsStreamDeckDesc": "Activer la grille multi-sessions.",
+    "homeShortcutsWifiKey": "Wi‑Fi",
+    "homeShortcutsWifiDesc": "Reconnecter un appareil Wi‑Fi connu.",
+    "homeShortcutsEscapeKey": "Échap",
+    "homeShortcutsEscapeDesc": "Fermer menus, popups et confirmations de l’Accueil.",
     "appearanceLead": "Choisissez le style d’interface du Hub.",
     "accentTitle": "Couleur du Hub",
     "accentLead": "Accent des boutons, onglets et éléments actifs.",
@@ -202,18 +231,20 @@
     "aboutFeat5Title": "Dock & batteries",
     "aboutFeat5Desc": "Dock flottant : écran, portrait, audio, Accueil. Batteries + Muet / Wi‑Fi par appareil pendant le stream.",
     "aboutFeat6Title": "Interface classique / Nouvelle",
-    "aboutFeat6Desc": "Rail classique ou interface tablette plein écran (Accueil enrichi, dock). Réglable dans Paramètres → Apparence.",
+    "aboutFeat6Desc": "Rail classique ou interface tablette plein écran. Accueil : modules libres (glisser le titre, menu ⋮ verrouiller / aligner / H-V), dock et pastilles.",
     "aboutFeat7Title": "Historique & récents",
     "aboutFeat7Desc": "Retrouvez et relancez rapidement vos apps et profils récemment utilisés.",
     "aboutFeat8Title": "Aide & guides",
     "aboutFeat8Desc": "Raccourcis, guide mirroring pas à pas, connexion Wi‑Fi, apparence et dépannage intégrés.",
     "aboutFeat9Title": "Maintenance",
-    "aboutFeat9Desc": "Nettoyage cache et historique — manuel ou automatique au démarrage.",
+    "aboutFeat9Desc": "Nettoyage cache (icônes & fichiers temporaires) et historique — cocher Cache et/ou Historique, manuel ou auto. Appareils, sessions et préférences restent intacts.",
     "aboutFeat10Title": "Mises à jour",
     "aboutFeat10Desc": "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos.",
     "aboutFeat11Title": "Personnalisation visuelle",
     "aboutFeat11Desc": "Couleur d’accent du Hub, ambiances de fond (Minuit, Océan, Crépuscule…) et image personnalisée via le sélecteur Windows. Les choix sont mémorisés.",
-    "seeMore": "Voir ›"
+    "seeMore": "Voir ›",
+    "aboutFeat12Title": "Raccourcis Accueil",
+    "aboutFeat12Desc": "Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -731,7 +762,70 @@
               "keys": [
                 "Accueil"
               ],
-              "desc": "Revenir à la vue Accueil (appareils, récents, choix d’interface) depuis le dock."
+              "desc": "Revenir à la vue Accueil (appareils, sessions, apps récentes) depuis le dock."
+            },
+            {
+              "keys": [
+                "Glisser le titre"
+              ],
+              "desc": "Déplacer un module Accueil (Appareils, Sessions, Apps)."
+            },
+            {
+              "keys": [
+                "Menu ⋮"
+              ],
+              "desc": "Verrouiller un module, aligner les titres, passer en horizontal ou vertical."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "Clic gauche"
+              ],
+              "desc": "Déplacer une pastille Accueil (ou le groupe attaché)."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "Clic droit"
+              ],
+              "desc": "Verrouiller ou déverrouiller un groupe de pastilles."
+            },
+            {
+              "keys": [
+                "Paramètres",
+                "Raccourcis Accueil"
+              ],
+              "desc": "Choisir les pastilles affichées : Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage."
+            },
+            {
+              "keys": [
+                "Échap"
+              ],
+              "desc": "Fermer menus, popups et confirmations de l’Accueil."
+            },
+            {
+              "keys": [
+                "À gauche du dock"
+              ],
+              "desc": "Les pastilles placées à gauche du dock restent visibles hors Accueil (session / Stream Deck)."
+            },
+            {
+              "keys": [
+                "Nouvelle instance"
+              ],
+              "desc": "Pastille Accueil : ouvrir Nouvelle instance."
+            },
+            {
+              "keys": [
+                "Stream Deck"
+              ],
+              "desc": "Pastille Accueil : activer la grille multi-sessions."
+            },
+            {
+              "keys": [
+                "Wi‑Fi"
+              ],
+              "desc": "Pastille Accueil : reconnecter un appareil Wi‑Fi connu."
             }
           ]
         },
@@ -749,6 +843,30 @@
                 "Muet appareil"
               ],
               "desc": "Couper ou réactiver l’audio PC pour un appareil précis (sidebar ou chip dock)."
+            }
+          ]
+        },
+        {
+          "title": "Nettoyage",
+          "items": [
+            {
+              "keys": [
+                "Paramètres",
+                "Nettoyage"
+              ],
+              "desc": "Voir la taille du cache (icônes & fichiers temporaires) et de l’historique des apps."
+            },
+            {
+              "keys": [
+                "À nettoyer"
+              ],
+              "desc": "Cocher Cache et/ou Historique, puis Nettoyer maintenant."
+            },
+            {
+              "keys": [
+                "Options auto"
+              ],
+              "desc": "Activer le nettoyage automatique et choisir Cache / Historique (conservation des N derniers jours)."
             }
           ]
         },

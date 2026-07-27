@@ -57,6 +57,10 @@
   background: var(--accent-blue);
 }
 
+.settings-tab-btn--footer {
+  margin-top: auto;
+}
+
 .settings-nav-icon {
   width: 18px;
   height: 18px;

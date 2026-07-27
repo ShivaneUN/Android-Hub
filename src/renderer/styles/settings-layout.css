@@ -62,8 +62,10 @@
   gap: 2px !important;
   margin: 0 !important;
   padding: 12px 10px !important;
-  width: 168px !important;
+  width: 178px !important;
   flex-shrink: 0 !important;
+  align-self: stretch !important;
+  min-height: 0 !important;
   border-bottom: none !important;
   border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: 0 !important;
@@ -112,6 +114,10 @@
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: var(--accent-blue);
+}
+
+.settings-tab-btn--footer {
+  margin-top: auto !important;
 }
 
 .settings-nav-icon {
@@ -781,6 +787,187 @@
   text-align: center;
   font-size: 12px;
   color: #9aa3b5;
+}
+
+/* —— Home shortcuts —— */
+#settings-pane-home-shortcuts.active {
+  display: flex !important;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto !important;
+}
+
+.home-shortcuts-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.home-shortcuts-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #b4bccb;
+}
+
+.home-shortcut-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 88px;
+  padding: 18px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(79, 140, 255, 0.12), transparent 55%),
+    #161b22;
+}
+
+.home-shortcut-preview-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(22, 27, 36, 0.96);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: #d5dde8;
+}
+
+.home-shortcut-preview-fab.is-on {
+  border-color: rgba(79, 140, 255, 0.45);
+  color: #8eb6ff;
+  background: color-mix(in srgb, var(--accent-blue, #4f8cff) 16%, #161b22);
+}
+
+.home-shortcut-preview-fab svg {
+  width: 20px;
+  height: 20px;
+}
+
+.home-shortcut-preview-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: #9aa3b5;
+}
+
+.home-shortcut-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.home-shortcut-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 8px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #c5cad6;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.home-shortcut-chip:hover {
+  color: #e8ecf4;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.home-shortcut-chip.is-on {
+  color: #e8ecf4;
+  border-color: rgba(79, 140, 255, 0.45);
+  background: color-mix(in srgb, var(--accent-blue, #4f8cff) 18%, #161b22);
+}
+
+.home-shortcut-chip-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.home-shortcut-chip.is-on .home-shortcut-chip-icon {
+  background: rgba(79, 140, 255, 0.22);
+  color: #8eb6ff;
+}
+
+.home-shortcut-chip-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.home-shortcuts-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9aa3b5;
+}
+
+.home-shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.home-shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #161b22;
+}
+
+.home-shortcut-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+.home-shortcut-keys kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(79, 140, 255, 0.35);
+  background: rgba(37, 99, 235, 0.16);
+  color: #e8ecf4;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.home-shortcut-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #c5cad6;
 }
 
 /* —— About —— */

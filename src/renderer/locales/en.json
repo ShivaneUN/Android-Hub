@@ -163,8 +163,37 @@
     "tabAppearance": "Appearance",
     "tabControl": "Control",
     "tabMaintenance": "Cleanup",
+    "tabHomeShortcuts": "Home shortcuts",
     "tabUpdates": "Updates",
     "tabAbout": "About",
+    "homeShortcutsLead": "Choose which Home FABs open useful Hub functions quickly.",
+    "homeShortcutsPreviewTitle": "Preview",
+    "homeShortcutsPreviewEmpty": "No FAB selected",
+    "homeShortcutsButtonsTitle": "Home FABs",
+    "homeShortcutsButtonsHint": "These FABs move and lock like the others (Ctrl + click).",
+    "homeShortcutsSaveFailed": "Could not save the Home shortcut.",
+    "homeShortcutsModulesTitle": "Modules",
+    "homeShortcutsDragTitle": "Drag the title",
+    "homeShortcutsDragDesc": "Move a module freely on Home.",
+    "homeShortcutsMenuKey": "Menu ⋮",
+    "homeShortcutsMenuDesc": "Lock, align titles, or switch horizontal / vertical.",
+    "homeShortcutsFabsTitle": "FABs",
+    "homeShortcutsLeftClick": "Left click",
+    "homeShortcutsRightClick": "Right click",
+    "homeShortcutsFabMoveDesc": "Move a FAB (or its attached group).",
+    "homeShortcutsFabLockDesc": "Lock or unlock the FAB group.",
+    "homeShortcutsLeftOfDock": "Left of the dock",
+    "homeShortcutsKeepVisibleDesc": "FABs placed left of the dock stay visible off Home.",
+    "homeShortcutsDockTitle": "Dock & actions",
+    "homeShortcutsHomeKey": "Home",
+    "homeShortcutsHomeDesc": "Return to the Home view from the dock.",
+    "homeShortcutsNewInstanceDesc": "Open New instance.",
+    "homeShortcutsStreamDeckKey": "Stream Deck",
+    "homeShortcutsStreamDeckDesc": "Enable the multi-session grid.",
+    "homeShortcutsWifiKey": "Wi‑Fi",
+    "homeShortcutsWifiDesc": "Reconnect a known Wi‑Fi device.",
+    "homeShortcutsEscapeKey": "Esc",
+    "homeShortcutsEscapeDesc": "Close Home menus, popups, and confirmations.",
     "appearanceLead": "Choose the Hub interface style.",
     "accentTitle": "Hub color",
     "accentLead": "Accent for buttons, tabs, and active elements.",
@@ -202,18 +231,20 @@
     "aboutFeat5Title": "Dock & batteries",
     "aboutFeat5Desc": "Floating dock: screen, portrait, audio, Home. Batteries plus per-device Mute / Wi‑Fi during stream.",
     "aboutFeat6Title": "Classic / New interface",
-    "aboutFeat6Desc": "Classic rail or full-screen tablet UI (richer Home, dock). Set in Settings → Appearance.",
+    "aboutFeat6Desc": "Classic rail or full-screen tablet UI. Home: free modules (drag title, ⋮ lock / align / H-V), dock, and FABs.",
     "aboutFeat7Title": "History & recents",
     "aboutFeat7Desc": "Quickly find and relaunch recently used apps and profiles.",
     "aboutFeat8Title": "Help & guides",
     "aboutFeat8Desc": "Shortcuts, step-by-step mirroring guide, Wi‑Fi setup, appearance, and built-in troubleshooting.",
     "aboutFeat9Title": "Maintenance",
-    "aboutFeat9Desc": "Clean cache and history — manually or automatically on startup.",
+    "aboutFeat9Desc": "Clean cache (icons & temporary files) and history — tick Cache and/or History, manual or auto. Devices, sessions, and preferences stay intact.",
     "aboutFeat10Title": "Updates",
     "aboutFeat10Desc": "Check, download and install new versions from About.",
     "aboutFeat11Title": "Visual personalization",
     "aboutFeat11Desc": "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered.",
-    "seeMore": "View ›"
+    "seeMore": "View ›",
+    "aboutFeat12Title": "Home shortcuts",
+    "aboutFeat12Desc": "Enable Home FABs (New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup) in Settings → Home shortcuts. Ctrl+click to move / lock; left of the dock they stay visible off Home."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",
@@ -731,7 +762,70 @@
               "keys": [
                 "Home"
               ],
-              "desc": "Return to Home (devices, recents, UI choice) from the dock."
+              "desc": "Return to Home (devices, sessions, recent apps) from the dock."
+            },
+            {
+              "keys": [
+                "Drag the title"
+              ],
+              "desc": "Move a Home module (Devices, Sessions, Apps)."
+            },
+            {
+              "keys": [
+                "Menu ⋮"
+              ],
+              "desc": "Lock a module, align titles, or switch horizontal / vertical."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "Left click"
+              ],
+              "desc": "Move a Home FAB (or its attached group)."
+            },
+            {
+              "keys": [
+                "Ctrl",
+                "Right click"
+              ],
+              "desc": "Lock or unlock a FAB group."
+            },
+            {
+              "keys": [
+                "Settings",
+                "Home shortcuts"
+              ],
+              "desc": "Choose which FABs appear: New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup."
+            },
+            {
+              "keys": [
+                "Esc"
+              ],
+              "desc": "Close Home menus, popups, and confirmations."
+            },
+            {
+              "keys": [
+                "Left of the dock"
+              ],
+              "desc": "FABs placed left of the dock stay visible off Home (session / Stream Deck)."
+            },
+            {
+              "keys": [
+                "New instance"
+              ],
+              "desc": "Home FAB: open New instance."
+            },
+            {
+              "keys": [
+                "Stream Deck"
+              ],
+              "desc": "Home FAB: enable the multi-session grid."
+            },
+            {
+              "keys": [
+                "Wi‑Fi"
+              ],
+              "desc": "Home FAB: reconnect a known Wi‑Fi device."
             }
           ]
         },
@@ -749,6 +843,30 @@
                 "Device mute"
               ],
               "desc": "Mute or unmute PC audio for a specific device (sidebar or dock chip)."
+            }
+          ]
+        },
+        {
+          "title": "Cleanup",
+          "items": [
+            {
+              "keys": [
+                "Settings",
+                "Cleanup"
+              ],
+              "desc": "See cache size (icons & temporary files) and app history."
+            },
+            {
+              "keys": [
+                "To clean"
+              ],
+              "desc": "Tick Cache and/or History, then Clean up now."
+            },
+            {
+              "keys": [
+                "Auto options"
+              ],
+              "desc": "Enable auto cleanup and choose Cache / History (keeps the last N days)."
             }
           ]
         },
