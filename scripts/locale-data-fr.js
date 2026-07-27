@@ -1129,7 +1129,9 @@ module.exports = {
         "moduleHorizontal": "Horizontal",
         "moduleVertical": "Vertical",
         "moduleAlignOn": "Aligner les titres",
-        "moduleAlignOff": "Ne plus aligner les titres"
+        "moduleAlignOff": "Ne plus aligner les titres",
+        "moduleHideContent": "Masquer le contenu",
+        "moduleShowContent": "Afficher le contenu"
     },
     "uiTheme": {
         "classicTitle": "Interface classique",

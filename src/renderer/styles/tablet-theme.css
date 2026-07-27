@@ -1600,6 +1600,10 @@ body.theme-tablet .home-module-body {
   display: block;
 }
 
+body.theme-tablet .home-module.is-content-hidden .home-module-body {
+  display: none;
+}
+
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-devices-panel,
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-recent {
   display: flex;

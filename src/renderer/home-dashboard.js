@@ -2059,9 +2059,9 @@
   /** Distance d’aimantation aux lignes-guides des titres. */
   const HOME_MODULE_TITLE_SNAP = 56;
   const HOME_MODULE_DEFAULTS = {
-    devices: { x: 28, y: 28, orientation: "horizontal", locked: false, align: true },
-    sessions: { x: 28, y: 160, orientation: "horizontal", locked: false, align: true },
-    apps: { x: 520, y: 28, orientation: "vertical", locked: false, align: true }
+    devices: { x: 28, y: 28, orientation: "horizontal", locked: false, align: true, contentHidden: false },
+    sessions: { x: 28, y: 160, orientation: "horizontal", locked: false, align: true, contentHidden: false },
+    apps: { x: 520, y: 28, orientation: "vertical", locked: false, align: true, contentHidden: false }
   };
 
   let homeModulesState = null;
@@ -2083,6 +2083,9 @@
       HOME_MODULE_IDS.forEach((id) => {
         if (typeof homeModulesState[id].align !== "boolean") {
           homeModulesState[id].align = true;
+        }
+        if (typeof homeModulesState[id].contentHidden !== "boolean") {
+          homeModulesState[id].contentHidden = false;
         }
       });
     } catch (_err) {
@@ -2174,6 +2177,13 @@
         : tHome("homeDashboard.moduleAlignOn", "Aligner les titres");
       alignBtn.classList.toggle("is-active", aligned);
     }
+    const hideBtn = moduleEl.querySelector('[data-module-action="hide-content"]');
+    if (hideBtn) {
+      hideBtn.textContent = state.contentHidden
+        ? tHome("homeDashboard.moduleShowContent", "Afficher le contenu")
+        : tHome("homeDashboard.moduleHideContent", "Masquer le contenu");
+      hideBtn.classList.toggle("is-active", Boolean(state.contentHidden));
+    }
     moduleEl.querySelectorAll("[data-module-action]").forEach((btn) => {
       const action = btn.getAttribute("data-module-action");
       if (action === "horizontal" || action === "vertical") {
@@ -2189,8 +2199,10 @@
     if (!moduleEl || !state) return;
 
     if (typeof state.align !== "boolean") state.align = true;
+    if (typeof state.contentHidden !== "boolean") state.contentHidden = false;
     moduleEl.dataset.orientation = state.orientation === "vertical" ? "vertical" : "horizontal";
     moduleEl.classList.toggle("is-locked", Boolean(state.locked));
+    moduleEl.classList.toggle("is-content-hidden", Boolean(state.contentHidden));
     moduleEl.classList.toggle("is-align-off", state.align === false);
     moduleEl.style.left = `${Math.max(0, Number(state.x) || 0)}px`;
     moduleEl.style.top = `${Math.max(0, Number(state.y) || 0)}px`;
@@ -2267,6 +2279,7 @@
           if (saved.orientation) homeModulesState[id].orientation = saved.orientation;
           if (typeof saved.locked === "boolean") homeModulesState[id].locked = saved.locked;
           if (typeof saved.align === "boolean") homeModulesState[id].align = saved.align;
+          if (typeof saved.contentHidden === "boolean") homeModulesState[id].contentHidden = saved.contentHidden;
         });
       }
     } catch (_err) {
@@ -2889,6 +2902,17 @@
     closeAllHomeModuleMenus();
   }
 
+  function toggleHomeModuleContentHidden(moduleId) {
+    if (!homeModulesState) loadHomeModulesState();
+    const state = homeModulesState[moduleId];
+    if (!state) return;
+    state.contentHidden = !state.contentHidden;
+    saveHomeModulesState();
+    applyHomeModuleState(moduleId);
+    closeAllHomeModuleMenus();
+    scheduleHomeModulesSeparation();
+  }
+
   function bindHomeModules() {
     const root = document.querySelector(".empty-state");
     if (!root || root.dataset.homeModulesBound === "1") return;
@@ -2929,6 +2953,7 @@
         const action = actionBtn.getAttribute("data-module-action");
         if (!moduleId || !action) return;
         if (action === "lock") toggleHomeModuleLock(moduleId);
+        else if (action === "hide-content") toggleHomeModuleContentHidden(moduleId);
         else if (action === "align") toggleHomeModuleAlign(moduleId);
         else if (action === "vertical" || action === "horizontal") {
           setHomeModuleOrientation(moduleId, action);
