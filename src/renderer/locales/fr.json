@@ -140,7 +140,9 @@
     "lock": "Verrouiller",
     "unlock": "Déverrouiller",
     "lockGroup": "Verrouiller le groupe",
-    "unlockGroup": "Déverrouiller le groupe"
+    "unlockGroup": "Déverrouiller le groupe",
+    "pinToHome": "Épingler à l'Accueil",
+    "unpinFromHome": "Retirer de l'Accueil"
   },
   "toggles": {
     "screenTitle": "Éteindre ou rallumer l'écran de l'appareil (session mirroring active)",
@@ -216,6 +218,8 @@
     "wallpaperPick": "Choisir une image…",
     "wallpaperClear": "Retirer",
     "wallpaperNone": "Aucune image",
+    "brightnessTitle": "Luminosité du Hub",
+    "brightnessLead": "Assombrit l’interface du Hub et les flux vidéo affichés.",
     "surface": {
       "midnight": "Minuit",
       "graphite": "Graphite",
@@ -1131,7 +1135,8 @@
     "moduleAlignOn": "Aligner les titres",
     "moduleAlignOff": "Ne plus aligner les titres",
     "moduleHideContent": "Masquer le contenu",
-    "moduleShowContent": "Afficher le contenu"
+    "moduleShowContent": "Afficher le contenu",
+    "pinnedApps": "Épinglées"
   },
   "uiTheme": {
     "classicTitle": "Interface classique",

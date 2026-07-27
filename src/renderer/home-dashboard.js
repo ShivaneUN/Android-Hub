@@ -1,5 +1,9 @@
 (function () {
   let recentEntries = [];
+  let pinnedEntries = [];
+  let pinnedAppsLoaded = false;
+  const HOME_PINNED_APPS_STORAGE_KEY = "android-hub.home-pinned-apps.v1";
+  const HOME_PINNED_APPS_MAX = 16;
   /** Nombre max de pastilles compactes visibles ; le reste passe dans +N. */
   const DOCK_BATTERY_VISIBLE_MAX = 5;
   let dockMoreOpen = false;
@@ -3608,71 +3612,235 @@
     );
   }
 
+  function buildHomeAppKey(entry = {}) {
+    const deviceId = String(entry.deviceId || "");
+    const packageName = String(entry.packageName || entry.package || "");
+    const userId = entry.userId === undefined || entry.userId === null || entry.userId === ""
+      ? 0
+      : Number(entry.userId);
+    return `${deviceId}::${packageName}::${Number.isFinite(userId) ? userId : 0}`;
+  }
+
+  function loadPinnedApps() {
+    try {
+      const raw = localStorage.getItem(HOME_PINNED_APPS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      pinnedEntries = Array.isArray(parsed)
+        ? parsed
+          .filter((entry) => entry && entry.deviceId && entry.packageName)
+          .map((entry) => ({
+            key: buildHomeAppKey(entry),
+            deviceId: String(entry.deviceId),
+            packageName: String(entry.packageName),
+            appName: entry.appName || entry.packageName,
+            userId: entry.userId === undefined || entry.userId === null ? null : Number(entry.userId),
+            iconPath: entry.iconPath || null,
+            iconUrl: entry.iconUrl || null,
+            pinnedAt: Number(entry.pinnedAt) || Date.now()
+          }))
+          .slice(0, HOME_PINNED_APPS_MAX)
+        : [];
+    } catch (_err) {
+      pinnedEntries = [];
+    }
+    pinnedAppsLoaded = true;
+    return pinnedEntries;
+  }
+
+  function ensurePinnedAppsLoaded() {
+    if (!pinnedAppsLoaded) loadPinnedApps();
+    return pinnedEntries;
+  }
+
+  function savePinnedApps() {
+    try {
+      localStorage.setItem(HOME_PINNED_APPS_STORAGE_KEY, JSON.stringify(pinnedEntries));
+    } catch (_err) {
+      /* ignore quota */
+    }
+  }
+
+  function isHomeAppPinned(entry) {
+    ensurePinnedAppsLoaded();
+    const key = buildHomeAppKey(entry);
+    return pinnedEntries.some((item) => item.key === key);
+  }
+
+  function getHomePinnedAppKeys() {
+    ensurePinnedAppsLoaded();
+    return pinnedEntries.map((entry) => entry.key);
+  }
+
+  function pinHomeApp(entry = {}) {
+    if (!entry.deviceId || !entry.packageName) return getHomePinnedApps();
+    ensurePinnedAppsLoaded();
+    const key = buildHomeAppKey(entry);
+    const existing = pinnedEntries.findIndex((item) => item.key === key);
+    const next = {
+      key,
+      deviceId: String(entry.deviceId),
+      packageName: String(entry.packageName),
+      appName: entry.appName || entry.packageName,
+      userId: entry.userId === undefined || entry.userId === null || entry.userId === ""
+        ? null
+        : Number(entry.userId),
+      iconPath: entry.iconPath || null,
+      iconUrl: entry.iconUrl || null,
+      pinnedAt: Date.now()
+    };
+    if (existing >= 0) {
+      pinnedEntries[existing] = { ...pinnedEntries[existing], ...next, pinnedAt: pinnedEntries[existing].pinnedAt };
+    } else {
+      pinnedEntries = [next, ...pinnedEntries].slice(0, HOME_PINNED_APPS_MAX);
+    }
+    savePinnedApps();
+    void syncHomeApps();
+    return getHomePinnedApps();
+  }
+
+  function unpinHomeApp(entry = {}) {
+    ensurePinnedAppsLoaded();
+    const key = buildHomeAppKey(entry);
+    pinnedEntries = pinnedEntries.filter((item) => item.key !== key);
+    savePinnedApps();
+    void syncHomeApps();
+    return getHomePinnedApps();
+  }
+
+  function getHomePinnedApps() {
+    ensurePinnedAppsLoaded();
+    return pinnedEntries.map((entry) => ({ ...entry }));
+  }
+
+  function getHomeAppPlaceholderSvg() {
+    return globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
+      || '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.2" fill="currentColor"/><path d="M7.5 17c1.2-1.6 2.7-2.4 4.5-2.4s3.3.8 4.5 2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  }
+
+  async function buildHomeAppTileHtml(entry, index, { pinned = false, indexAttr = "data-recent-index" } = {}) {
+    const deviceId = entry.deviceId || "";
+    const aliases = await resolveHistoryDeviceAliases(deviceId);
+    const deviceName = aliases[0] || "";
+    const name = window.AppDisplay?.resolveHistoryAppName
+      ? window.AppDisplay.resolveHistoryAppName(entry, aliases || deviceName)
+      : (entry.appName || entry.packageName || "");
+    const iconSrc = (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos"))
+      ? ""
+      : (entry.iconUrl || entry.iconPath || "");
+    const iconHtml = iconSrc
+      ? `<img src="${escapeAttr(iconSrc)}" alt="" loading="lazy">`
+      : getHomeAppPlaceholderSvg();
+    const iconClass = iconSrc ? "" : " is-placeholder";
+    const color = await resolveHistoryDeviceColor(deviceId);
+    const tipHtml = buildAppLaunchTipHtml(name, deviceName || deviceId, color);
+    const pillHtml = color
+      ? `<span class="home-app-device-pill device-color-pill" style="background:${escapeAttr(color)}" aria-hidden="true"></span>`
+      : "";
+    const pinBadge = pinned
+      ? `<span class="home-app-pin-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M14.5 3.5 20.5 9.5 13 17l-1.5-1.5L17 10l-4-4-5.5 5.5L6 10l7.5-7.5zM4 20l5-2-3-3-2 5z"/></svg></span>`
+      : "";
+    const label = name || deviceName;
+    const classes = pinned ? "home-app-tile home-app-tile--pinned" : "home-app-tile";
+    return (
+      `<button type="button" class="${classes}" ${indexAttr}="${index}" data-device-id="${escapeAttr(deviceId)}" data-pinned="${pinned ? "1" : "0"}" aria-label="${escapeAttr(label)}">` +
+      `<div class="home-app-tile-icon${iconClass}">${iconHtml}${pillHtml}${pinBadge}</div>` +
+      `<span class="home-app-tile-name">${escapeAttr(name)}</span>` +
+      tipHtml +
+      `</button>`
+    );
+  }
+
+  function bindHomeAppTileInteractions(container, entries, { pinned = false, indexAttr = "data-recent-index" } = {}) {
+    if (!container) return;
+    container.querySelectorAll(".home-app-tile").forEach((tile) => {
+      tile.addEventListener("click", () => {
+        const index = Number(tile.getAttribute(indexAttr));
+        const entry = entries[index];
+        if (!entry) return;
+        void launchRecentApp(entry);
+      });
+      tile.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const index = Number(tile.getAttribute(indexAttr));
+        const entry = entries[index];
+        if (!entry || !window.namesAPI?.showContextMenu) return;
+        void window.namesAPI.showContextMenu({
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY),
+          target: {
+            kind: "app",
+            deviceId: entry.deviceId,
+            packageName: entry.packageName,
+            appName: entry.appName || entry.packageName,
+            userId: entry.userId ?? null,
+            iconPath: entry.iconPath || null,
+            iconUrl: entry.iconUrl || null,
+            pinned: pinned || isHomeAppPinned(entry)
+          }
+        });
+      });
+    });
+  }
+
+  async function syncPinnedApps() {
+    const target = document.getElementById("home-apps-pinned");
+    if (!target) return;
+    loadPinnedApps();
+
+    if (!pinnedEntries.length) {
+      target.innerHTML = "";
+      target.hidden = true;
+      return;
+    }
+
+    target.hidden = false;
+    const tiles = await Promise.all(
+      pinnedEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
+        pinned: true,
+        indexAttr: "data-pinned-index"
+      }))
+    );
+    const label = tHome("homeDashboard.pinnedApps", "Épinglées");
+    target.innerHTML =
+      `<div class="home-apps-pinned-label">${escapeAttr(label)}</div>` +
+      `<div class="home-apps-pinned-grid">${tiles.join("")}</div>`;
+    bindHomeAppTileInteractions(
+      target.querySelector(".home-apps-pinned-grid"),
+      pinnedEntries,
+      { pinned: true, indexAttr: "data-pinned-index" }
+    );
+  }
+
   async function syncRecentApps() {
     const target = document.getElementById("home-apps-recent");
     if (!target || !window.launchHistoryAPI?.list) return;
 
-    const placeholderSvg =
-      globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG
-      || '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.2" fill="currentColor"/><path d="M7.5 17c1.2-1.6 2.7-2.4 4.5-2.4s3.3.8 4.5 2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
-
     try {
+      loadPinnedApps();
+      const pinnedKeys = new Set(pinnedEntries.map((entry) => entry.key));
       const response = await window.launchHistoryAPI.list();
       const entries = Array.isArray(response?.entries) ? response.entries : [];
-      recentEntries = entries.slice(0, 8);
+      recentEntries = entries
+        .filter((entry) => !pinnedKeys.has(buildHomeAppKey(entry)))
+        .slice(0, 8);
 
       if (!recentEntries.length) {
         target.innerHTML = "";
         return;
       }
 
-      const tipMeta = await Promise.all(recentEntries.map(async (entry) => {
-        const deviceId = entry.deviceId || "";
-        const aliases = await resolveHistoryDeviceAliases(deviceId);
-        return {
-          deviceName: aliases[0] || "",
-          deviceAliases: aliases,
-          color: await resolveHistoryDeviceColor(deviceId)
-        };
-      }));
-
-      target.innerHTML = recentEntries.map((entry, index) => {
-        const meta = tipMeta[index] || {};
-        const deviceName = meta.deviceName || entry.deviceId || "";
-        const name = window.AppDisplay?.resolveHistoryAppName
-          ? window.AppDisplay.resolveHistoryAppName(entry, meta.deviceAliases || deviceName)
-          : (entry.appName || entry.packageName || "");
-        const iconSrc = (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos"))
-          ? ""
-          : (entry.iconUrl || entry.iconPath || "");
-        const iconHtml = iconSrc
-          ? `<img src="${escapeAttr(iconSrc)}" alt="" loading="lazy">`
-          : placeholderSvg;
-        const iconClass = iconSrc ? "" : " is-placeholder";
-        const color = meta.color || "";
-        const tipHtml = buildAppLaunchTipHtml(name, deviceName, color);
-        const pillHtml = color
-          ? `<span class="home-app-device-pill device-color-pill" style="background:${escapeAttr(color)}" aria-hidden="true"></span>`
-          : "";
-        const label = name || deviceName;
-        return (
-          `<button type="button" class="home-app-tile" data-recent-index="${index}" data-device-id="${escapeAttr(entry.deviceId || "")}" aria-label="${escapeAttr(label)}">` +
-          `<div class="home-app-tile-icon${iconClass}">${iconHtml}${pillHtml}</div>` +
-          `<span class="home-app-tile-name">${escapeAttr(name)}</span>` +
-          tipHtml +
-          `</button>`
-        );
-      }).join("");
-
-      target.querySelectorAll(".home-app-tile").forEach((tile) => {
-        tile.addEventListener("click", () => {
-          const index = Number(tile.dataset.recentIndex);
-          const entry = recentEntries[index];
-          if (!entry) return;
-          void launchRecentApp(entry);
-        });
-      });
+      const tiles = await Promise.all(
+        recentEntries.map((entry, index) => buildHomeAppTileHtml(entry, index))
+      );
+      target.innerHTML = tiles.join("");
+      bindHomeAppTileInteractions(target, recentEntries);
     } catch (_err) {}
+  }
+
+  async function syncHomeApps() {
+    await Promise.all([syncPinnedApps(), syncRecentApps()]);
+    scheduleHomeModulesSeparation();
   }
 
   async function launchRecentApp(entry) {
@@ -3735,6 +3903,11 @@
   window.syncDockBatteries = syncDockBatteries;
   window.syncHomeSessions = syncHomeSessions;
   window.syncRecentApps = syncRecentApps;
+  window.syncHomeApps = syncHomeApps;
+  window.pinHomeApp = pinHomeApp;
+  window.unpinHomeApp = unpinHomeApp;
+  window.isHomeAppPinned = isHomeAppPinned;
+  window.getHomePinnedApps = getHomePinnedApps;
   window.stopHomePreviewPolling = stopHomePreviewPolling;
   window.getHomeShortcutFabPrefs = getHomeShortcutFabPrefs;
   window.setHomeShortcutFabEnabled = setHomeShortcutFabEnabled;
@@ -3750,21 +3923,33 @@
     ...(window.__hubModalMainActions || {}),
     getHomeShortcutFabPrefs,
     setHomeShortcutFabEnabled,
-    applyHomeShortcutFabs: window.applyHomeShortcutFabs
+    applyHomeShortcutFabs: window.applyHomeShortcutFabs,
+    getHomePinnedApps,
+    getHomePinnedAppKeys,
+    isHomeAppPinned,
+    pinHomeApp,
+    unpinHomeApp
   };
-  window.launchHistoryAPI?.onUpdated?.(syncRecentApps);
+  window.launchHistoryAPI?.onUpdated?.(syncHomeApps);
   window.namesAPI?.onUpdated?.(() => {
-    void syncRecentApps();
+    void syncHomeApps();
   });
   window.electronAPI?.onAppMetadataUpdated?.(() => {
-    void syncRecentApps();
+    void syncHomeApps();
   });
   window.addEventListener("devices-refreshed", () => {
     if (!window.HubPerformance || window.HubPerformance.isEnabled("dockBatteryLive")) {
       void syncDockBatteries();
     }
     syncEmptyStateIntro();
-    void syncRecentApps();
+    void syncHomeApps();
+  });
+
+  window.addEventListener("home-app-pin", (event) => {
+    pinHomeApp(event.detail || {});
+  });
+  window.addEventListener("home-app-unpin", (event) => {
+    unpinHomeApp(event.detail || {});
   });
 
   window.addEventListener("fps-updated", (event) => {
@@ -3773,7 +3958,7 @@
   });
 
   async function refreshHomeAppDevicePills() {
-    const tiles = document.querySelectorAll("#home-apps-recent .home-app-tile[data-device-id]");
+    const tiles = document.querySelectorAll("#home-apps-recent .home-app-tile[data-device-id], #home-apps-pinned .home-app-tile[data-device-id]");
     if (!tiles.length) return;
 
     const ids = [...new Set(Array.from(tiles).map((tile) => tile.dataset.deviceId).filter(Boolean))];
@@ -3807,7 +3992,7 @@
       void syncDockBatteries();
       void refreshHomeAppDevicePills();
       window.setTimeout(() => {
-        void syncRecentApps();
+        void syncHomeApps();
         homeSessionsKey = "";
         void syncHomeSessions();
       }, 0);
@@ -3816,7 +4001,7 @@
 
   window.HubI18n?.onChange?.(() => {
     void syncDockBatteries();
-    void syncRecentApps();
+    void syncHomeApps();
     void syncHomeSessions();
   });
 
@@ -3827,7 +4012,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    syncRecentApps();
+    syncHomeApps();
     observeSessionView();
     bindHomeActions();
     bindHomeModules();

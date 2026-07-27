@@ -56,6 +56,8 @@ const LOCKED_KEYS = [
     "contextMenu.unlock",
     "contextMenu.lockGroup",
     "contextMenu.unlockGroup",
+    "contextMenu.pinToHome",
+    "contextMenu.unpinFromHome",
     "devicePanel.usbUnpluggedTitle",
     "settingsPanel.manualCleanup",
     "settingsPanel.maintCacheDesc"

@@ -438,9 +438,57 @@ function renderLauncherAppsList(apps) {
             if (!app) return;
             selectAppFromLauncher(app);
         });
+        btn.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const app = launcherApps.find((entry) => buildAppKey(entry) === btn.dataset.appKey);
+            if (!app || !selectedDevice) return;
+            void showAppPinContextMenu(event, {
+                deviceId: selectedDevice.deviceId || selectedDevice.serial,
+                packageName: app.package,
+                appName: getAppLabel(app),
+                userId: app.userId ?? null,
+                iconPath: app.iconPath || null,
+                iconUrl: app.iconUrl || null
+            });
+        });
     });
 
     setupLauncherIconPrefetch(appResults, apps);
+}
+
+async function isAppPinnedOnHome(entry) {
+    if (window.isHomeAppPinned) {
+        return Boolean(window.isHomeAppPinned(entry));
+    }
+    if (window.hubModalWindowAPI?.invokeMain) {
+        try {
+            const response = await window.hubModalWindowAPI.invokeMain("isHomeAppPinned", [entry]);
+            return Boolean(response?.success && response?.result);
+        } catch (_err) {
+            return false;
+        }
+    }
+    return false;
+}
+
+async function showAppPinContextMenu(event, entry) {
+    if (!window.namesAPI?.showContextMenu || !entry?.deviceId || !entry?.packageName) return;
+    const pinned = await isAppPinnedOnHome(entry);
+    void window.namesAPI.showContextMenu({
+        x: Math.round(event.clientX),
+        y: Math.round(event.clientY),
+        target: {
+            kind: "app",
+            deviceId: entry.deviceId,
+            packageName: entry.packageName,
+            appName: entry.appName || entry.packageName,
+            userId: entry.userId ?? null,
+            iconPath: entry.iconPath || null,
+            iconUrl: entry.iconUrl || null,
+            pinned
+        }
+    });
 }
 
 function selectAppFromLauncher(app) {
@@ -553,6 +601,27 @@ function createHistoryAppList() {
             userId: deleteBtn.dataset.userId === "" ? null : Number(deleteBtn.dataset.userId)
         }).catch((err) => {
             setStatus(`Erreur suppression: ${err.message}`, true);
+        });
+    });
+
+    historyList.addEventListener("contextmenu", (event) => {
+        if (event.target.closest(".new-instance-history-delete")) return;
+        const itemEl = event.target.closest(".new-instance-history-item");
+        if (!itemEl || !historyList.contains(itemEl)) return;
+        const entry = historyEntries.find((item) => {
+            const key = item.key || buildAppKey({ package: item.packageName, userId: item.userId });
+            return key === itemEl.dataset.itemKey;
+        });
+        if (!entry) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void showAppPinContextMenu(event, {
+            deviceId: entry.deviceId,
+            packageName: entry.packageName,
+            appName: entry.appName,
+            userId: entry.userId ?? null,
+            iconPath: entry.iconPath || null,
+            iconUrl: entry.iconUrl || null
         });
     });
 

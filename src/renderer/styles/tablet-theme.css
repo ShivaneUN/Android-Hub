@@ -1008,6 +1008,55 @@ body.theme-tablet .home-apps-recent {
   overflow: visible;
 }
 
+body.theme-tablet .home-apps-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  overflow: visible;
+}
+
+body.theme-tablet .home-apps-pinned[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-apps-pinned-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+  color: rgba(232, 236, 244, 0.7);
+  text-align: center;
+}
+
+body.theme-tablet .home-apps-pinned-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 12px;
+  overflow: visible;
+}
+
+body.theme-tablet .home-app-pin-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(79, 140, 255, 0.95);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+body.theme-tablet .home-app-pin-badge svg {
+  display: block;
+}
+
 body.theme-tablet .empty-state-mascot {
   margin-top: 8px;
   margin-bottom: 20px;
@@ -1605,7 +1654,8 @@ body.theme-tablet .home-module.is-content-hidden .home-module-body {
 }
 
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-devices-panel,
-body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-recent {
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-recent,
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-pinned-grid {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -1637,7 +1687,8 @@ body.theme-tablet .home-module[data-orientation="vertical"] .home-devices-panel 
   gap: 12px;
 }
 
-body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-recent {
+body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-recent,
+body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-pinned-grid {
   display: grid;
   grid-template-columns: repeat(2, max-content);
   justify-content: center;

@@ -24,6 +24,7 @@
 <script src="../shared/device-colors.js"></script>
 <script src="styles/hub-accent.js"></script>
 <script src="styles/hub-surface.js"></script>
+<script src="styles/hub-brightness.js"></script>
 </head>
 <body class="">
 
@@ -232,6 +233,7 @@
               </div>
             </div>
             <div class="home-module-body">
+              <div class="home-apps-pinned" id="home-apps-pinned" hidden></div>
               <div class="home-apps-recent" id="home-apps-recent"></div>
             </div>
           </div>
@@ -629,6 +631,13 @@
       },
       getUiSurface() {
         return window.getUiSurface?.() || "midnight";
+      },
+      setUiBrightness(brightness) {
+        const next = window.setUiBrightness?.(brightness) ?? 100;
+        return { brightness: next };
+      },
+      getUiBrightness() {
+        return window.getUiBrightness?.() ?? 100;
       }
     };
   })();

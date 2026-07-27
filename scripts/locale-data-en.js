@@ -140,7 +140,9 @@ module.exports = {
         "lock": "Lock",
         "unlock": "Unlock",
         "lockGroup": "Lock group",
-        "unlockGroup": "Unlock group"
+        "unlockGroup": "Unlock group",
+        "pinToHome": "Pin to Home",
+        "unpinFromHome": "Unpin from Home"
     },
     "toggles": {
         "screenTitle": "Turn the device screen on or off (active mirroring session)",
@@ -216,6 +218,8 @@ module.exports = {
         "wallpaperPick": "Choose an image…",
         "wallpaperClear": "Remove",
         "wallpaperNone": "No image",
+        "brightnessTitle": "Hub brightness",
+        "brightnessLead": "Dims the Hub interface and displayed video streams.",
         "surface": {
             "midnight": "Midnight",
             "graphite": "Graphite",
@@ -1131,7 +1135,8 @@ module.exports = {
         "moduleAlignOn": "Align titles",
         "moduleAlignOff": "Stop aligning titles",
         "moduleHideContent": "Hide content",
-        "moduleShowContent": "Show content"
+        "moduleShowContent": "Show content",
+        "pinnedApps": "Pinned"
     },
     "uiTheme": {
         "classicTitle": "Classic interface",

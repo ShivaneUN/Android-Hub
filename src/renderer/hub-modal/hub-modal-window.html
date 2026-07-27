@@ -15,6 +15,7 @@
 <script src="../../shared/device-colors.js"></script>
 <script src="../styles/hub-accent.js"></script>
 <script src="../styles/hub-surface.js"></script>
+<script src="../styles/hub-brightness.js"></script>
 </head>
 <body>
 
@@ -226,6 +227,14 @@
           <button type="button" class="settings-wallpaper-btn settings-wallpaper-btn--ghost" id="settings-wallpaper-clear" data-i18n="settingsPanel.wallpaperClear" hidden>Retirer</button>
         </div>
         <p class="settings-wallpaper-name" id="settings-wallpaper-name" data-i18n="settingsPanel.wallpaperNone">Aucune image</p>
+        <div class="settings-section-head settings-section-head--accent">
+          <span class="settings-section-title" data-i18n="settingsPanel.brightnessTitle">Luminosité du Hub</span>
+        </div>
+          <p class="settings-appearance-lead" data-i18n="settingsPanel.brightnessLead">Assombrit l’interface du Hub et les flux vidéo affichés.</p>
+        <div class="settings-brightness-row">
+          <input type="range" id="settings-hub-brightness" class="settings-brightness-slider" min="40" max="100" step="1" value="100" aria-valuemin="40" aria-valuemax="100" aria-valuenow="100" data-i18n-aria-label="settingsPanel.brightnessTitle" aria-label="Luminosité du Hub">
+          <span class="settings-brightness-value" id="settings-hub-brightness-value">100%</span>
+        </div>
       </div>
       <div id="settings-pane-control" class="settings-tab-pane" data-settings-pane="control">
         <div class="control-panel-body control-panel-body--split">

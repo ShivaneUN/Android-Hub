@@ -18,6 +18,8 @@ class BrowserViewManager {
         this.titlebarHeight = 40;
         this.sessionBarHeight = 40;
         this.earlyEvents = new Map();
+        /** Luminosité UI des flux (0.4–1), alignée sur le Hub. */
+        this.uiBrightnessFactor = 1;
 
         const onWindowMetricsChange = () => this._updateActiveBounds();
         this.mainWindow.on("resize", onWindowMetricsChange);
@@ -182,9 +184,13 @@ class BrowserViewManager {
             };
 
             if (view.webContents.isLoading()) {
-                view.webContents.once("did-finish-load", markReady);
+                view.webContents.once("did-finish-load", () => {
+                    markReady();
+                    this._applyBrightnessToView(view);
+                });
             } else {
                 markReady();
+                this._applyBrightnessToView(view);
             }
         });
 
@@ -217,9 +223,27 @@ class BrowserViewManager {
 
         this.mainWindow.webContents
             .executeJavaScript(
-                "(() => { try { return localStorage.getItem('androidHub.uiTheme') || 'classic'; } catch (_err) { return 'classic'; } })()"
+                `(() => {
+                    try {
+                        const theme = localStorage.getItem('androidHub.uiTheme') || 'classic';
+                        const brightnessRaw = localStorage.getItem('androidHub.uiBrightness');
+                        const brightness = brightnessRaw == null || brightnessRaw === ''
+                            ? 100
+                            : Math.min(100, Math.max(40, Math.round(Number(brightnessRaw) || 100)));
+                        return { theme, brightness };
+                    } catch (_err) {
+                        return { theme: 'classic', brightness: 100 };
+                    }
+                })()`
             )
-            .then((uiTheme) => loadSessionPage(uiTheme))
+            .then((prefs) => {
+                const theme = prefs?.theme || "classic";
+                const brightness = Number(prefs?.brightness);
+                if (Number.isFinite(brightness)) {
+                    this.setUiBrightness(brightness, { apply: false });
+                }
+                loadSessionPage(theme);
+            })
             .catch(() => loadSessionPage(extraQuery.uiTheme || "classic"));
 
         console.log(`[BrowserViewManager] Session ${sessionId} (type ${type}) créée`);
@@ -795,6 +819,44 @@ class BrowserViewManager {
             return { available: false };
         } catch (_err) {
             return { available: false };
+        }
+    }
+
+    /**
+     * @param {number} percent 40–100
+     * @param {{ apply?: boolean }} [options]
+     */
+    setUiBrightness(percent, options = {}) {
+        const apply = options.apply !== false;
+        const n = Math.round(Number(percent));
+        const clamped = Number.isFinite(n) ? Math.min(100, Math.max(40, n)) : 100;
+        this.uiBrightnessFactor = clamped / 100;
+        if (apply) {
+            this.applyUiBrightnessToAllViews();
+        }
+        return clamped;
+    }
+
+    _applyBrightnessToView(view) {
+        if (!view?.webContents || view.webContents.isDestroyed()) return;
+        const factor = Number.isFinite(this.uiBrightnessFactor) ? this.uiBrightnessFactor : 1;
+        const script = `(function (factor) {
+            try {
+                const root = document.documentElement;
+                if (!root) return false;
+                root.style.setProperty("--hub-ui-brightness", String(factor));
+                root.style.filter = factor >= 0.995 ? "" : ("brightness(" + factor + ")");
+                return true;
+            } catch (_err) {
+                return false;
+            }
+        })(${JSON.stringify(factor)})`;
+        void view.webContents.executeJavaScript(script, true).catch(() => {});
+    }
+
+    applyUiBrightnessToAllViews() {
+        for (const entry of this.views.values()) {
+            this._applyBrightnessToView(entry?.view);
         }
     }
 }

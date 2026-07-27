@@ -320,6 +320,15 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return true;
     });
 
+    ipcMain.handle("session:setUiBrightness", (_event, payload = {}) => {
+        const manager = global.browserViewManager;
+        if (!manager?.setUiBrightness) {
+            return { success: false, brightness: 100 };
+        }
+        const brightness = manager.setUiBrightness(payload?.brightness);
+        return { success: true, brightness };
+    });
+
     ipcMain.handle("session:getActiveTypeA", () => {
         const session = global.browserViewManager.getActiveTypeASession();
         return { success: true, session };

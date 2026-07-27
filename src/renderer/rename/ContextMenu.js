@@ -70,6 +70,18 @@
                     detail: { fabIds: data.fabIds }
                 }));
             }
+            if (data?.action === "home-app-pin" || data?.action === "home-app-unpin") {
+                window.dispatchEvent(new CustomEvent(data.action, {
+                    detail: {
+                        deviceId: data.deviceId,
+                        packageName: data.packageName,
+                        appName: data.appName,
+                        userId: data.userId ?? null,
+                        iconPath: data.iconPath || null,
+                        iconUrl: data.iconUrl || null
+                    }
+                }));
+            }
         });
     }
 

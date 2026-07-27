@@ -192,6 +192,37 @@ function registerContextMenuHandlers(deps) {
             return { success: true };
         }
 
+        if (target.kind === "app" && target.packageName && target.deviceId) {
+            const appMenu = new Menu();
+            const pinned = Boolean(target.pinned);
+            appMenu.append(new MenuItem({
+                label: pinned
+                    ? t("contextMenu.unpinFromHome")
+                    : t("contextMenu.pinToHome"),
+                click: () => {
+                    const mainWin = getMainWindow();
+                    const win = mainWin && !mainWin.isDestroyed() ? mainWin : popupWindow;
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send("context-menu:action", {
+                            action: pinned ? "home-app-unpin" : "home-app-pin",
+                            deviceId: target.deviceId,
+                            packageName: target.packageName,
+                            appName: target.appName || target.packageName,
+                            userId: target.userId ?? null,
+                            iconPath: target.iconPath || null,
+                            iconUrl: target.iconUrl || null
+                        });
+                    }
+                }
+            }));
+            appMenu.popup({
+                window: popupWindow,
+                x: Math.round(x),
+                y: Math.round(y)
+            });
+            return { success: true };
+        }
+
         const menu = new Menu();
 
         menu.append(new MenuItem({

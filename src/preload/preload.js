@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     setLayoutBounds: (boundsMap) => ipcRenderer.invoke("session:setLayoutBounds", { boundsMap }),
     suppressView: () => ipcRenderer.invoke("session:suppressView"),
     restoreView: () => ipcRenderer.invoke("session:restoreView"),
+    setUiBrightness: (brightness) => ipcRenderer.invoke("session:setUiBrightness", { brightness }),
     getActiveTypeA: () => ipcRenderer.invoke("session:getActiveTypeA"),
     toggleScreen: (sessionId) => ipcRenderer.invoke("session:toggleScreen", sessionId),
     getActiveOrientation: () => ipcRenderer.invoke("session:getActiveOrientation"),

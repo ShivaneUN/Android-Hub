@@ -110,6 +110,22 @@
         }
     }
 
+    async function applyBrightnessFromSettings(brightness) {
+        const next = window.HubBrightness?.normalizeBrightness?.(brightness)
+            ?? Math.min(100, Math.max(40, Math.round(Number(brightness) || 100)));
+        window.HubBrightness?.syncBrightnessUi?.(next);
+
+        if (window.hubModalWindowAPI?.invokeMain) {
+            const response = await window.hubModalWindowAPI.invokeMain("setUiBrightness", [next]);
+            if (response?.success && response.result?.brightness != null) {
+                window.setUiBrightness?.(response.result.brightness);
+                return;
+            }
+        }
+
+        window.setUiBrightness?.(next);
+    }
+
     async function syncFromMain() {
         if (window.hubModalWindowAPI?.invokeMain) {
             try {
@@ -144,10 +160,22 @@
             } catch (_err) {
                 syncSurfaceButtons(window.getUiSurface?.() || "midnight");
             }
+
+            try {
+                const brightnessRes = await window.hubModalWindowAPI.invokeMain("getUiBrightness", []);
+                if (brightnessRes?.success && brightnessRes.result != null) {
+                    window.applyUiBrightness?.(brightnessRes.result);
+                } else {
+                    window.applyUiBrightness?.(window.getUiBrightness?.() ?? 100);
+                }
+            } catch (_err) {
+                window.applyUiBrightness?.(window.getUiBrightness?.() ?? 100);
+            }
         } else {
             syncThemeButtons(readLocalTheme());
             syncAccentButtons(window.getUiAccent?.() || "5");
             syncSurfaceButtons(window.getUiSurface?.() || "midnight");
+            window.applyUiBrightness?.(window.getUiBrightness?.() ?? 100);
         }
 
         await window.HubSurface?.refreshWallpaperFromMain?.();
@@ -184,6 +212,18 @@
                     void clearWallpaper();
                 }
             });
+
+            const brightnessSlider = root.querySelector("#settings-hub-brightness");
+            if (brightnessSlider) {
+                const onBrightnessInput = () => {
+                    const next = window.HubBrightness?.normalizeBrightness?.(brightnessSlider.value)
+                        ?? Number(brightnessSlider.value);
+                    window.setUiBrightness?.(next);
+                    brightnessSlider.setAttribute("aria-valuenow", String(next));
+                };
+                brightnessSlider.addEventListener("input", onBrightnessInput);
+                brightnessSlider.addEventListener("change", onBrightnessInput);
+            }
         }
 
         window.HubAccent?.renderSwatches?.(root);
