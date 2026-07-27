@@ -29,6 +29,9 @@
     }
 
     function defaultGetIconSrc(item) {
+        if (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos")) {
+            return null;
+        }
         return item.iconUrl || item.iconPath || null;
     }
 
@@ -179,6 +182,7 @@
 
                 const iconSrc = patch.iconUrl || patch.iconPath;
                 if (!iconSrc) return;
+                if (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos")) return;
 
                 const iconWrap = node.querySelector(".app-list-item-icon");
                 if (!iconWrap) return;

@@ -3188,6 +3188,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getCustomNamesManager: () => global.customNamesManager,
         getMainWindow: () => win,
         getNewInstanceManager: () => newInstanceManager,
+        getUiPreferencesManager: () => global.uiPreferencesManager,
         loadHistory,
         removeDeviceFromHistory,
         refreshDeviceList: async () => {

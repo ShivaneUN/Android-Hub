@@ -164,6 +164,7 @@
     "tabControl": "Contrôle",
     "tabMaintenance": "Nettoyage",
     "tabHomeShortcuts": "Raccourcis Accueil",
+    "tabPerformance": "Performances",
     "tabUpdates": "Mise à jour",
     "tabAbout": "À propos",
     "homeShortcutsLead": "Choisissez les pastilles affichées sur l’Accueil pour ouvrir rapidement une fonction.",
@@ -172,6 +173,19 @@
     "homeShortcutsButtonsTitle": "Pastilles Accueil",
     "homeShortcutsButtonsHint": "Les pastilles se placent et se verrouillent comme les autres (Ctrl + clic).",
     "homeShortcutsSaveFailed": "Impossible d’enregistrer le raccourci Accueil.",
+    "performanceLead": "Réduisez la charge CPU/GPU sur les petits PC. Le mode performance coupe d’un coup les fonctions les plus coûteuses.",
+    "performanceModeTitle": "Mode performance",
+    "performanceModeDesc": "Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes.",
+    "performanceFeaturesTitle": "Fonctions",
+    "performanceFeaturesHint": "En mode performance, les fonctions restent coupées. Désactivez le mode pour les régler une par une.",
+    "performanceSaveFailed": "Impossible d’enregistrer les performances.",
+    "perfFps": "Compteur FPS",
+    "perfAppLogos": "Logos des apps",
+    "perfHomePreview": "Aperçu Home",
+    "perfHoverPreview": "Aperçu au survol",
+    "perfDockBattery": "Batteries dock live",
+    "perfAnimations": "Animations UI",
+    "perfSessionSwitch": "USB/Wi‑Fi avec sessions",
     "homeShortcutsModulesTitle": "Modules",
     "homeShortcutsDragTitle": "Glisser le titre",
     "homeShortcutsDragDesc": "Déplacer un module librement sur l’Accueil.",
@@ -244,7 +258,9 @@
     "aboutFeat11Desc": "Couleur d’accent du Hub, ambiances de fond (Minuit, Océan, Crépuscule…) et image personnalisée via le sélecteur Windows. Les choix sont mémorisés.",
     "seeMore": "Voir ›",
     "aboutFeat12Title": "Raccourcis Accueil",
-    "aboutFeat12Desc": "Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil."
+    "aboutFeat12Desc": "Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage, Performances) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil.",
+    "aboutFeat13Title": "Performances",
+    "aboutFeat13Desc": "Mode performance et toggles individuels : FPS, logos d’apps, aperçus Home/survol, batteries dock live, animations UI, et basculement USB/Wi‑Fi avec sessions ouvertes. Idéal pour les petits PC."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -257,7 +273,8 @@
     "errors": {
       "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
       "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
-      "connect": "Connexion impossible — vérifie que le téléphone est sur le même réseau"
+      "connect": "Connexion impossible — vérifie que le téléphone est sur le même réseau",
+      "sessions-blocked": "Basculement USB/Wi‑Fi désactivé tant que des sessions sont ouvertes (Paramètres → Performances)."
     },
     "progress": {
       "ip": "Récupération de l'IP...",
@@ -506,6 +523,7 @@
       "wifi": "Connexion WiFi",
       "troubleshoot": "Dépannage",
       "appearance": "Apparence",
+      "performance": "Performances",
       "refresh": "Rafraîchir",
       "close": "Fermer"
     },
@@ -795,7 +813,14 @@
                 "Paramètres",
                 "Raccourcis Accueil"
               ],
-              "desc": "Choisir les pastilles affichées : Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage."
+              "desc": "Choisir les pastilles affichées : Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage, Performances."
+            },
+            {
+              "keys": [
+                "Paramètres",
+                "Performances"
+              ],
+              "desc": "Mode performance et fonctions individuelles (FPS, logos, aperçus, batteries dock, animations, USB/Wi‑Fi avec sessions)."
             },
             {
               "keys": [
@@ -1046,6 +1071,24 @@
         }
       ]
     },
+    "performance": {
+      "title": "Performances",
+      "intro": "Paramètres → Performances permet d’alléger le Hub sur les petits PC. Le mode performance coupe d’un coup les fonctions les plus coûteuses ; vous pouvez aussi les activer ou désactiver une par une.",
+      "sections": [
+        {
+          "title": "Mode performance",
+          "body": "Un seul interrupteur désactive FPS, logos d’apps, aperçus Home et au survol, batteries live du dock, animations UI, et le basculement USB/Wi‑Fi tant que des sessions sont ouvertes."
+        },
+        {
+          "title": "Fonctions individuelles",
+          "body": "Hors mode performance, chaque fonction se règle séparément. Les pastilles Accueil peuvent aussi ouvrir directement cet onglet (Paramètres → Raccourcis Accueil → Performances)."
+        },
+        {
+          "title": "USB / Wi‑Fi avec sessions",
+          "body": "Si l’option est coupée (ou via le mode performance), le basculement USB ↔ Wi‑Fi est refusé tant qu’une session est ouverte. Réactivez l’option pour autoriser le basculement à chaud."
+        }
+      ]
+    },
     "troubleshoot": {
       "title": "Dépannage rapide",
       "items": [
@@ -1056,7 +1099,9 @@
         "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
         "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
         "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
-        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
+        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste.",
+        "PC lent / saccades : activez Paramètres → Performances → Mode performance (coupe aperçus, FPS, logos et animations).",
+        "Basculement USB/Wi‑Fi refusé : une session est ouverte et l’option est désactivée dans Paramètres → Performances."
       ]
     }
   },

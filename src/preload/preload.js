@@ -254,6 +254,8 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     getLocale: () => ipcRenderer.invoke("ui:get-locale"),
     setLocale: (locale) => ipcRenderer.invoke("ui:set-locale", { locale }),
     getPreferences: () => ipcRenderer.invoke("ui:get-preferences"),
+    getPerformancePrefs: () => ipcRenderer.invoke("ui:get-performance-prefs"),
+    setPerformancePrefs: (payload) => ipcRenderer.invoke("ui:set-performance-prefs", payload),
     setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
     setDisplayPreferences: (payload) => ipcRenderer.invoke("ui:set-display-preferences", payload),
     getHubWallpaper: () => ipcRenderer.invoke("ui:get-hub-wallpaper"),
@@ -262,7 +264,9 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     onLocaleChanged: (callback) =>
         ipcRenderer.on("ui:locale-changed", (_event, data) => callback(data)),
     onWallpaperChanged: (callback) =>
-        ipcRenderer.on("ui:wallpaper-changed", (_event, data) => callback(data))
+        ipcRenderer.on("ui:wallpaper-changed", (_event, data) => callback(data)),
+    onPerformanceChanged: (callback) =>
+        ipcRenderer.on("ui:performance-changed", (_event, data) => callback(data))
 });
 
 contextBridge.exposeInMainWorld("maintenanceAPI", {

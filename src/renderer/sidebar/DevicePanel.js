@@ -3,7 +3,7 @@
  */
 const dt = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
 
-const WIFI_ERROR_STEPS = ["tcpip", "ip", "connect"];
+const WIFI_ERROR_STEPS = ["tcpip", "ip", "connect", "sessions-blocked"];
 
 /** @type {{ globalMuted: boolean, devices: Record<string, { muted?: boolean }> }} */
 let cachedAudioState = { globalMuted: true, devices: {} };
@@ -554,7 +554,7 @@ async function handleWifiToggle(device, enabled, toggleInput) {
         const message = wifiErrorMessage(result?.step) || result?.error || dt("devicePanel.wifiFailed");
         window.showHubLoadingOverlayError?.(message || switchFailedMessage, 2800);
         window.showHubToast?.(message, "error", 5500);
-        syncWifiToggleChecked(deviceId, false);
+        syncWifiToggleChecked(deviceId, !enabled);
         await window.refreshDevices?.();
     } catch (err) {
         window.showHubLoadingOverlayError?.(err.message || dt("devicePanel.wifiError"), 2800);

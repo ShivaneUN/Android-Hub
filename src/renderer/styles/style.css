@@ -274,7 +274,7 @@ html[data-hub-wallpaper="1"] .empty-state-mascot {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
-/* Infobulle apps rÃ©centes / historique : pastille + Â« Appareil â€” App Â». */
+/* Infobulle apps récentes / historique : pastille + « Appareil — App ». */
 .app-launch-tip {
   position: absolute;
   left: 50%;
@@ -617,7 +617,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   padding-right: 2px;
 }
 
-/* 4c â€” choix USB dÃ©branchÃ© : overlay plein Ã©cran au-dessus du flux (views suppress). */
+/* 4c — choix USB débranché : overlay plein écran au-dessus du flux (views suppress). */
 .usb-unplug-prompt-host {
   position: fixed;
   inset: 0;
@@ -1094,7 +1094,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   display: none !important;
 }
 
-/* --- Panneau latÃ©ral (legacy â€” modales dÃ©portÃ©es via hub-panel.css) --- */
+/* --- Panneau latéral (legacy — modales déportées via hub-panel.css) --- */
 
 .side-panel-empty {
   font-size: 13px;
@@ -1305,7 +1305,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .btn-app-launch:hover {
   background: #6a9dff;
 }
-/* --- Labels partagÃ©s panneaux latÃ©raux --- */
+/* --- Labels partagés panneaux latéraux --- */
 .settings-section-label {
   font-size: 11px;
   font-weight: 600;
@@ -1821,7 +1821,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   background: #0a0e14;
 }
 
-/* Historique â€” mÃªme gabarit visuel que Recherche d'apps (.new-instance-app-*) */
+/* Historique — même gabarit visuel que Recherche d'apps (.new-instance-app-*) */
 .new-instance-history-list .app-list-item-icon {
   flex-shrink: 0;
   width: 32px;
@@ -2218,7 +2218,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .sidebar-device-stat.transport-wifi-connected { color: #4f8cff; font-size: 11px; font-weight: 600; }
 .sidebar-device-stat.transport-unknown { color: #5b6373; font-size: 11px; }
 
-/* --- Overlay chargement centrÃ© â€” bloque les clics (Ã©vite de fermer un onglet pendant le switch) --- */
+/* --- Overlay chargement centré — bloque les clics (évite de fermer un onglet pendant le switch) --- */
 .hub-loading-overlay {
   position: fixed;
   inset: 0;
@@ -2545,7 +2545,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   color: var(--text-muted);
 }
 
-/* --- SÃ©lecteur de thÃ¨me d'interface (Ã©cran d'accueil) --- */
+/* --- Sélecteur de thème d'interface (écran d'accueil) --- */
 .ui-theme-switch {
   display: flex;
   gap: 12px;
@@ -2604,4 +2604,17 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: 5px;
+}
+/* Mode performance — animations / FPS */
+body.perf-reduce-motion *,
+body.perf-reduce-motion *::before,
+body.perf-reduce-motion *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}
+
+body.perf-hide-fps .tab-fps,
+body.perf-hide-fps .home-session-fps {
+  display: none !important;
 }

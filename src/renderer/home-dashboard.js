@@ -332,6 +332,7 @@
   }
 
   async function refreshHomeSessionPreviews() {
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("homePreview")) return;
     if (!isHomeVisible() || !window.sessionAPI?.getPreviewFrame || homePreviewInFlight) return;
     homePreviewInFlight = true;
     try {
@@ -364,6 +365,10 @@
   }
 
   function startHomePreviewPolling() {
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("homePreview")) {
+      stopHomePreviewPolling();
+      return;
+    }
     if (homePreviewTimer) return;
     homePreviewTimer = window.setInterval(() => {
       if (!isHomeVisible()) {
@@ -641,7 +646,8 @@
     "settings-devices",
     "settings-appearance",
     "settings-control",
-    "settings-maintenance"
+    "settings-maintenance",
+    "settings-performance"
   ];
   const HOME_FAB_TOGGLE_IDS = [...HOME_FAB_CORE_IDS, ...HOME_FAB_OPTIONAL_IDS];
   const HOME_FAB_ALL_IDS = [...HOME_FAB_TOGGLE_IDS];
@@ -3611,7 +3617,9 @@
         const name = window.AppDisplay?.resolveHistoryAppName
           ? window.AppDisplay.resolveHistoryAppName(entry, meta.deviceAliases || deviceName)
           : (entry.appName || entry.packageName || "");
-        const iconSrc = entry.iconUrl || entry.iconPath || "";
+        const iconSrc = (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos"))
+          ? ""
+          : (entry.iconUrl || entry.iconPath || "");
         const iconHtml = iconSrc
           ? `<img src="${escapeAttr(iconSrc)}" alt="" loading="lazy">`
           : placeholderSvg;
@@ -3701,6 +3709,8 @@
 
   window.syncDockBatteries = syncDockBatteries;
   window.syncHomeSessions = syncHomeSessions;
+  window.syncRecentApps = syncRecentApps;
+  window.stopHomePreviewPolling = stopHomePreviewPolling;
   window.getHomeShortcutFabPrefs = getHomeShortcutFabPrefs;
   window.setHomeShortcutFabEnabled = setHomeShortcutFabEnabled;
   window.applyHomeShortcutFabs = () => {
@@ -3725,11 +3735,15 @@
     void syncRecentApps();
   });
   window.addEventListener("devices-refreshed", () => {
-    void syncDockBatteries();
+    if (!window.HubPerformance || window.HubPerformance.isEnabled("dockBatteryLive")) {
+      void syncDockBatteries();
+    }
     syncEmptyStateIntro();
     void syncRecentApps();
   });
+
   window.addEventListener("fps-updated", (event) => {
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("fpsMonitor")) return;
     updateHomeSessionFps(event.detail || {});
   });
 

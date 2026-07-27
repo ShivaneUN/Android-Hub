@@ -132,6 +132,9 @@ function buildSessionIconKey(session = {}) {
 }
 
 function renderTabAppIcon(iconUrl = null) {
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos")) {
+        iconUrl = null;
+    }
     if (iconUrl) {
         return `<span class="tab-app-icon"><img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"></span>`;
     }
@@ -143,6 +146,9 @@ function renderTabAppIcon(iconUrl = null) {
 
 function updateTabAppIcon(tab, iconUrl = null) {
     if (!tab) return;
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos")) {
+        iconUrl = null;
+    }
     const iconContainer = tab.querySelector(".tab-app-icon");
     if (!iconContainer) return;
     iconContainer.classList.toggle("is-placeholder", !iconUrl);
@@ -154,6 +160,7 @@ function updateTabAppIcon(tab, iconUrl = null) {
 function hydrateTabsWithIcon(iconKey, iconUrl) {
     const tabsBar = getSessionTabsContainer();
     if (!tabsBar || !iconKey || !iconUrl) return;
+    if (window.HubPerformance && !window.HubPerformance.isEnabled("appLogos")) return;
     tabsBar.querySelectorAll(".scrcpy-tab").forEach((tab) => {
         const tabIconKey = tab.dataset.iconKey;
         if (tabIconKey === iconKey) {
@@ -540,6 +547,10 @@ if (window.sessionAPI?.onSessionListChanged) {
         renderSidebar().catch(console.error);
     });
 }
+
+window.addEventListener("performance-prefs-changed", () => {
+    renderSidebar().catch(console.error);
+});
 
 if (window.sessionAPI?.list) {
     renderSidebar().catch(console.error);

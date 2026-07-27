@@ -2,14 +2,46 @@ const fs = require("fs");
 const path = require("path");
 const { createLocaleApi, SUPPORTED_LOCALES } = require("../../shared/locale");
 
+const DEFAULT_PERFORMANCE_PREFS = {
+    performanceMode: false,
+    fpsMonitor: true,
+    appLogos: true,
+    homePreview: true,
+    hoverPreview: true,
+    dockBatteryLive: true,
+    uiAnimations: true,
+    sessionTransportSwitch: true
+};
+
+const PERFORMANCE_FEATURE_KEYS = [
+    "fpsMonitor",
+    "appLogos",
+    "homePreview",
+    "hoverPreview",
+    "dockBatteryLive",
+    "uiAnimations",
+    "sessionTransportSwitch"
+];
+
 const DEFAULT_PREFERENCES = {
     locale: "fr",
     sidebarOpen: true,
     streamDeckMode: false,
     displayLayout: "grid",
     focusedDeviceId: null,
-    duoDeviceIds: [null, null]
+    duoDeviceIds: [null, null],
+    performance: structuredClone(DEFAULT_PERFORMANCE_PREFS)
 };
+
+function normalizePerformancePrefs(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const prefs = { ...DEFAULT_PERFORMANCE_PREFS };
+    prefs.performanceMode = source.performanceMode === true;
+    for (const key of PERFORMANCE_FEATURE_KEYS) {
+        prefs[key] = source[key] !== false;
+    }
+    return prefs;
+}
 
 class UiPreferencesManager {
     constructor(userDataPath) {
@@ -38,7 +70,16 @@ class UiPreferencesManager {
                 typeof duoRaw[0] === "string" ? duoRaw[0] : null,
                 typeof duoRaw[1] === "string" ? duoRaw[1] : null
             ];
-            return { locale, sidebarOpen, streamDeckMode, displayLayout, focusedDeviceId, duoDeviceIds };
+            const performance = normalizePerformancePrefs(parsed?.performance);
+            return {
+                locale,
+                sidebarOpen,
+                streamDeckMode,
+                displayLayout,
+                focusedDeviceId,
+                duoDeviceIds,
+                performance
+            };
         } catch {
             return structuredClone(DEFAULT_PREFERENCES);
         }
@@ -76,8 +117,46 @@ class UiPreferencesManager {
             streamDeckMode: this.getStreamDeckMode(),
             displayLayout: this.getDisplayLayout(),
             focusedDeviceId: this.getFocusedDeviceId(),
-            duoDeviceIds: this.getDuoDeviceIds()
+            duoDeviceIds: this.getDuoDeviceIds(),
+            performance: this.getPerformancePrefs()
         };
+    }
+
+    getPerformancePrefs() {
+        return normalizePerformancePrefs(this.preferences.performance);
+    }
+
+    /**
+     * @param {Partial<typeof DEFAULT_PERFORMANCE_PREFS>} patch
+     */
+    setPerformancePrefs(patch = {}) {
+        const current = this.getPerformancePrefs();
+        const next = { ...current };
+
+        if (Object.prototype.hasOwnProperty.call(patch, "performanceMode")) {
+            next.performanceMode = patch.performanceMode === true;
+        }
+
+        for (const key of PERFORMANCE_FEATURE_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(patch, key)) {
+                next[key] = patch[key] !== false;
+                // Réactiver une fonction individuelle quitte le mode perf.
+                if (next[key] === true && next.performanceMode) {
+                    next.performanceMode = false;
+                }
+            }
+        }
+
+        this.preferences.performance = normalizePerformancePrefs(next);
+        this.savePreferences();
+        return { success: true, performance: this.getPerformancePrefs() };
+    }
+
+    isPerformanceFeatureEnabled(key) {
+        const prefs = this.getPerformancePrefs();
+        if (prefs.performanceMode) return false;
+        if (!PERFORMANCE_FEATURE_KEYS.includes(key)) return true;
+        return prefs[key] !== false;
     }
 
     getSidebarOpen() {
@@ -149,4 +228,8 @@ class UiPreferencesManager {
     }
 }
 
-module.exports = { UiPreferencesManager };
+module.exports = {
+    UiPreferencesManager,
+    DEFAULT_PERFORMANCE_PREFS,
+    PERFORMANCE_FEATURE_KEYS
+};

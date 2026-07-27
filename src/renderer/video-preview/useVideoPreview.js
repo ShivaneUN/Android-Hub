@@ -182,6 +182,9 @@
          */
         function attach(element, sessionId) {
             const onEnter = () => {
+                if (window.HubPerformance && !window.HubPerformance.isEnabled("hoverPreview")) {
+                    return;
+                }
                 if (hoverTimer !== null) clearTimeout(hoverTimer);
                 hoverTimer = window.setTimeout(() => {
                     hoverTimer = null;

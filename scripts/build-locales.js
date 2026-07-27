@@ -34,6 +34,7 @@ const LOCKED_SECTIONS = [
 /** Specific keys that must always resolve (dock tips, home, etc.). */
 const LOCKED_KEYS = [
     "settingsPanel.tabHomeShortcuts",
+    "settingsPanel.tabPerformance",
     "sidebar.home",
     "sidebar.settings",
     "sidebar.help",

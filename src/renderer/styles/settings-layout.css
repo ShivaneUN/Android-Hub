@@ -920,6 +920,85 @@
   color: #9aa3b5;
 }
 
+.settings-perf-mode-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 14px 14px 14px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: #c5cad6;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.settings-perf-mode-btn:hover {
+  color: #e8ecf4;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-perf-mode-btn.is-on {
+  color: #e8ecf4;
+  border-color: rgba(245, 166, 35, 0.55);
+  background: color-mix(in srgb, #f5a623 14%, #161b22);
+}
+
+.settings-perf-mode-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.settings-perf-mode-btn.is-on .settings-perf-mode-icon {
+  background: rgba(245, 166, 35, 0.22);
+  color: #ffd27a;
+}
+
+.settings-perf-mode-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-perf-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-perf-mode-copy strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.settings-perf-mode-copy span {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9aa3b5;
+}
+
+.settings-perf-mode-btn.is-on .settings-perf-mode-copy span {
+  color: #d7c39a;
+}
+
+.home-shortcut-chip.is-locked,
+.home-shortcut-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .home-shortcuts-list {
   display: flex;
   flex-direction: column;

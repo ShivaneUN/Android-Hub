@@ -619,6 +619,7 @@ function registerWifiHandlers(deps) {
         getCustomNamesManager,
         getMainWindow,
         getNewInstanceManager,
+        getUiPreferencesManager,
         loadHistory,
         removeDeviceFromHistory,
         refreshDeviceList,
@@ -761,6 +762,32 @@ function registerWifiHandlers(deps) {
 
         if (!deviceId && !usbSerial) {
             return { success: false, error: "Appareil introuvable.", step: "init" };
+        }
+
+        const sessionSwitchAllowed = (() => {
+            const manager = typeof getUiPreferencesManager === "function"
+                ? getUiPreferencesManager()
+                : null;
+            if (manager?.isPerformanceFeatureEnabled) {
+                return manager.isPerformanceFeatureEnabled("sessionTransportSwitch");
+            }
+            return true;
+        })();
+
+        if (!sessionSwitchAllowed) {
+            const hasSessions = deviceHasActiveHubSessions(
+                getNewInstanceManager,
+                deviceId || usbSerial,
+                [deviceId, usbSerial].filter(Boolean)
+            );
+            if (hasSessions) {
+                return {
+                    success: false,
+                    error: "Basculement USB/Wi‑Fi désactivé tant que des sessions sont ouvertes "
+                        + "(Paramètres → Performances).",
+                    step: "sessions-blocked"
+                };
+            }
         }
 
         const lockKey = String(deviceId || usbSerial || "").trim();

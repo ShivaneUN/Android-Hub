@@ -16,6 +16,14 @@ function broadcastWallpaperChanged(getWindows, state) {
     }
 }
 
+function broadcastPerformanceChanged(getWindows, performance) {
+    for (const win of getWindows()) {
+        if (win && !win.isDestroyed()) {
+            win.webContents.send("ui:performance-changed", { performance });
+        }
+    }
+}
+
 function registerUiPreferencesHandlers(deps) {
     const getUiPreferencesManager = deps.getUiPreferencesManager;
     const getHubWallpaperManager = deps.getHubWallpaperManager;
@@ -68,6 +76,35 @@ function registerUiPreferencesHandlers(deps) {
             return { locale: "fr", sidebarOpen: true, streamDeckMode: false };
         }
         return manager.getPreferences();
+    });
+
+    ipcMain.handle("ui:get-performance-prefs", async () => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager?.getPerformancePrefs) {
+            return {
+                performanceMode: false,
+                fpsMonitor: true,
+                appLogos: true,
+                homePreview: true,
+                hoverPreview: true,
+                dockBatteryLive: true,
+                uiAnimations: true,
+                sessionTransportSwitch: true
+            };
+        }
+        return manager.getPerformancePrefs();
+    });
+
+    ipcMain.handle("ui:set-performance-prefs", async (_event, payload = {}) => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager?.setPerformancePrefs) {
+            return { success: false, error: "manager-unavailable" };
+        }
+        const result = manager.setPerformancePrefs(payload || {});
+        if (result.success) {
+            broadcastPerformanceChanged(getWindows, result.performance);
+        }
+        return result;
     });
 
     ipcMain.handle("ui:set-sidebar-open", async (_event, payload = {}) => {

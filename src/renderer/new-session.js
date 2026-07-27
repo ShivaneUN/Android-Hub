@@ -249,8 +249,12 @@ function mapLauncherAppToSelection(app) {
     };
 }
 
+function areAppLogosEnabled() {
+    return !window.HubPerformance || window.HubPerformance.isEnabled("appLogos");
+}
+
 function renderLauncherAppIcon(app) {
-    const iconSrc = app.iconUrl || app.iconPath;
+    const iconSrc = areAppLogosEnabled() ? (app.iconUrl || app.iconPath) : null;
     if (iconSrc) {
         return `<span class="new-instance-app-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`;
     }
@@ -298,6 +302,7 @@ function buildPrefetchAppsPayload(apps = []) {
 }
 
 function requestAppsMetadataPrefetch(apps = [], { priority = "high" } = {}) {
+    if (!areAppLogosEnabled()) return;
     if (!selectedDevice?.serial || !window.electronAPI?.prefetchAppMetadata) return;
 
     const toFetch = [];
@@ -496,7 +501,10 @@ function createHistoryAppList() {
         getItemKey: (entry) => entry.key || buildAppKey({ package: entry.packageName, userId: entry.userId }),
         getAppName: (entry) => getHistoryAppLabel(entry),
         getPackageName: (entry) => entry.packageName,
-        getIconSrc: (entry) => entry.iconUrl || entry.iconPath || null,
+        getIconSrc: (entry) => {
+            if (!areAppLogosEnabled()) return null;
+            return entry.iconUrl || entry.iconPath || null;
+        },
         getTipAttrs: (entry) => historyTipAttrs(
             getHistoryAppLabel(entry),
             resolveDeviceName(entry.deviceId),
@@ -591,7 +599,7 @@ function patchLauncherAppIcons(updates = []) {
         if (!update) return;
 
         const iconSrc = update.iconUrl || update.iconPath;
-        if (!iconSrc) return;
+        if (!iconSrc || !areAppLogosEnabled()) return;
 
         const iconWrap = btn.querySelector(".new-instance-app-icon");
         if (!iconWrap) return;
@@ -910,7 +918,7 @@ function renderRecentsStrip() {
         const pillHtml = colorHex
             ? `<span class="home-app-device-pill device-color-pill" style="background:${escapeHtml(colorHex)}" aria-hidden="true"></span>`
             : "";
-        const iconSrc = entry.iconUrl || entry.iconPath;
+        const iconSrc = areAppLogosEnabled() ? (entry.iconUrl || entry.iconPath) : null;
         const icon = iconSrc
             ? `<span class="ni-recent-card-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">${pillHtml}</span>`
             : `<span class="ni-recent-card-icon">${DEFAULT_APP_ICON_SVG}${pillHtml}</span>`;
@@ -1943,6 +1951,13 @@ document.addEventListener("DOMContentLoaded", () => {
         renderDeviceList(connectedDevices);
         renderHistoryList();
         updateLaunchState();
+    });
+
+    window.addEventListener("performance-prefs-changed", () => {
+        const searchValue = document.getElementById("new-instance-app-search-input")?.value || "";
+        filterLauncherAppsAndRender(searchValue);
+        renderHistoryList();
+        renderRecentsStrip();
     });
 
     if (window.electronAPI?.onAppMetadataUpdated) {

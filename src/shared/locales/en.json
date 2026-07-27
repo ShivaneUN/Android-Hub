@@ -164,6 +164,7 @@
     "tabControl": "Control",
     "tabMaintenance": "Cleanup",
     "tabHomeShortcuts": "Home shortcuts",
+    "tabPerformance": "Performance",
     "tabUpdates": "Updates",
     "tabAbout": "About",
     "homeShortcutsLead": "Choose which Home FABs open useful Hub functions quickly.",
@@ -172,6 +173,19 @@
     "homeShortcutsButtonsTitle": "Home FABs",
     "homeShortcutsButtonsHint": "These FABs move and lock like the others (Ctrl + click).",
     "homeShortcutsSaveFailed": "Could not save the Home shortcut.",
+    "performanceLead": "Reduce CPU/GPU load on smaller PCs. Performance mode turns off the heaviest features at once.",
+    "performanceModeTitle": "Performance mode",
+    "performanceModeDesc": "Disables FPS, app logos, Home/hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching with open sessions.",
+    "performanceFeaturesTitle": "Features",
+    "performanceFeaturesHint": "In Performance mode, features stay off. Turn the mode off to toggle them one by one.",
+    "performanceSaveFailed": "Could not save performance settings.",
+    "perfFps": "FPS counter",
+    "perfAppLogos": "App logos",
+    "perfHomePreview": "Home preview",
+    "perfHoverPreview": "Hover preview",
+    "perfDockBattery": "Live dock batteries",
+    "perfAnimations": "UI animations",
+    "perfSessionSwitch": "USB/Wi‑Fi with sessions",
     "homeShortcutsModulesTitle": "Modules",
     "homeShortcutsDragTitle": "Drag the title",
     "homeShortcutsDragDesc": "Move a module freely on Home.",
@@ -244,7 +258,9 @@
     "aboutFeat11Desc": "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered.",
     "seeMore": "View ›",
     "aboutFeat12Title": "Home shortcuts",
-    "aboutFeat12Desc": "Enable Home FABs (New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup) in Settings → Home shortcuts. Ctrl+click to move / lock; left of the dock they stay visible off Home."
+    "aboutFeat12Desc": "Enable Home FABs (New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup, Performance) in Settings → Home shortcuts. Ctrl+click to move / lock; left of the dock they stay visible off Home.",
+    "aboutFeat13Title": "Performance",
+    "aboutFeat13Desc": "Performance mode and per-feature toggles: FPS, app logos, Home/hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching with open sessions. Ideal for smaller PCs."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",
@@ -257,7 +273,8 @@
     "errors": {
       "tcpip": "Unable to enable WiFi mode on this device",
       "ip": "IP address not found — make sure WiFi is enabled on the phone",
-      "connect": "Connection failed — make sure the phone is on the same network"
+      "connect": "Connection failed — make sure the phone is on the same network",
+      "sessions-blocked": "USB/Wi‑Fi switching is disabled while sessions are open (Settings → Performance)."
     },
     "progress": {
       "ip": "Retrieving IP address...",
@@ -506,6 +523,7 @@
       "wifi": "WiFi connection",
       "troubleshoot": "Troubleshooting",
       "appearance": "Appearance",
+      "performance": "Performance",
       "refresh": "Refresh",
       "close": "Close"
     },
@@ -795,7 +813,14 @@
                 "Settings",
                 "Home shortcuts"
               ],
-              "desc": "Choose which FABs appear: New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup."
+              "desc": "Choose which FABs appear: New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup, Performance."
+            },
+            {
+              "keys": [
+                "Settings",
+                "Performance"
+              ],
+              "desc": "Performance mode and individual features (FPS, logos, previews, dock batteries, animations, USB/Wi‑Fi with sessions)."
             },
             {
               "keys": [
@@ -1046,6 +1071,24 @@
         }
       ]
     },
+    "performance": {
+      "title": "Performance",
+      "intro": "Settings → Performance lightens the Hub on smaller PCs. Performance mode turns off the heaviest features at once; you can also enable or disable them one by one.",
+      "sections": [
+        {
+          "title": "Performance mode",
+          "body": "One switch disables FPS, app logos, Home and hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching while sessions are open."
+        },
+        {
+          "title": "Individual features",
+          "body": "Outside Performance mode, each feature can be toggled separately. Home FABs can also open this tab directly (Settings → Home shortcuts → Performance)."
+        },
+        {
+          "title": "USB / Wi‑Fi with sessions",
+          "body": "If the option is off (or via Performance mode), USB ↔ Wi‑Fi switching is refused while a session is open. Turn the option back on to allow hot switching."
+        }
+      ]
+    },
     "troubleshoot": {
       "title": "Quick troubleshooting",
       "items": [
@@ -1056,7 +1099,9 @@
         "Keyboard input ignored: click once on the video stream to focus it.",
         "AZERTY keyboard: accented letters, Shift (digits and ?./§%…), Alt Gr (@, #, {, }), and € are sent to the device. Ctrl+Tab / Ctrl+Shift+Tab switch session tabs (not typing).",
         "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
-        "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
+        "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list.",
+        "Slow PC / stuttering: enable Settings → Performance → Performance mode (cuts previews, FPS, logos, and animations).",
+        "USB/Wi‑Fi switch refused: a session is open and the option is disabled in Settings → Performance."
       ]
     }
   },

@@ -44,6 +44,10 @@
         if (tab === "home-shortcuts") {
             window.bindHomeShortcutsSection?.();
         }
+
+        if (tab === "performance") {
+            window.bindPerformanceSection?.();
+        }
     }
 
     function bindTabButtons() {

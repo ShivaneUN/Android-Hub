@@ -259,7 +259,8 @@
         }
 
         renderAppIcon(app) {
-            const iconSrc = app.iconUrl || app.iconPath;
+            const logosOn = !global.HubPerformance || global.HubPerformance.isEnabled("appLogos");
+            const iconSrc = logosOn ? (app.iconUrl || app.iconPath) : null;
             if (iconSrc) {
                 return `<span class="new-instance-app-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`;
             }

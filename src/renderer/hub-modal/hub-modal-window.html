@@ -157,6 +157,12 @@
           </span>
           <span data-i18n="settingsPanel.tabHomeShortcuts">Raccourcis Accueil</span>
         </button>
+        <button type="button" class="settings-tab-btn" data-settings-tab="performance">
+          <span class="settings-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg>
+          </span>
+          <span data-i18n="settingsPanel.tabPerformance">Performances</span>
+        </button>
         <button type="button" class="settings-tab-btn settings-tab-btn--footer" data-settings-tab="updates">
           <span class="settings-nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
@@ -361,6 +367,9 @@
             <div class="home-shortcut-preview-fab" data-home-shortcut-preview="settings-maintenance" title="Nettoyage" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg>
             </div>
+            <div class="home-shortcut-preview-fab" data-home-shortcut-preview="settings-performance" title="Performances" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg>
+            </div>
             <p class="home-shortcut-preview-empty" id="home-shortcut-preview-empty" hidden data-i18n="settingsPanel.homeShortcutsPreviewEmpty">Aucune pastille sélectionnée</p>
           </div>
         </div>
@@ -396,8 +405,58 @@
               <span class="home-shortcut-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/></svg></span>
               <span data-i18n="settingsPanel.tabMaintenance">Nettoyage</span>
             </button>
+            <button type="button" class="home-shortcut-chip" data-home-shortcut-fab="settings-performance" aria-pressed="false">
+              <span class="home-shortcut-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg></span>
+              <span data-i18n="settingsPanel.tabPerformance">Performances</span>
+            </button>
           </div>
           <p class="home-shortcuts-hint" data-i18n="settingsPanel.homeShortcutsButtonsHint">Les pastilles se placent et se verrouillent comme les autres (Ctrl + clic).</p>
+        </div>
+      </div>
+      <div id="settings-pane-performance" class="settings-tab-pane" data-settings-pane="performance">
+        <div class="settings-section-head">
+          <span class="settings-section-title" data-i18n="settingsPanel.tabPerformance">Performances</span>
+        </div>
+        <p class="settings-appearance-lead" data-i18n="settingsPanel.performanceLead">Réduisez la charge CPU/GPU sur les petits PC. Le mode performance coupe d’un coup les fonctions les plus coûteuses.</p>
+
+        <div class="home-shortcuts-group">
+          <button type="button" class="settings-perf-mode-btn" id="settings-perf-mode-toggle" aria-pressed="false">
+            <span class="settings-perf-mode-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg>
+            </span>
+            <span class="settings-perf-mode-copy">
+              <strong data-i18n="settingsPanel.performanceModeTitle">Mode performance</strong>
+              <span data-i18n="settingsPanel.performanceModeDesc">Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes.</span>
+            </span>
+          </button>
+        </div>
+
+        <div class="home-shortcuts-group">
+          <div class="home-shortcuts-group-title" data-i18n="settingsPanel.performanceFeaturesTitle">Fonctions</div>
+          <div class="home-shortcut-chips" id="settings-perf-feature-toggles" role="group" aria-label="Fonctions performances">
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="fpsMonitor" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfFps">Compteur FPS</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="appLogos" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfAppLogos">Logos des apps</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="homePreview" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfHomePreview">Aperçu Home</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="hoverPreview" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfHoverPreview">Aperçu au survol</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="dockBatteryLive" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfDockBattery">Batteries dock live</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="uiAnimations" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfAnimations">Animations UI</span>
+            </button>
+            <button type="button" class="home-shortcut-chip is-on" data-perf-feature="sessionTransportSwitch" aria-pressed="true">
+              <span data-i18n="settingsPanel.perfSessionSwitch">USB/Wi‑Fi avec sessions</span>
+            </button>
+          </div>
+          <p class="home-shortcuts-hint" data-i18n="settingsPanel.performanceFeaturesHint">En mode performance, les fonctions restent coupées. Désactivez le mode pour les régler une par une.</p>
         </div>
       </div>
       <div id="settings-pane-updates" class="settings-tab-pane" data-settings-pane="updates">
@@ -492,7 +551,14 @@
                 <span class="about-feature-num">12</span>
                 <div>
                   <strong data-i18n="settingsPanel.aboutFeat12Title">Raccourcis Accueil</strong>
-                  <p data-i18n="settingsPanel.aboutFeat12Desc">Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil.</p>
+                  <p data-i18n="settingsPanel.aboutFeat12Desc">Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage, Performances) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil.</p>
+                </div>
+              </li>
+              <li>
+                <span class="about-feature-num">13</span>
+                <div>
+                  <strong data-i18n="settingsPanel.aboutFeat13Title">Performances</strong>
+                  <p data-i18n="settingsPanel.aboutFeat13Desc">Mode performance et toggles individuels : FPS, logos d’apps, aperçus Home/survol, batteries dock live, animations UI, et basculement USB/Wi‑Fi avec sessions ouvertes. Idéal pour les petits PC.</p>
                 </div>
               </li>
             </ol>
@@ -564,6 +630,8 @@
 <script src="../update/update-ui-controller.js"></script>
 <script src="../settings-panel/AppearanceSection.js"></script>
 <script src="../settings-panel/HomeShortcutsSection.js"></script>
+<script src="../performance/PerformancePrefs.js"></script>
+<script src="../settings-panel/PerformanceSection.js"></script>
 <script src="../settings-panel/UpdateSettingsSection.js"></script>
 <script src="../settings-panel/SettingsPanel.js"></script>
 <script src="../control-panel/ControlPanel.js"></script>
