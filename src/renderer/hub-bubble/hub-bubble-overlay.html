@@ -14,21 +14,22 @@
   #bubble {
     display: inline-block;
     box-sizing: border-box;
-    min-width: 160px;
+    width: max-content;
     max-width: 360px;
-    padding: 10px 14px;
+    min-width: 0;
+    padding: 8px 12px;
     border-radius: 10px;
     background: #1e2430;
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: #e8ecf4;
     font-size: 13px;
     line-height: 1.35;
+    text-align: center;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     opacity: 0;
     transform: translateY(6px);
     transition: opacity 0.18s ease, transform 0.18s ease;
-    white-space: pre-wrap;
-    word-break: break-word;
+    white-space: nowrap;
     pointer-events: none;
   }
 
@@ -41,15 +42,18 @@
   #bubble.hub-toast-error { border-color: rgba(229, 72, 77, 0.5); color: #ffd5d7; }
   #bubble.hub-toast-info { border-color: rgba(79, 140, 255, 0.35); }
 
-  #bubble.hub-tip-rich {
+  #bubble.hub-tip-rich,
+  #bubble.hub-toast-wrap {
     white-space: normal;
-    padding: 9px 12px;
+    word-break: break-word;
+    padding: 8px 12px;
   }
 
   .hub-tip-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 8px;
   }
 
   .hub-tip-pill {
@@ -73,6 +77,7 @@
     font-weight: 650;
     color: #f5f7fb;
     line-height: 1.25;
+    text-align: center;
   }
 
   .hub-tip-detail {
@@ -139,11 +144,14 @@
       bubble.classList.add(`hub-toast-${payload.type || "info"}`);
 
       const hasRich = Boolean(payload.detail || payload.color);
+      const text = String(payload.text || "");
       if (payload.mode === "tip" && hasRich) {
         bubble.classList.add("hub-tip-rich");
         bubble.innerHTML = renderRichTip(payload);
       } else {
-        bubble.textContent = String(payload.text || "");
+        // Textes longs : autoriser le retour à la ligne sans forcer une largeur fixe.
+        if (text.length > 42) bubble.classList.add("hub-toast-wrap");
+        bubble.textContent = text;
       }
 
       requestAnimationFrame(() => {

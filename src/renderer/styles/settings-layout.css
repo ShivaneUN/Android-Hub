@@ -556,8 +556,26 @@
 
 .maint-metric-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
   min-height: 148px;
+}
+
+.maint-metric-main {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.maint-metric-desc {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9aa3b5;
 }
 
 .maint-metric-icon {
@@ -675,6 +693,37 @@
   font-weight: 700 !important;
   font-size: 13.5px !important;
   cursor: pointer;
+}
+
+/* Manual category pickers — always visible */
+#devices-maintenance-manual-panel,
+.devices-maintenance-manual#devices-maintenance-manual-panel {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 0 !important;
+  padding: 14px 16px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #161b22 !important;
+}
+
+#devices-maintenance-manual-panel .devices-maintenance-auto-title {
+  width: 100%;
+}
+
+#devices-maintenance-manual-panel .devices-maintenance-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+#devices-maintenance-manual-panel .maint-manual-detail {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9aa3b5;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Hidden by default — opened via Options auto */
@@ -1066,5 +1115,11 @@
   .maint-metrics,
   .maint-actions {
     grid-template-columns: 1fr !important;
+  }
+
+  .maint-metric-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
 }

@@ -28,8 +28,13 @@ module.exports = {
             transportAdb: "ADB transport",
             usb: "USB",
             wifiConnected: "WiFi connected",
-            deviceFallback: "Device"
-        }
+            deviceFallback: "Device",
+            audioToggle: "PC audio for this device",
+            flyoutMuted: "Muted",
+            flyoutAudioOn: "Audio",
+            flyoutWifi: "Wi‑Fi"
+        },
+        home: "Home"
     },
     streamDeck: {
         toggle: "Stream Deck mode",
@@ -50,7 +55,8 @@ module.exports = {
             panelTitle: "Duo selection",
             collapse: "Collapse Duo panel",
             expand: "Expand Duo panel"
-        }
+        },
+        dragToReorder: "Drag to swap positions"
     },
     titlebar: {
         appTitle: "Android Hub",
@@ -130,7 +136,11 @@ module.exports = {
         cancel: "Cancel",
         reset: "Reset",
         windowNotFound: "Window not found.",
-        invalidTarget: "Invalid target."
+        invalidTarget: "Invalid target.",
+        lock: "Lock",
+        unlock: "Unlock",
+        lockGroup: "Lock group",
+        unlockGroup: "Unlock group"
     },
     toggles: {
         screenTitle: "Turn the device screen on or off (active mirroring session)",
@@ -164,17 +174,19 @@ module.exports = {
         wallpaperClear: "Remove",
         wallpaperNone: "No image",
         surface: {
-                "midnight": "Midnight",
-                "graphite": "Graphite",
-                "slate": "Slate",
-                "forest": "Forest",
-                "ocean": "Ocean",
-                "dusk": "Dusk",
-                "wine": "Wine",
-                "cocoa": "Cocoa"
+            midnight: "Midnight",
+            graphite: "Graphite",
+            slate: "Slate",
+            forest: "Forest",
+            ocean: "Ocean",
+            dusk: "Dusk",
+            wine: "Wine",
+            cocoa: "Cocoa"
         },
-        maintCacheHint: "Temporary files",
+        maintCacheHint: "App icons and temporary files",
+        maintCacheDesc: "This cache stores extracted app icons, their metadata index, and Hub temporary files. Clearing it frees space; icons reload when needed. Devices, sessions, preferences, and history are left untouched.",
         maintKeepHint: "Auto: keeps the last {days} days of cache. Manual: everything can be cleared.",
+        manualCleanup: "To clean",
         clearHistory: "Clear history",
         autoOptions: "Auto options",
         aboutTagline: "A hub to connect, launch and control your Android tablets — USB, Wi‑Fi, mirroring and multi-session.",
@@ -200,7 +212,8 @@ module.exports = {
         aboutFeat10Title: "Updates",
         aboutFeat10Desc: "Check, download and install new versions from About.",
         aboutFeat11Title: "Visual personalization",
-        aboutFeat11Desc: "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered."
+        aboutFeat11Desc: "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered.",
+        seeMore: "View ›"
     },
     devicePanel: {
         wifiEnabled: "WiFi enabled",
@@ -219,7 +232,18 @@ module.exports = {
             ip: "Retrieving IP address...",
             tcpip: "Enabling WiFi...",
             connect: "Connecting..."
-        }
+        },
+        usbUnpluggedTitle: "USB disconnected",
+        usbUnpluggedBody: "Continue the session over WiFi, or disconnect?",
+        continueWifi: "Continue on WiFi",
+        playOnDevice: "Disconnect",
+        disconnectedToast: "Session disconnected",
+        usbRepluggedTitle: "USB connected",
+        usbRepluggedBody: "Switch the session to USB, or stay on WiFi?",
+        switchToUsb: "Switch to USB",
+        stayOnWifi: "Stay on WiFi",
+        switchedToUsb: "Connected over USB",
+        stayedOnWifi: "Session left on WiFi"
     },
     devicesPanel: {
         usb: "USB",
@@ -418,6 +442,14 @@ module.exports = {
             cancelDefault: "Changes discarded — default values reloaded.",
             resetConfirm: "Reset this session's settings to their original values?\n\nThe stream will restart.",
             paramsSummary: "{width}×{height} · {dpi} dpi · {fps} fps · {bitrate} Mbps · GOP {gop}s"
+        },
+        tips: {
+            resolution: "Sets the video stream resolution. Higher values improve sharpness, at the cost of increased CPU load and bandwidth.",
+            fps: "Frame rate of the stream. Higher values improve fluidity, but increase processor and network usage.",
+            dpi: "Android display density. Lower values enlarge the interface; higher values make it more compact.",
+            bitrate: "Stream bitrate (Mbps). Higher values improve image quality and require more bandwidth.",
+            gop: "Interval between keyframes (I-frames). A shorter interval improves resilience to packet loss, with a slight bitrate overhead.",
+            videoCodec: "Video compression codec. H.265 is more efficient; H.264 offers broader device compatibility."
         }
     },
     rename: {
@@ -450,356 +482,356 @@ module.exports = {
             intro: "Hub shortcuts and actions. Disabled while typing in a text field. Right-click a device or session tab for the context menu.",
             groups: [
                 {
-                    "title": "Navigation",
-                    "items": [
+                    title: "Navigation",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Ctrl",
                                 "Tab"
                             ],
-                            "desc": "Switch to the next session tab."
+                            desc: "Switch to the next session tab."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Ctrl",
                                 "Shift",
                                 "Tab"
                             ],
-                            "desc": "Switch to the previous session tab."
+                            desc: "Switch to the previous session tab."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Ctrl",
                                 "B"
                             ],
-                            "desc": "Show or hide the sidebar."
+                            desc: "Show or hide the sidebar."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Ctrl",
                                 "Shift",
                                 "L"
                             ],
-                            "desc": "Cycle Stream Deck display layout (grid, focus, duo). Only active when Stream Deck mode is enabled."
+                            desc: "Cycle Stream Deck display layout (grid, focus, duo). Only active when Stream Deck mode is enabled."
                         }
                     ]
                 },
                 {
-                    "title": "Stream Deck mode",
-                    "items": [
+                    title: "Stream Deck mode",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Stream Deck mode"
                             ],
-                            "desc": "Enable or disable multi-device display from the sidebar (off by default on startup)."
+                            desc: "Enable or disable multi-device display from the sidebar (off by default on startup)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Grid"
                             ],
-                            "desc": "Show all active sessions in a grid — each tile displays one device or app instance stream."
+                            desc: "Show all active sessions in a grid — each tile displays one device or app instance stream."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Focus"
                             ],
-                            "desc": "Large view of one main device and a side rail of other sessions. Click a mini tile to change focus."
+                            desc: "Large view of one main device and a side rail of other sessions. Click a mini tile to change focus."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Duo"
                             ],
-                            "desc": "Show two devices side by side. Enables duo layout and opens the selection menu below the layout buttons."
+                            desc: "Show two devices side by side. Enables duo layout and opens the selection menu below the layout buttons."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Click Duo"
                             ],
-                            "desc": "Reopen or close the Duo selection menu when duo layout is already active."
+                            desc: "Reopen or close the Duo selection menu when duo layout is already active."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Outside click"
                             ],
-                            "desc": "Close the Duo selection menu."
+                            desc: "Close the Duo selection menu."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Click tile"
                             ],
-                            "desc": "Activate the session for mouse/keyboard control (green border on the active tile)."
+                            desc: "Activate the session for mouse/keyboard control (green border on the active tile)."
                         }
                     ]
                 },
                 {
-                    "title": "Sidebar — Global controls",
-                    "items": [
+                    title: "Sidebar — Global controls",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Screen"
                             ],
-                            "desc": "Turn the active mirroring session's device screen off or on."
+                            desc: "Turn the active mirroring session's device screen off or on."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Portrait"
                             ],
-                            "desc": "Toggle portrait video layout for the active session."
+                            desc: "Toggle portrait video layout for the active session."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Audio"
                             ],
-                            "desc": "Mute or unmute audio for all sessions at once."
+                            desc: "Mute or unmute audio for all sessions at once."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Language"
                             ],
-                            "desc": "Switch the interface between French and English."
+                            desc: "Switch the interface between French and English."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Mute (device)"
                             ],
-                            "desc": "Mute PC audio for one device from its Connected devices card."
+                            desc: "Mute PC audio for one device from its Connected devices card."
                         }
                     ]
                 },
                 {
-                    "title": "Stream control (active session)",
-                    "items": [
+                    title: "Stream control (active session)",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Click"
                             ],
-                            "desc": "Tap / click on the Android screen (focused video canvas)."
+                            desc: "Tap / click on the Android screen (focused video canvas)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Right-click"
                             ],
-                            "desc": "Android Back button."
+                            desc: "Android Back button."
                         }
                     ]
                 },
                 {
-                    "title": "New instance",
-                    "items": [
+                    title: "New instance",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Double-click"
                             ],
-                            "desc": "Relaunch an application from the History section."
+                            desc: "Relaunch an application from the History section."
                         }
                     ]
                 },
                 {
-                    "title": "Dialogs",
-                    "items": [
+                    title: "Dialogs",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Enter"
                             ],
-                            "desc": "Confirm renaming a session or device."
+                            desc: "Confirm renaming a session or device."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Esc"
                             ],
-                            "desc": "Cancel renaming."
+                            desc: "Cancel renaming."
                         }
                     ]
                 },
                 {
-                    "title": "Connected devices (sidebar)",
-                    "items": [
+                    title: "Connected devices (sidebar)",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Double-click"
                             ],
-                            "desc": "Start full-screen mirroring for the device (same as the Mirroring button)."
+                            desc: "Start full-screen mirroring for the device (same as the Mirroring button)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "WiFi toggle"
                             ],
-                            "desc": "Set up or enable ADB WiFi connection for the device (see the WiFi connection help tab)."
+                            desc: "Set up or enable ADB WiFi connection for the device (see the WiFi connection help tab)."
                         }
                     ]
                 },
                 {
-                    "title": "Right-click — Connected devices (sidebar)",
-                    "items": [
+                    title: "Right-click — Connected devices (sidebar)",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Rename"
                             ],
-                            "desc": "Open the dialog to customize the name shown in the device list."
+                            desc: "Open the dialog to customize the name shown in the device list."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Reset name"
                             ],
-                            "desc": "Restore the original name (shown only if the device was renamed)."
+                            desc: "Restore the original name (shown only if the device was renamed)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Color → Auto"
                             ],
-                            "desc": "Automatically assign a distinct color to each connected device."
+                            desc: "Automatically assign a distinct color to each connected device."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Color → shade"
                             ],
-                            "desc": "Choose a fixed color (Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Brown, Slate) to identify the device in the sidebar and tabs."
+                            desc: "Choose a fixed color (Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Brown, Slate) to identify the device in the sidebar and tabs."
                         }
                     ]
                 },
                 {
-                    "title": "Right-click — Session tabs",
-                    "items": [
+                    title: "Right-click — Session tabs",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Rename"
                             ],
-                            "desc": "Customize the tab label (mirroring or application instance)."
+                            desc: "Customize the tab label (mirroring or application instance)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Reset name"
                             ],
-                            "desc": "Restore the original label (shown only if the tab was renamed)."
+                            desc: "Restore the original label (shown only if the tab was renamed)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Close"
                             ],
-                            "desc": "Close the video session and remove the tab."
+                            desc: "Close the video session and remove the tab."
                         }
                     ]
                 },
                 {
-                    "title": "Interface & Home",
-                    "items": [
+                    title: "Interface & Home",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Classic interface"
                             ],
-                            "desc": "Show the full classic rail."
+                            desc: "Show the full classic rail."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "New interface"
                             ],
-                            "desc": "Switch to full-screen tablet style with a richer Home."
+                            desc: "Switch to full-screen tablet style with a richer Home."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Home"
                             ],
-                            "desc": "Return to Home (devices, recents, UI choice) from the dock."
+                            desc: "Return to Home (devices, recents, UI choice) from the dock."
                         }
                     ]
                 },
                 {
-                    "title": "Dock batteries",
-                    "items": [
+                    title: "Dock batteries",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Battery chip"
                             ],
-                            "desc": "Open the device flyout: Mute and Wi‑Fi toggle during stream."
+                            desc: "Open the device flyout: Mute and Wi‑Fi toggle during stream."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "Device mute"
                             ],
-                            "desc": "Mute or unmute PC audio for a specific device (sidebar or dock chip)."
+                            desc: "Mute or unmute PC audio for a specific device (sidebar or dock chip)."
                         }
                     ]
                 },
                 {
-                    "title": "Video session",
-                    "items": [
+                    title: "Video session",
+                    items: [
                         {
-                            "keys": [
+                            keys: [
                                 "Scroll wheel"
                             ],
-                            "desc": "Zoom the video stream in/out (pointer over the canvas)."
+                            desc: "Zoom the video stream in/out (pointer over the canvas)."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "USB unplugged"
                             ],
-                            "desc": "Offer to continue the session over Wi‑Fi or disconnect."
+                            desc: "Offer to continue the session over Wi‑Fi or disconnect."
                         },
                         {
-                            "keys": [
+                            keys: [
                                 "USB plugged"
                             ],
-                            "desc": "Offer to switch the session back to USB or stay on Wi‑Fi."
+                            desc: "Offer to switch the session back to USB or stay on Wi‑Fi."
                         }
                     ]
                 }
             ]
         },
         wifi: {
-            "title": "Connect a device over WiFi",
-            "note": "If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
-            "steps": [
+            title: "Connect a device over WiFi",
+            note: "If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
+            steps: [
                 {
-                    "chipLabel": "USB",
-                    "visualLabel": "USB connection",
-                    "visualCaption": "First-time setup",
-                    "title": "Plug in the device over USB",
-                    "lead": "The first WiFi setup goes through USB to configure ADB.",
-                    "steps": [
+                    chipLabel: "USB",
+                    visualLabel: "USB connection",
+                    visualCaption: "First-time setup",
+                    title: "Plug in the device over USB",
+                    lead: "The first WiFi setup goes through USB to configure ADB.",
+                    steps: [
                         "Connect your device via USB and make sure it is detected in the Hub.",
                         "USB debugging must be enabled on the phone.",
                         "Choose File transfer (MTP) if Android asks for the USB mode."
                     ],
-                    "tip": "Without USB detection, the WiFi toggle cannot configure the device."
+                    tip: "Without USB detection, the WiFi toggle cannot configure the device."
                 },
                 {
-                    "chipLabel": "Network",
-                    "visualLabel": "Same network",
-                    "visualCaption": "Shared WiFi",
-                    "title": "Check the WiFi network",
-                    "lead": "The phone and PC must be on the same local network.",
-                    "steps": [
+                    chipLabel: "Network",
+                    visualLabel: "Same network",
+                    visualCaption: "Shared WiFi",
+                    title: "Check the WiFi network",
+                    lead: "The phone and PC must be on the same local network.",
+                    steps: [
                         "Connect the phone to WiFi.",
                         "Make sure this computer is on the same network (not an isolated guest network).",
                         "Avoid VPNs that isolate local traffic if the connection fails."
                     ],
-                    "tip": "Guest networks often block device-to-device communication."
+                    tip: "Guest networks often block device-to-device communication."
                 },
                 {
-                    "chipLabel": "WiFi ADB",
-                    "visualLabel": "Enable",
-                    "visualCaption": "Hub sidebar",
-                    "title": "Turn on the WiFi toggle",
-                    "lead": "The Hub configures WiFi ADB and saves the device.",
-                    "steps": [
+                    chipLabel: "WiFi ADB",
+                    visualLabel: "Enable",
+                    visualCaption: "Hub sidebar",
+                    title: "Turn on the WiFi toggle",
+                    lead: "The Hub configures WiFi ADB and saves the device.",
+                    steps: [
                         "Click the WiFi toggle next to the device in the sidebar.",
                         "On first connection, name the device when the Hub asks.",
                         "When ready, a Connected over WiFi message appears."
                     ],
-                    "tip": "You can rename the device later in Settings → Devices."
+                    tip: "You can rename the device later in Settings → Devices."
                 },
                 {
-                    "chipLabel": "Unplug",
-                    "visualLabel": "Wireless",
-                    "visualCaption": "Cable-free",
-                    "title": "Unplug the USB cable",
-                    "lead": "The device stays reachable while on the same WiFi.",
-                    "steps": [
+                    chipLabel: "Unplug",
+                    visualLabel: "Wireless",
+                    visualCaption: "Cable-free",
+                    title: "Unplug the USB cable",
+                    lead: "The device stays reachable while on the same WiFi.",
+                    steps: [
                         "Unplug the USB cable — the WiFi session continues.",
                         "To switch back to USB, click the toggle again (settings stay saved).",
                         "Find USB and WiFi devices in Settings → Devices."
                     ],
-                    "tip": "If the IP changes, reconnect with the WiFi toggle."
+                    tip: "If the IP changes, reconnect with the WiFi toggle."
                 }
             ]
         },
@@ -909,5 +941,38 @@ module.exports = {
                 "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
             ]
         }
+    },
+    homeDashboard: {
+        recentApps: "Recent apps",
+        activeSessions: "Active sessions",
+        noSessions: "No open sessions",
+        newInstance: "New instance",
+        newInstanceDesc: "Launch an app",
+        streamDeck: "Stream Deck",
+        streamDeckDesc: "Grid · Focus · Duo",
+        live: "LIVE",
+        closeSessionTitle: "Close this session?",
+        closeSessionCancel: "Cancel",
+        closeSessionConfirm: "Close",
+        wifiReconnectTip: "Reconnect a device over Wi‑Fi",
+        wifiReconnectTitle: "Known Wi‑Fi devices",
+        wifiReconnectEmpty: "No saved Wi‑Fi devices",
+        wifiReconnectAction: "Reconnect",
+        wifiReconnectLoading: "Loading…",
+        wifiReconnectError: "Could not load the list",
+        moduleMenu: "Module options",
+        moduleLock: "Lock",
+        moduleUnlock: "Unlock",
+        moduleHorizontal: "Horizontal",
+        moduleVertical: "Vertical",
+        moduleAlignOn: "Align titles",
+        moduleAlignOff: "Stop aligning titles"
+    },
+    uiTheme: {
+        classicTitle: "Classic interface",
+        classicDesc: "Full rail, current layout",
+        tabletTitle: "New interface",
+        tabletDesc: "Tablet style, fullscreen",
+        badgeNew: "NEW"
     }
 };

@@ -2,7 +2,8 @@ const { BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
 const MAX_WIDTH = 380;
-const MIN_WIDTH = 160;
+const TIP_MIN_WIDTH = 40;
+const TOAST_MIN_WIDTH = 72;
 const PAD = 12;
 
 class HubBubbleOverlayManager {
@@ -39,8 +40,9 @@ class HubBubbleOverlayManager {
 
         ipcMain.removeHandler("hub-bubble:report-size");
         ipcMain.handle("hub-bubble:report-size", async (_event, payload = {}) => {
-            const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(Number(payload.width) || MIN_WIDTH)));
-            const height = Math.max(36, Math.round(Number(payload.height) || 40));
+            const minWidth = this._minWidth();
+            const width = Math.max(minWidth, Math.min(MAX_WIDTH, Math.round(Number(payload.width) || minWidth)));
+            const height = Math.max(32, Math.round(Number(payload.height) || 36));
             this.bounds.width = width;
             this.bounds.height = height;
             if (this.mode === "toast") {
@@ -51,6 +53,10 @@ class HubBubbleOverlayManager {
             this._syncBounds();
             return true;
         });
+    }
+
+    _minWidth() {
+        return this.mode === "toast" ? TOAST_MIN_WIDTH : TIP_MIN_WIDTH;
     }
 
     _clientToScreen(x, y) {
@@ -131,8 +137,8 @@ class HubBubbleOverlayManager {
         win.setBounds({
             x: screen.x,
             y: screen.y,
-            width: Math.max(MIN_WIDTH, Math.round(this.bounds.width)),
-            height: Math.max(36, Math.round(this.bounds.height))
+            width: Math.max(this._minWidth(), Math.round(this.bounds.width)),
+            height: Math.max(32, Math.round(this.bounds.height))
         });
     }
 
@@ -175,8 +181,8 @@ class HubBubbleOverlayManager {
         this._clearHideTimer();
         this.mode = "toast";
         this.visible = true;
-        this.bounds.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(text.length * 7.2) + 28));
-        this.bounds.height = 48;
+        this.bounds.width = Math.min(MAX_WIDTH, Math.max(TOAST_MIN_WIDTH, Math.ceil(text.length * 7.2) + 24));
+        this.bounds.height = 40;
         this._placeToast();
 
         const win = await this._ensureWindow();
@@ -215,8 +221,8 @@ class HubBubbleOverlayManager {
             placement: String(placement || "above")
         };
         const estimateSource = tipDetail ? `${tipText} ${tipDetail}` : tipText;
-        this.bounds.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(estimateSource.length * 7.2) + 44));
-        this.bounds.height = tipDetail || tipColor ? 52 : 40;
+        this.bounds.width = Math.min(MAX_WIDTH, Math.max(TIP_MIN_WIDTH, Math.ceil(estimateSource.length * 7.2) + 24));
+        this.bounds.height = tipDetail || tipColor ? 44 : 36;
         this._placeTip(this._tipAnchor);
 
         const win = await this._ensureWindow();

@@ -9,7 +9,6 @@
     "control": "Control",
     "settings": "Settings",
     "help": "Help",
-    "home": "Home",
     "language": "Language",
     "languageFr": "Français",
     "languageEn": "English",
@@ -25,56 +24,23 @@
       "empty": "No connected devices",
       "mirroring": "Mirroring",
       "wifiToggle": "WiFi ADB connection",
-      "audioToggle": "PC audio for this device",
       "battery": "Battery",
-      "flyoutMuted": "Muted",
-      "flyoutAudioOn": "Audio",
-      "flyoutWifi": "Wi‑Fi",
       "transportAdb": "ADB transport",
       "usb": "USB",
       "wifiConnected": "WiFi connected",
-      "deviceFallback": "Device"
-    }
-  },
-  "homeDashboard": {
-    "recentApps": "Recent apps",
-    "activeSessions": "Active sessions",
-    "noSessions": "No open sessions",
-    "newInstance": "New instance",
-    "newInstanceDesc": "Launch an app",
-    "streamDeck": "Stream Deck",
-    "streamDeckDesc": "Grid · Focus · Duo",
-    "live": "LIVE",
-    "closeSessionTitle": "Close this session?",
-    "closeSessionCancel": "Cancel",
-    "closeSessionConfirm": "Close",
-    "wifiReconnectTip": "Reconnect a device over Wi‑Fi",
-    "wifiReconnectTitle": "Known Wi‑Fi devices",
-    "wifiReconnectEmpty": "No saved Wi‑Fi devices",
-    "wifiReconnectAction": "Reconnect",
-    "wifiReconnectLoading": "Loading…",
-    "wifiReconnectError": "Could not load the list",
-    "moduleMenu": "Module options",
-    "moduleLock": "Lock",
-    "moduleUnlock": "Unlock",
-    "moduleHorizontal": "Horizontal",
-    "moduleVertical": "Vertical",
-    "moduleAlignOn": "Align titles",
-    "moduleAlignOff": "Stop aligning titles"
-  },
-  "uiTheme": {
-    "classicTitle": "Classic interface",
-    "classicDesc": "Full rail, current layout",
-    "tabletTitle": "New interface",
-    "tabletDesc": "Tablet style, fullscreen",
-    "badgeNew": "NEW"
+      "deviceFallback": "Device",
+      "audioToggle": "PC audio for this device",
+      "flyoutMuted": "Muted",
+      "flyoutAudioOn": "Audio",
+      "flyoutWifi": "Wi‑Fi"
+    },
+    "home": "Home"
   },
   "streamDeck": {
     "toggle": "Stream Deck mode",
     "toggleTitle": "Enable Stream Deck multi-device display",
     "barTitle": "Android Hub — Display",
     "empty": "No active session",
-    "dragToReorder": "Drag to swap positions",
     "layout": {
       "grid": "Grid",
       "focus": "Focus",
@@ -89,7 +55,8 @@
       "panelTitle": "Duo selection",
       "collapse": "Collapse Duo panel",
       "expand": "Expand Duo panel"
-    }
+    },
+    "dragToReorder": "Drag to swap positions"
   },
   "titlebar": {
     "appTitle": "Android Hub",
@@ -101,7 +68,7 @@
   },
   "emptyState": {
     "title": "Android Hub",
-    "subtitle": "Multi-device Android display and control",
+    "subtitle": "Devices, appearance, stream, and maintenance",
     "hint": "Connect a device via USB"
   },
   "update": {
@@ -164,16 +131,16 @@
     "color": "Color",
     "auto": "Auto",
     "close": "Close",
-    "lock": "Lock",
-    "unlock": "Unlock",
-    "lockGroup": "Lock group",
-    "unlockGroup": "Unlock group",
     "confirmResetTitle": "Reset name",
     "confirmResetMessage": "Reset to the original name?",
     "cancel": "Cancel",
     "reset": "Reset",
     "windowNotFound": "Window not found.",
-    "invalidTarget": "Invalid target."
+    "invalidTarget": "Invalid target.",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "lockGroup": "Lock group",
+    "unlockGroup": "Unlock group"
   },
   "toggles": {
     "screenTitle": "Turn the device screen on or off (active mirroring session)",
@@ -191,15 +158,35 @@
   },
   "settingsPanel": {
     "title": "Settings",
-    "subtitle": "Devices, appearance, stream, and maintenance",
+    "subtitle": "Devices, stream and maintenance",
     "tabDevices": "Devices",
+    "tabAppearance": "Appearance",
     "tabControl": "Control",
     "tabMaintenance": "Cleanup",
     "tabUpdates": "Updates",
     "tabAbout": "About",
-    "maintCacheHint": "temporary files",
+    "appearanceLead": "Choose the Hub interface style.",
+    "accentTitle": "Hub color",
+    "accentLead": "Accent for buttons, tabs, and active elements.",
+    "surfaceTitle": "Hub background",
+    "surfaceLead": "Background mood for the interface.",
+    "wallpaperPick": "Choose an image…",
+    "wallpaperClear": "Remove",
+    "wallpaperNone": "No image",
+    "surface": {
+      "midnight": "Midnight",
+      "graphite": "Graphite",
+      "slate": "Slate",
+      "forest": "Forest",
+      "ocean": "Ocean",
+      "dusk": "Dusk",
+      "wine": "Wine",
+      "cocoa": "Cocoa"
+    },
+    "maintCacheHint": "App icons and temporary files",
+    "maintCacheDesc": "This cache stores extracted app icons, their metadata index, and Hub temporary files. Clearing it frees space; icons reload when needed. Devices, sessions, preferences, and history are left untouched.",
     "maintKeepHint": "Auto: keeps the last {days} days of cache. Manual: everything can be cleared.",
-    "seeMore": "View ›",
+    "manualCleanup": "To clean",
     "clearHistory": "Clear history",
     "autoOptions": "Auto options",
     "aboutTagline": "A hub to connect, launch and control your Android tablets — USB, Wi‑Fi, mirroring and multi-session.",
@@ -226,25 +213,7 @@
     "aboutFeat10Desc": "Check, download and install new versions from About.",
     "aboutFeat11Title": "Visual personalization",
     "aboutFeat11Desc": "Hub accent color, background moods (Midnight, Ocean, Dusk…), and a custom image via the Windows file picker. Preferences are remembered.",
-    "tabAppearance": "Appearance",
-    "appearanceLead": "Choose the Hub interface style.",
-    "accentTitle": "Hub color",
-    "accentLead": "Accent for buttons, tabs, and active elements.",
-    "surfaceTitle": "Hub background",
-    "surfaceLead": "Background mood for the interface.",
-    "wallpaperPick": "Choose an image…",
-    "wallpaperClear": "Remove",
-    "wallpaperNone": "No image",
-    "surface": {
-      "midnight": "Midnight",
-      "graphite": "Graphite",
-      "slate": "Slate",
-      "forest": "Forest",
-      "ocean": "Ocean",
-      "dusk": "Dusk",
-      "wine": "Wine",
-      "cocoa": "Cocoa"
-    }
+    "seeMore": "View ›"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",
@@ -254,6 +223,16 @@
     "wifiConnected": "Connected over WiFi",
     "switchInProgress": "Switching connection…",
     "switchFailed": "Connection switch failed",
+    "errors": {
+      "tcpip": "Unable to enable WiFi mode on this device",
+      "ip": "IP address not found — make sure WiFi is enabled on the phone",
+      "connect": "Connection failed — make sure the phone is on the same network"
+    },
+    "progress": {
+      "ip": "Retrieving IP address...",
+      "tcpip": "Enabling WiFi...",
+      "connect": "Connecting..."
+    },
     "usbUnpluggedTitle": "USB disconnected",
     "usbUnpluggedBody": "Continue the session over WiFi, or disconnect?",
     "continueWifi": "Continue on WiFi",
@@ -264,17 +243,7 @@
     "switchToUsb": "Switch to USB",
     "stayOnWifi": "Stay on WiFi",
     "switchedToUsb": "Connected over USB",
-    "stayedOnWifi": "Session left on WiFi",
-    "errors": {
-      "tcpip": "Unable to enable WiFi mode on this device",
-      "ip": "IP address not found — make sure WiFi is enabled on the phone",
-      "connect": "Connection failed — make sure the phone is on the same network"
-    },
-    "progress": {
-      "ip": "Retrieving IP address...",
-      "tcpip": "Enabling WiFi...",
-      "connect": "Connecting..."
-    }
+    "stayedOnWifi": "Session left on WiFi"
   },
   "devicesPanel": {
     "usb": "USB",
@@ -457,14 +426,6 @@
       "lockedHint": "Stop all instances to change launch settings",
       "fallbackToast": "H265 not supported on this device — switched to H264"
     },
-    "tips": {
-      "resolution": "Sets the video stream resolution. Higher values improve sharpness, at the cost of increased CPU load and bandwidth.",
-      "fps": "Frame rate of the stream. Higher values improve fluidity, but increase processor and network usage.",
-      "dpi": "Android display density. Lower values enlarge the interface; higher values make it more compact.",
-      "bitrate": "Stream bitrate (Mbps). Higher values improve image quality and require more bandwidth.",
-      "gop": "Interval between keyframes (I-frames). A shorter interval improves resilience to packet loss, with a slight bitrate overhead.",
-      "videoCodec": "Video compression codec. H.265 is more efficient; H.264 offers broader device compatibility."
-    },
     "validation": {
       "selectBeforeApply": "Select an instance before applying settings.",
       "selectBeforeReset": "Select an instance before resetting.",
@@ -481,6 +442,14 @@
       "cancelDefault": "Changes discarded — default values reloaded.",
       "resetConfirm": "Reset this session's settings to their original values?\n\nThe stream will restart.",
       "paramsSummary": "{width}×{height} · {dpi} dpi · {fps} fps · {bitrate} Mbps · GOP {gop}s"
+    },
+    "tips": {
+      "resolution": "Sets the video stream resolution. Higher values improve sharpness, at the cost of increased CPU load and bandwidth.",
+      "fps": "Frame rate of the stream. Higher values improve fluidity, but increase processor and network usage.",
+      "dpi": "Android display density. Lower values enlarge the interface; higher values make it more compact.",
+      "bitrate": "Stream bitrate (Mbps). Higher values improve image quality and require more bandwidth.",
+      "gop": "Interval between keyframes (I-frames). A shorter interval improves resilience to packet loss, with a slight bitrate overhead.",
+      "videoCodec": "Video compression codec. H.265 is more efficient; H.264 offers broader device compatibility."
     }
   },
   "rename": {
@@ -500,14 +469,14 @@
   "help": {
     "tab": {
       "title": "Help & Shortcuts",
+      "subtitle": "Guides, shortcuts, and troubleshooting",
       "shortcuts": "Shortcuts",
       "guide": "Mirroring guide",
       "wifi": "WiFi connection",
-      "refresh": "Refresh",
-      "close": "Close",
-      "subtitle": "Guides, shortcuts, and troubleshooting",
       "troubleshoot": "Troubleshooting",
-      "appearance": "Appearance"
+      "appearance": "Appearance",
+      "refresh": "Refresh",
+      "close": "Close"
     },
     "shortcuts": {
       "intro": "Hub shortcuts and actions. Disabled while typing in a text field. Right-click a device or session tab for the context menu.",
@@ -750,13 +719,13 @@
               "keys": [
                 "Classic interface"
               ],
-              "desc": "Full classic rail (Settings → Appearance, or Home)."
+              "desc": "Show the full classic rail."
             },
             {
               "keys": [
                 "New interface"
               ],
-              "desc": "Full-screen tablet style (Settings → Appearance, or Home)."
+              "desc": "Switch to full-screen tablet style with a richer Home."
             },
             {
               "keys": [
@@ -796,13 +765,13 @@
               "keys": [
                 "USB unplugged"
               ],
-              "desc": "Mirroring: continue on Wi‑Fi without cutting the stream (only the connection ID changes). App instance: the session is relaunched to reattach the display."
+              "desc": "Offer to continue the session over Wi‑Fi or disconnect."
             },
             {
               "keys": [
                 "USB plugged"
               ],
-              "desc": "Mirroring: switch back to USB or stay on Wi‑Fi with no stream interruption. App instance: the session is refreshed to follow the new link."
+              "desc": "Offer to switch the session back to USB or stay on Wi‑Fi."
             }
           ]
         }
@@ -810,7 +779,7 @@
     },
     "wifi": {
       "title": "Connect a device over WiFi",
-      "note": "If the network or IP changes, reconnect with the toggle. In mirroring, USB ↔ Wi‑Fi only refreshes the connection ID (no dropout). For a virtual-display app, a link change relaunches the session.",
+      "note": "If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
       "steps": [
         {
           "chipLabel": "USB",
@@ -931,11 +900,9 @@
           "steps": [
             "The device appears in the Connected devices panel on the left.",
             "Open New instance, select the device and an application — or click Mirroring to display the full screen.",
-            "Each session opens in a dedicated tab that you can control with the mouse and keyboard.",
-            "Enable Stream Deck mode to view multiple sessions (grid, focus, duo).",
-            "Tune resolution / DPI / FPS in Settings → Control (presets)."
+            "Each session opens in a dedicated tab that you can control with the mouse and keyboard."
           ],
-          "tip": "Pick Classic or New interface in Settings → Appearance. Double-click a recent item to relaunch an app."
+          "tip": "Double-click a history entry to quickly relaunch an application you have used before."
         }
       ]
     },
@@ -971,13 +938,41 @@
         "Keyboard input ignored: click once on the video stream to focus it.",
         "AZERTY keyboard: accented letters, Shift (digits and ?./§%…), Alt Gr (@, #, {, }), and € are sent to the device. Ctrl+Tab / Ctrl+Shift+Tab switch session tabs (not typing).",
         "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
-        "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list.",
-        "Wi‑Fi fails: same network as the PC, Wi‑Fi on on the phone, avoid VPN / guest networks.",
-        "IP not found on Wi‑Fi toggle: enable phone Wi‑Fi then try again.",
-        "No battery on the dock: the device must be connected (USB or Wi‑Fi) and visible in Connected devices.",
-        "Scroll zoom does nothing: click the video stream once to focus it.",
-        "Mirroring USB↔Wi‑Fi: the stream should not drop (only the ID changes). App instance: a brief session refresh is normal to reattach the display."
+        "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list."
       ]
     }
+  },
+  "homeDashboard": {
+    "recentApps": "Recent apps",
+    "activeSessions": "Active sessions",
+    "noSessions": "No open sessions",
+    "newInstance": "New instance",
+    "newInstanceDesc": "Launch an app",
+    "streamDeck": "Stream Deck",
+    "streamDeckDesc": "Grid · Focus · Duo",
+    "live": "LIVE",
+    "closeSessionTitle": "Close this session?",
+    "closeSessionCancel": "Cancel",
+    "closeSessionConfirm": "Close",
+    "wifiReconnectTip": "Reconnect a device over Wi‑Fi",
+    "wifiReconnectTitle": "Known Wi‑Fi devices",
+    "wifiReconnectEmpty": "No saved Wi‑Fi devices",
+    "wifiReconnectAction": "Reconnect",
+    "wifiReconnectLoading": "Loading…",
+    "wifiReconnectError": "Could not load the list",
+    "moduleMenu": "Module options",
+    "moduleLock": "Lock",
+    "moduleUnlock": "Unlock",
+    "moduleHorizontal": "Horizontal",
+    "moduleVertical": "Vertical",
+    "moduleAlignOn": "Align titles",
+    "moduleAlignOff": "Stop aligning titles"
+  },
+  "uiTheme": {
+    "classicTitle": "Classic interface",
+    "classicDesc": "Full rail, current layout",
+    "tabletTitle": "New interface",
+    "tabletDesc": "Tablet style, fullscreen",
+    "badgeNew": "NEW"
   }
 }

@@ -9,7 +9,6 @@
     "control": "Contrôle",
     "settings": "Paramètres",
     "help": "Aide",
-    "home": "Accueil",
     "language": "Langue",
     "languageFr": "Français",
     "languageEn": "English",
@@ -25,56 +24,23 @@
       "empty": "Aucun appareil connecté",
       "mirroring": "Mirroring",
       "wifiToggle": "Connexion WiFi ADB",
-      "audioToggle": "Audio PC de cet appareil",
       "battery": "Batterie",
-      "flyoutMuted": "Muet",
-      "flyoutAudioOn": "Audio",
-      "flyoutWifi": "Wi‑Fi",
       "transportAdb": "Transport ADB",
       "usb": "USB",
       "wifiConnected": "WiFi connecté",
-      "deviceFallback": "Appareil"
-    }
-  },
-  "homeDashboard": {
-    "recentApps": "Applications récentes",
-    "activeSessions": "Sessions actives",
-    "noSessions": "Aucune session ouverte",
-    "newInstance": "Nouvelle instance",
-    "newInstanceDesc": "Lancer une app",
-    "streamDeck": "Stream Deck",
-    "streamDeckDesc": "Grille · Focus · Duo",
-    "live": "LIVE",
-    "closeSessionTitle": "Fermer la session ?",
-    "closeSessionCancel": "Annuler",
-    "closeSessionConfirm": "Fermer",
-    "wifiReconnectTip": "Reconnecter un appareil en Wi‑Fi",
-    "wifiReconnectTitle": "Appareils Wi‑Fi connus",
-    "wifiReconnectEmpty": "Aucun appareil Wi‑Fi enregistré",
-    "wifiReconnectAction": "Reconnecter",
-    "wifiReconnectLoading": "Chargement…",
-    "wifiReconnectError": "Impossible de charger la liste",
-    "moduleMenu": "Options du module",
-    "moduleLock": "Verrouiller",
-    "moduleUnlock": "Déverrouiller",
-    "moduleHorizontal": "Horizontal",
-    "moduleVertical": "Vertical",
-    "moduleAlignOn": "Aligner les titres",
-    "moduleAlignOff": "Ne plus aligner les titres"
-  },
-  "uiTheme": {
-    "classicTitle": "Interface classique",
-    "classicDesc": "Rail complet, vue actuelle",
-    "tabletTitle": "Nouvelle interface",
-    "tabletDesc": "Style tablette, plein écran",
-    "badgeNew": "NEW"
+      "deviceFallback": "Appareil",
+      "audioToggle": "Audio PC de cet appareil",
+      "flyoutMuted": "Muet",
+      "flyoutAudioOn": "Audio",
+      "flyoutWifi": "Wi‑Fi"
+    },
+    "home": "Accueil"
   },
   "streamDeck": {
     "toggle": "Mode Stream Deck",
     "toggleTitle": "Activer l'affichage multi-appareils Stream Deck",
     "barTitle": "Android Hub — Affichage",
     "empty": "Aucune session active",
-    "dragToReorder": "Glisser pour échanger les positions",
     "layout": {
       "grid": "Grille",
       "focus": "Focus",
@@ -89,7 +55,8 @@
       "panelTitle": "Sélection Duo",
       "collapse": "Réduire le panneau Duo",
       "expand": "Afficher le panneau Duo"
-    }
+    },
+    "dragToReorder": "Glisser pour échanger les positions"
   },
   "titlebar": {
     "appTitle": "Android Hub",
@@ -101,7 +68,7 @@
   },
   "emptyState": {
     "title": "Android Hub",
-    "subtitle": "Affichage et contrôle multi-appareils Android",
+    "subtitle": "Appareils, apparence, stream et maintenance",
     "hint": "Branchez un appareil en USB"
   },
   "update": {
@@ -164,16 +131,16 @@
     "color": "Couleur",
     "auto": "Auto",
     "close": "Fermer",
-    "lock": "Verrouiller",
-    "unlock": "Déverrouiller",
-    "lockGroup": "Verrouiller le groupe",
-    "unlockGroup": "Déverrouiller le groupe",
     "confirmResetTitle": "Réinitialiser le nom",
     "confirmResetMessage": "Réinitialiser le nom d'origine ?",
     "cancel": "Annuler",
     "reset": "Réinitialiser",
     "windowNotFound": "Fenêtre introuvable.",
-    "invalidTarget": "Cible invalide."
+    "invalidTarget": "Cible invalide.",
+    "lock": "Verrouiller",
+    "unlock": "Déverrouiller",
+    "lockGroup": "Verrouiller le groupe",
+    "unlockGroup": "Déverrouiller le groupe"
   },
   "toggles": {
     "screenTitle": "Éteindre ou rallumer l'écran de l'appareil (session mirroring active)",
@@ -191,15 +158,35 @@
   },
   "settingsPanel": {
     "title": "Paramètres",
-    "subtitle": "Appareils, apparence, stream et maintenance",
+    "subtitle": "Appareils, stream et maintenance",
     "tabDevices": "Appareils",
+    "tabAppearance": "Apparence",
     "tabControl": "Contrôle",
     "tabMaintenance": "Nettoyage",
     "tabUpdates": "Mise à jour",
     "tabAbout": "À propos",
-    "maintCacheHint": "fichiers temporaires",
+    "appearanceLead": "Choisissez le style d’interface du Hub.",
+    "accentTitle": "Couleur du Hub",
+    "accentLead": "Accent des boutons, onglets et éléments actifs.",
+    "surfaceTitle": "Fond du Hub",
+    "surfaceLead": "Ambiance de fond de l’interface.",
+    "wallpaperPick": "Choisir une image…",
+    "wallpaperClear": "Retirer",
+    "wallpaperNone": "Aucune image",
+    "surface": {
+      "midnight": "Minuit",
+      "graphite": "Graphite",
+      "slate": "Ardoise",
+      "forest": "Forêt",
+      "ocean": "Océan",
+      "dusk": "Crépuscule",
+      "wine": "Bordeaux",
+      "cocoa": "Cacao"
+    },
+    "maintCacheHint": "Icônes d’apps et fichiers temporaires",
+    "maintCacheDesc": "Ce cache stocke les icônes d’apps extraites, leur index de métadonnées et des fichiers temporaires du Hub. Le nettoyer libère de l’espace : les icônes se rechargent au besoin. Appareils, sessions, préférences et historique ne sont pas touchés.",
     "maintKeepHint": "Auto : conserve les {days} derniers jours de cache. Manuel : tout peut être effacé.",
-    "seeMore": "Voir ›",
+    "manualCleanup": "À nettoyer",
     "clearHistory": "Effacer l'historique",
     "autoOptions": "Options auto",
     "aboutTagline": "Un hub pour connecter, lancer et contrôler vos tablettes Android — USB, Wi‑Fi, mirroring et multi-sessions.",
@@ -226,25 +213,7 @@
     "aboutFeat10Desc": "Vérifiez, téléchargez et installez les nouvelles versions depuis À propos.",
     "aboutFeat11Title": "Personnalisation visuelle",
     "aboutFeat11Desc": "Couleur d’accent du Hub, ambiances de fond (Minuit, Océan, Crépuscule…) et image personnalisée via le sélecteur Windows. Les choix sont mémorisés.",
-    "tabAppearance": "Apparence",
-    "appearanceLead": "Choisissez le style d’interface du Hub.",
-    "accentTitle": "Couleur du Hub",
-    "accentLead": "Accent des boutons, onglets et éléments actifs.",
-    "surfaceTitle": "Fond du Hub",
-    "surfaceLead": "Ambiance de fond de l’interface.",
-    "wallpaperPick": "Choisir une image…",
-    "wallpaperClear": "Retirer",
-    "wallpaperNone": "Aucune image",
-    "surface": {
-      "midnight": "Minuit",
-      "graphite": "Graphite",
-      "slate": "Ardoise",
-      "forest": "Forêt",
-      "ocean": "Océan",
-      "dusk": "Crépuscule",
-      "wine": "Bordeaux",
-      "cocoa": "Cacao"
-    }
+    "seeMore": "Voir ›"
   },
   "devicePanel": {
     "wifiEnabled": "WiFi activé",
@@ -254,6 +223,16 @@
     "wifiConnected": "Connecté en WiFi",
     "switchInProgress": "Changement de connexion en cours…",
     "switchFailed": "Échec du changement",
+    "errors": {
+      "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
+      "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
+      "connect": "Connexion impossible — vérifie que le téléphone est sur le même réseau"
+    },
+    "progress": {
+      "ip": "Récupération de l'IP...",
+      "tcpip": "Activation WiFi...",
+      "connect": "Connexion..."
+    },
     "usbUnpluggedTitle": "USB débranché",
     "usbUnpluggedBody": "Continuer la session en WiFi, ou déconnecter ?",
     "continueWifi": "Continuer en WiFi",
@@ -264,17 +243,7 @@
     "switchToUsb": "Passer en USB",
     "stayOnWifi": "Rester en WiFi",
     "switchedToUsb": "Connecté en USB",
-    "stayedOnWifi": "Session laissée en WiFi",
-    "errors": {
-      "tcpip": "Impossible d'activer le mode WiFi sur cet appareil",
-      "ip": "IP introuvable, vérifie que le WiFi est activé sur le téléphone",
-      "connect": "Connexion impossible — vérifie que le téléphone est sur le même réseau"
-    },
-    "progress": {
-      "ip": "Récupération de l'IP...",
-      "tcpip": "Activation WiFi...",
-      "connect": "Connexion..."
-    }
+    "stayedOnWifi": "Session laissée en WiFi"
   },
   "devicesPanel": {
     "usb": "USB",
@@ -457,14 +426,6 @@
       "lockedHint": "Arrête toutes les instances pour changer les paramètres de lancement",
       "fallbackToast": "H265 non supporté par cet appareil — bascule sur H264"
     },
-    "tips": {
-      "resolution": "Définit la résolution du flux vidéo. Une valeur élevée améliore la netteté, au prix d’une charge CPU et d’un débit plus importants.",
-      "fps": "Fréquence d’images du flux. Une valeur élevée fluidifie l’affichage, mais augmente la consommation processeur et réseau.",
-      "dpi": "Densité d’affichage Android. Une valeur basse agrandit l’interface ; une valeur haute la compacte.",
-      "bitrate": "Débit binaire du flux (Mbps). Une valeur élevée améliore la qualité d’image et sollicite davantage la bande passante.",
-      "gop": "Intervalle entre images clés (I-frames). Un intervalle court améliore la résilience aux pertes réseau, avec un léger surcoût de débit.",
-      "videoCodec": "Codec de compression vidéo. H.265 offre une meilleure efficacité ; H.264 assure une compatibilité plus large."
-    },
     "validation": {
       "selectBeforeApply": "Sélectionnez une instance avant d'appliquer les paramètres.",
       "selectBeforeReset": "Sélectionnez une instance avant de réinitialiser.",
@@ -481,6 +442,14 @@
       "cancelDefault": "Modifications annulées — valeurs par défaut rechargées.",
       "resetConfirm": "Réinitialiser les paramètres de cette session à leurs valeurs d'origine ?\n\nLe flux sera redémarré.",
       "paramsSummary": "{width}×{height} · {dpi} dpi · {fps} fps · {bitrate} Mbps · GOP {gop}s"
+    },
+    "tips": {
+      "resolution": "Définit la résolution du flux vidéo. Une valeur élevée améliore la netteté, au prix d’une charge CPU et d’un débit plus importants.",
+      "fps": "Fréquence d’images du flux. Une valeur élevée fluidifie l’affichage, mais augmente la consommation processeur et réseau.",
+      "dpi": "Densité d’affichage Android. Une valeur basse agrandit l’interface ; une valeur haute la compacte.",
+      "bitrate": "Débit binaire du flux (Mbps). Une valeur élevée améliore la qualité d’image et sollicite davantage la bande passante.",
+      "gop": "Intervalle entre images clés (I-frames). Un intervalle court améliore la résilience aux pertes réseau, avec un léger surcoût de débit.",
+      "videoCodec": "Codec de compression vidéo. H.265 offre une meilleure efficacité ; H.264 assure une compatibilité plus large."
     }
   },
   "rename": {
@@ -500,14 +469,14 @@
   "help": {
     "tab": {
       "title": "Aide & Raccourcis",
+      "subtitle": "Guides, raccourcis et dépannage",
       "shortcuts": "Raccourcis",
       "guide": "Guide mirroring",
       "wifi": "Connexion WiFi",
-      "refresh": "Rafraîchir",
-      "close": "Fermer",
-      "subtitle": "Guides, raccourcis et dépannage",
       "troubleshoot": "Dépannage",
-      "appearance": "Apparence"
+      "appearance": "Apparence",
+      "refresh": "Rafraîchir",
+      "close": "Fermer"
     },
     "shortcuts": {
       "intro": "Raccourcis et actions du Hub. Inactifs dans un champ texte. Clic droit sur un appareil ou un onglet de session pour le menu contextuel.",
@@ -750,13 +719,13 @@
               "keys": [
                 "Interface classique"
               ],
-              "desc": "Rail complet (Paramètres → Apparence, ou Accueil)."
+              "desc": "Afficher le rail complet (vue classique)."
             },
             {
               "keys": [
                 "Nouvelle interface"
               ],
-              "desc": "Style tablette plein écran (Paramètres → Apparence, ou Accueil)."
+              "desc": "Passer au style tablette plein écran avec Accueil enrichi."
             },
             {
               "keys": [
@@ -796,13 +765,13 @@
               "keys": [
                 "USB débranché"
               ],
-              "desc": "En mirroring : continuer en Wi‑Fi sans couper le flux (seul l’ID de connexion change). En instance d’app : la session est relancée pour rattacher le display."
+              "desc": "Proposer de continuer la session en Wi‑Fi ou de déconnecter."
             },
             {
               "keys": [
                 "USB branché"
               ],
-              "desc": "En mirroring : repasser en USB ou rester en Wi‑Fi sans interruption du flux. En instance d’app : la session est rafraîchie pour suivre la nouvelle liaison."
+              "desc": "Proposer de repasser la session en USB ou de rester en Wi‑Fi."
             }
           ]
         }
@@ -810,7 +779,7 @@
     },
     "wifi": {
       "title": "Connecter un appareil en WiFi",
-      "note": "Si le réseau ou l’IP change, reconnectez via le toggle. En mirroring, USB ↔ Wi‑Fi ne rafraîchit que l’ID de connexion (pas de coupure). Pour une app en display virtuel, le changement de liaison relance la session.",
+      "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, reconnectez l'appareil via le toggle.",
       "steps": [
         {
           "chipLabel": "USB",
@@ -931,11 +900,9 @@
           "steps": [
             "L'appareil apparaît dans le panneau « Appareils connectés » à gauche.",
             "Ouvrez « Nouvelle instance », sélectionnez l'appareil puis une application — ou cliquez « Mirroring » pour afficher l'écran complet.",
-            "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier.",
-            "Activez le mode Stream Deck pour voir plusieurs sessions (grille, focus, duo).",
-            "Ajustez résolution / DPI / FPS dans Paramètres → Contrôle (presets)."
+            "Chaque session s'ouvre dans un onglet dédié que vous pouvez contrôler à la souris et au clavier."
           ],
-          "tip": "Choisissez Interface classique ou Nouvelle interface dans Paramètres → Apparence. Double-cliquez un récent pour relancer une app."
+          "tip": "Double-cliquez une entrée de l'historique pour relancer rapidement une application déjà utilisée."
         }
       ]
     },
@@ -971,13 +938,41 @@
         "Touches clavier ignorées : cliquez une fois sur le flux vidéo pour le focaliser.",
         "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
         "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
-        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste.",
-        "Wi‑Fi impossible : même réseau que le PC, Wi‑Fi actif sur le téléphone, évitez VPN / réseau invité.",
-        "IP introuvable au toggle Wi‑Fi : activez le Wi‑Fi du téléphone puis réessayez.",
-        "Batterie absente sur le dock : l’appareil doit être connecté (USB ou Wi‑Fi) et visible dans Appareils connectés.",
-        "Zoom molette ne répond pas : cliquez d’abord sur le flux vidéo pour le focaliser.",
-        "Mirroring USB↔Wi‑Fi : le flux ne doit pas se couper (seul l’ID change). Instance d’app : un bref refresh de session est normal pour rattacher le display."
+        "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste."
       ]
     }
+  },
+  "homeDashboard": {
+    "recentApps": "Applications récentes",
+    "activeSessions": "Sessions actives",
+    "noSessions": "Aucune session ouverte",
+    "newInstance": "Nouvelle instance",
+    "newInstanceDesc": "Lancer une app",
+    "streamDeck": "Stream Deck",
+    "streamDeckDesc": "Grille · Focus · Duo",
+    "live": "LIVE",
+    "closeSessionTitle": "Fermer la session ?",
+    "closeSessionCancel": "Annuler",
+    "closeSessionConfirm": "Fermer",
+    "wifiReconnectTip": "Reconnecter un appareil en Wi‑Fi",
+    "wifiReconnectTitle": "Appareils Wi‑Fi connus",
+    "wifiReconnectEmpty": "Aucun appareil Wi‑Fi enregistré",
+    "wifiReconnectAction": "Reconnecter",
+    "wifiReconnectLoading": "Chargement…",
+    "wifiReconnectError": "Impossible de charger la liste",
+    "moduleMenu": "Options du module",
+    "moduleLock": "Verrouiller",
+    "moduleUnlock": "Déverrouiller",
+    "moduleHorizontal": "Horizontal",
+    "moduleVertical": "Vertical",
+    "moduleAlignOn": "Aligner les titres",
+    "moduleAlignOff": "Ne plus aligner les titres"
+  },
+  "uiTheme": {
+    "classicTitle": "Interface classique",
+    "classicDesc": "Rail complet, vue actuelle",
+    "tabletTitle": "Nouvelle interface",
+    "tabletDesc": "Style tablette, plein écran",
+    "badgeNew": "NEW"
   }
 }

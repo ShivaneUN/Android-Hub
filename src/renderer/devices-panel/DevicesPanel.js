@@ -148,17 +148,26 @@
     }
 
     function getSelectedCleanupCategories() {
-        const els = getCleanupModalElements();
+        const cacheCheckbox = document.getElementById("devices-manual-clean-cache")
+            || document.getElementById("cleanup-category-cache");
+        const historyCheckbox = document.getElementById("devices-manual-clean-history")
+            || document.getElementById("cleanup-category-history");
         return {
-            cache: Boolean(els.cacheCheckbox?.checked),
-            history: Boolean(els.historyCheckbox?.checked)
+            cache: Boolean(cacheCheckbox?.checked),
+            history: Boolean(historyCheckbox?.checked)
         };
     }
 
     function setCleanupCategoryChecks(checked) {
-        const els = getCleanupModalElements();
-        if (els.cacheCheckbox) els.cacheCheckbox.checked = checked;
-        if (els.historyCheckbox) els.historyCheckbox.checked = checked;
+        const targets = [
+            document.getElementById("devices-manual-clean-cache"),
+            document.getElementById("devices-manual-clean-history"),
+            document.getElementById("cleanup-category-cache"),
+            document.getElementById("cleanup-category-history")
+        ];
+        targets.forEach((el) => {
+            if (el) el.checked = checked;
+        });
     }
 
     function updateCleanupModalDetails(preview) {
@@ -174,8 +183,12 @@
 
         const maintCache = document.getElementById("settings-maint-cache-detail");
         const maintHistory = document.getElementById("settings-maint-history-detail");
+        const manualCache = document.getElementById("devices-manual-clean-cache-detail");
+        const manualHistory = document.getElementById("devices-manual-clean-history-detail");
         if (maintCache) maintCache.textContent = categoryPreview.cache?.detail || "—";
         if (maintHistory) maintHistory.textContent = categoryPreview.history?.detail || "—";
+        if (manualCache) manualCache.textContent = categoryPreview.cache?.detail || "—";
+        if (manualHistory) manualHistory.textContent = categoryPreview.history?.detail || "—";
     }
 
     function hasCleanupSelection(categories) {
@@ -257,14 +270,39 @@
             return;
         }
 
-        setCleanupCategoryChecks(true);
+        const categories = getSelectedCleanupCategories();
+        if (!hasCleanupSelection(categories)) {
+            window.showHubToast?.(t("devicesPanel.selectCategory"), "info");
+            return;
+        }
+
         const preview = await refreshCleanupPreview();
         if (!preview?.success) {
             window.showHubToast?.(preview?.error || t("devicesPanel.previewFailed"), "error");
             return;
         }
 
-        openCleanupModal();
+        if (!hasCleanupWork(preview, categories)) {
+            window.showHubToast?.(t("devicesPanel.nothingToClean"), "info");
+            return;
+        }
+
+        const cleanupBtn = document.getElementById("devices-cleanup-now-btn");
+        if (cleanupBtn) cleanupBtn.disabled = true;
+        const result = await window.maintenanceAPI.runCleanup({
+            reason: "manual-panel-devices",
+            categories
+        });
+        if (cleanupBtn) cleanupBtn.disabled = false;
+
+        if (!result?.success) {
+            window.showHubToast?.(result?.error || t("devicesPanel.cleanupFailed"), "error");
+            await refreshCleanupPreview();
+            return;
+        }
+
+        window.showHubToast?.(result.summary?.message || t("devicesPanel.cleanupDone"), "success");
+        await refreshCleanupPreview();
     }
 
     async function onCleanupModalRun() {
