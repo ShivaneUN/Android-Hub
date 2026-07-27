@@ -4,7 +4,8 @@ const { exec } = require("child_process");
 const {
     extractLabelFromDumpOutput,
     humanizePackageName,
-    isUsableAppLabel
+    isUsableAppLabel,
+    resolveHistoryAppName
 } = require("../../shared/app-display");
 const { AppIconExtractor } = require("./app-icon-extractor");
 const { adbSerialArg } = require("../../shared/adb-serial-arg");
@@ -844,13 +845,14 @@ class AppMetadataManager {
                 );
 
                 if (cached) {
-                    merged.appName = cached.appName || entry.appName || entry.packageName;
+                    merged.appName = resolveHistoryAppName({
+                        appName: cached.appName || entry.appName,
+                        packageName: entry.packageName
+                    });
                     merged.iconPath = cached.iconPath || entry.iconPath || null;
                     merged.iconUrl = cached.iconUrl || entry.iconUrl || null;
                 } else {
-                    merged.appName = isUsableAppLabel(entry.appName)
-                        ? entry.appName
-                        : humanizePackageName(entry.packageName);
+                    merged.appName = resolveHistoryAppName(entry);
                 }
 
                 if (entry.packageName && await this.needsIconExtraction(
@@ -868,9 +870,7 @@ class AppMetadataManager {
                     });
                 }
             } else {
-                merged.appName = isUsableAppLabel(entry.appName)
-                    ? entry.appName
-                    : humanizePackageName(entry.packageName);
+                merged.appName = resolveHistoryAppName(entry);
             }
 
             enriched.push(merged);

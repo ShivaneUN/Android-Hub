@@ -53,7 +53,14 @@
     "wifiReconnectEmpty": "Aucun appareil Wi‑Fi enregistré",
     "wifiReconnectAction": "Reconnecter",
     "wifiReconnectLoading": "Chargement…",
-    "wifiReconnectError": "Impossible de charger la liste"
+    "wifiReconnectError": "Impossible de charger la liste",
+    "moduleMenu": "Options du module",
+    "moduleLock": "Verrouiller",
+    "moduleUnlock": "Déverrouiller",
+    "moduleHorizontal": "Horizontal",
+    "moduleVertical": "Vertical",
+    "moduleAlignOn": "Aligner les titres",
+    "moduleAlignOff": "Ne plus aligner les titres"
   },
   "uiTheme": {
     "classicTitle": "Interface classique",
@@ -157,6 +164,10 @@
     "color": "Couleur",
     "auto": "Auto",
     "close": "Fermer",
+    "lock": "Verrouiller",
+    "unlock": "Déverrouiller",
+    "lockGroup": "Verrouiller le groupe",
+    "unlockGroup": "Déverrouiller le groupe",
     "confirmResetTitle": "Réinitialiser le nom",
     "confirmResetMessage": "Réinitialiser le nom d'origine ?",
     "cancel": "Annuler",

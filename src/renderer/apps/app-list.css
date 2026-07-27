@@ -24,6 +24,8 @@
   background: transparent;
   transition: background 0.15s;
   text-align: left;
+  position: relative;
+  overflow: visible;
 }
 
 .app-list-item:last-child {
@@ -47,13 +49,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 }
 
 .app-list-item-icon img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
+  display: block;
+}
+
+.app-list-item-icon .home-app-device-pill {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #0a0e14;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .app-list-item-icon svg {

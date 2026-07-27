@@ -62,6 +62,9 @@
                 onSelect: options.onSelect || null,
                 renderMeta: options.renderMeta || null,
                 renderActions: options.renderActions || null,
+                renderTip: options.renderTip || null,
+                getTipAttrs: options.getTipAttrs || null,
+                getDeviceColor: options.getDeviceColor || null,
                 itemClassName: options.itemClassName || "app-list-item",
                 itemTag: options.itemTag || "button",
                 searchInput: options.searchInput || null,
@@ -224,10 +227,19 @@
 
         renderIcon(item) {
             const iconSrc = this.options.getIconSrc(item);
-            if (iconSrc) {
-                return `<img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">`;
-            }
-            return globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG || DEFAULT_ICON_SVG;
+            const color = typeof this.options.getDeviceColor === "function"
+                ? this.options.getDeviceColor(item)
+                : "";
+            const colorHex = /^#[0-9A-Fa-f]{6}$/.test(String(color || "").trim())
+                ? String(color).trim()
+                : "";
+            const pill = colorHex
+                ? `<span class="home-app-device-pill device-color-pill" style="background:${escapeHtml(colorHex)}" aria-hidden="true"></span>`
+                : "";
+            const media = iconSrc
+                ? `<img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">`
+                : (globalThis.HubAppIconPlaceholder?.APP_ICON_PLACEHOLDER_SVG || DEFAULT_ICON_SVG);
+            return `${media}${pill}`;
         }
 
         renderItem(item) {
@@ -241,6 +253,12 @@
                 : "";
             const actionsHtml = typeof this.options.renderActions === "function"
                 ? this.options.renderActions(item)
+                : "";
+            const tipAttrs = typeof this.options.getTipAttrs === "function"
+                ? (this.options.getTipAttrs(item) || "")
+                : "";
+            const tipHtml = typeof this.options.renderTip === "function"
+                ? (this.options.renderTip(item) || "")
                 : "";
             const subtitleHtml = this.options.showPackageAsSubtitle && packageName
                 ? `<span class="app-list-item-package">${packageName}</span>`
@@ -261,7 +279,7 @@
             const typeAttr = tag === "button" ? ' type="button"' : "";
 
             return `
-                <${tag}${typeAttr} class="${this.options.itemClassName}${selectedClass}${variantClass ? ` ${variantClass}` : ""}" ${dataAttrs}>
+                <${tag}${typeAttr} class="${this.options.itemClassName}${selectedClass}${variantClass ? ` ${variantClass}` : ""}" ${dataAttrs}${tipAttrs}>
                     <span class="app-list-item-icon">${this.renderIcon(item)}</span>
                     <span class="app-list-item-main">
                         <span class="app-list-item-name">${appName}</span>
@@ -269,6 +287,7 @@
                         ${metaHtml}
                     </span>
                     ${actionsHtml}
+                    ${tipHtml}
                 </${tag}>
             `;
         }

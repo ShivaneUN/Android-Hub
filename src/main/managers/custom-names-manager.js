@@ -1,8 +1,17 @@
 const fs = require("fs");
 const path = require("path");
+const { extractAppNameFromTabLabel } = require("../../shared/app-display");
 
 const MAX_NAME_LENGTH = 50;
 const VALID_NAME_PATTERN = /^[\p{L}\p{M}\p{N}\s'.,\-_()+]+$/u;
+
+/** Legacy Type-B labels were "Device — App" (sometimes nested). Prefer the app segment. */
+function sanitizeSessionOriginalLabel(label) {
+    const raw = String(label || "").trim();
+    if (!raw) return raw;
+    const extracted = extractAppNameFromTabLabel(raw);
+    return extracted || raw;
+}
 
 class CustomNamesManager {
     constructor(userDataPath) {
@@ -315,21 +324,32 @@ class CustomNamesManager {
 
     ensureSessionOriginal(sessionKey, originalName) {
         if (!sessionKey || !originalName) return;
+        const sanitized = sanitizeSessionOriginalLabel(originalName);
+        if (!sanitized) return;
+
         if (!this.data.sessions[sessionKey]) {
             this.data.sessions[sessionKey] = {
-                originalName,
+                originalName: sanitized,
                 customName: null
             };
             this.save();
-            console.log("[CustomNamesManager] session original enregistré", sessionKey, originalName);
+            console.log("[CustomNamesManager] session original enregistré", sessionKey, sanitized);
             return;
         }
         const record = this.data.sessions[sessionKey];
+        const fixedExisting = record.originalName
+            ? sanitizeSessionOriginalLabel(record.originalName)
+            : null;
+
         if (!record.originalName) {
-            record.originalName = originalName;
+            record.originalName = sanitized;
+            this.save();
+        } else if (fixedExisting && fixedExisting !== record.originalName) {
+            // Migrate legacy "Device — App" originals to the app name.
+            record.originalName = fixedExisting;
             this.save();
         } else if (record.customName && record.originalName === record.customName) {
-            record.originalName = originalName;
+            record.originalName = sanitized;
             this.save();
         }
     }
@@ -408,7 +428,9 @@ class CustomNamesManager {
     resolveSessionLabel(entry) {
         const sessionKey = this.buildSessionKey(entry);
         const aliasKeys = this.collectSessionAliasKeys(entry);
-        const fallback = entry.originalLabel || entry.label || entry.sessionId;
+        const fallback = sanitizeSessionOriginalLabel(
+            entry.originalLabel || entry.label || entry.sessionId
+        );
         if (!sessionKey) return entry.label || fallback;
 
         this.consolidateSessionRecord(sessionKey, fallback, aliasKeys);
@@ -423,7 +445,9 @@ class CustomNamesManager {
         return sessions.map((session) => {
             const sessionKey = this.buildSessionKey(session);
             const aliasKeys = this.collectSessionAliasKeys(session);
-            const originalLabel = session.originalLabel || session.label || session.sessionId;
+            const originalLabel = sanitizeSessionOriginalLabel(
+                session.originalLabel || session.label || session.sessionId
+            );
 
             if (sessionKey) {
                 this.consolidateSessionRecord(sessionKey, originalLabel, aliasKeys);
@@ -436,6 +460,7 @@ class CustomNamesManager {
             return {
                 ...session,
                 label,
+                originalLabel,
                 originalName: sessionKey ? this.getSessionOriginalName(sessionKey, originalLabel) : originalLabel,
                 hasCustomName: sessionKey ? this.hasSessionCustomName(sessionKey, aliasKeys) : false,
                 sessionKey

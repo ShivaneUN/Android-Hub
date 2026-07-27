@@ -11,9 +11,12 @@ function notifyNamesUpdated(mainWindow) {
     }
 }
 
-function notifyDeviceColorsUpdated(mainWindow) {
+function notifyDeviceColorsUpdated(mainWindow, hubModalWindow) {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("device-colors:updated");
+    }
+    if (hubModalWindow && !hubModalWindow.isDestroyed()) {
+        hubModalWindow.webContents.send("device-colors:updated");
     }
 }
 
@@ -35,6 +38,7 @@ function createColorSwatchIcon(hex, size = 14) {
 function buildDeviceColorSubmenu(target, deps) {
     const getDeviceColorsManager = deps.getDeviceColorsManager;
     const getMainWindow = deps.getMainWindow;
+    const getHubModalWindow = deps.getHubModalWindow;
     const getConnectedDeviceIds = deps.getConnectedDeviceIds;
     const getUiPreferencesManager = deps.getUiPreferencesManager;
     const manager = getDeviceColorsManager?.();
@@ -44,6 +48,7 @@ function buildDeviceColorSubmenu(target, deps) {
     const t = (key) => localeApi?.t(key) || key;
     const current = manager.getColorForDevice(target.serial);
     const colorMenu = new Menu();
+    const notify = () => notifyDeviceColorsUpdated(getMainWindow?.(), getHubModalWindow?.());
 
     colorMenu.append(new MenuItem({
         label: t("contextMenu.auto"),
@@ -55,7 +60,7 @@ function buildDeviceColorSubmenu(target, deps) {
                 : [];
             const result = manager.setAutoMode(target.serial, connectedDeviceIds);
             if (result.success) {
-                notifyDeviceColorsUpdated(getMainWindow());
+                notify();
             }
         }
     }));
@@ -71,7 +76,7 @@ function buildDeviceColorSubmenu(target, deps) {
             click: () => {
                 const result = manager.setManualColor(target.serial, color.id);
                 if (result.success) {
-                    notifyDeviceColorsUpdated(getMainWindow());
+                    notify();
                 }
             }
         }));
@@ -130,6 +135,56 @@ function registerContextMenuHandlers(deps) {
                 return { success: false, error: t("contextMenu.invalidTarget") };
             }
             colorMenu.popup({
+                window: popupWindow,
+                x: Math.round(x),
+                y: Math.round(y)
+            });
+            return { success: true };
+        }
+
+        if (target.kind === "homeFab" && target.fabId) {
+            const fabMenu = new Menu();
+            const locked = Boolean(target.locked);
+            fabMenu.append(new MenuItem({
+                label: locked ? t("contextMenu.unlock") : t("contextMenu.lock"),
+                click: () => {
+                    const mainWin = getMainWindow();
+                    const win = mainWin && !mainWin.isDestroyed() ? mainWin : popupWindow;
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send("context-menu:action", {
+                            action: "home-fab-toggle-lock",
+                            fabId: target.fabId
+                        });
+                    }
+                }
+            }));
+            fabMenu.popup({
+                window: popupWindow,
+                x: Math.round(x),
+                y: Math.round(y)
+            });
+            return { success: true };
+        }
+
+        if (target.kind === "homeFabGroup" && Array.isArray(target.fabIds) && target.fabIds.length) {
+            const groupMenu = new Menu();
+            const locked = Boolean(target.locked);
+            groupMenu.append(new MenuItem({
+                label: locked
+                    ? t("contextMenu.unlockGroup")
+                    : t("contextMenu.lockGroup"),
+                click: () => {
+                    const mainWin = getMainWindow();
+                    const win = mainWin && !mainWin.isDestroyed() ? mainWin : popupWindow;
+                    if (win && !win.isDestroyed()) {
+                        win.webContents.send("context-menu:action", {
+                            action: "home-fab-group-toggle-lock",
+                            fabIds: target.fabIds
+                        });
+                    }
+                }
+            }));
+            groupMenu.popup({
                 window: popupWindow,
                 x: Math.round(x),
                 y: Math.round(y)

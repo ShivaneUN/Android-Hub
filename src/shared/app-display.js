@@ -191,6 +191,67 @@ function getAppLabel(app = {}) {
     return app.labelName || app.displayName || humanizePackageName(app.package || "");
 }
 
+/**
+ * Strip Type-B tab labels like "Device — App" (or nested "Device — Device — App")
+ * down to the final app segment. Always take the part after the *last* separator.
+ */
+function extractAppNameFromTabLabel(tabLabel) {
+    const raw = String(tabLabel || "").trim();
+    if (!raw) return "";
+
+    const separators = [" — ", " – ", " - "];
+    let cut = -1;
+    let sepLen = 0;
+    for (const sep of separators) {
+        const idx = raw.lastIndexOf(sep);
+        if (idx > cut) {
+            cut = idx;
+            sepLen = sep.length;
+        }
+    }
+    if (cut < 0) return "";
+    return normalizeLabelValue(raw.slice(cut + sepLen));
+}
+
+function normalizeDeviceAliases(deviceLabel) {
+    if (Array.isArray(deviceLabel)) {
+        return deviceLabel.map((value) => normalizeLabelValue(value)).filter(Boolean);
+    }
+    const single = normalizeLabelValue(deviceLabel);
+    return single ? [single] : [];
+}
+
+function matchesDeviceAlias(value, aliases) {
+    const normalized = normalizeLabelValue(value).toLowerCase();
+    if (!normalized) return false;
+    return aliases.some((alias) => alias.toLowerCase() === normalized);
+}
+
+/**
+ * Resolve a display label for launch-history entries.
+ * Rejects device names and compound / nested tab labels accidentally stored as appName.
+ */
+function resolveHistoryAppName(entry = {}, deviceLabel = "") {
+    const pkg = String(entry?.packageName || "").trim();
+    const aliases = normalizeDeviceAliases(deviceLabel);
+    let candidate = normalizeLabelValue(entry?.appName);
+
+    const fromTab = extractAppNameFromTabLabel(candidate);
+    if (fromTab) {
+        candidate = fromTab;
+    }
+
+    // Nested leftovers can still equal the device name after a bad extract.
+    if (matchesDeviceAlias(candidate, aliases)) {
+        candidate = "";
+    }
+
+    if (isUsableAppLabel(candidate) && !matchesDeviceAlias(candidate, aliases)) {
+        return candidate;
+    }
+    return humanizePackageName(pkg) || pkg || candidate || "";
+}
+
 const appDisplayApi = {
     GENERIC_APP_LABELS,
     looksLikePackageName,
@@ -201,7 +262,9 @@ const appDisplayApi = {
     extractLabelsFromDumpOutput,
     extractLabelFromDumpOutput,
     buildAppLabel,
-    getAppLabel
+    getAppLabel,
+    extractAppNameFromTabLabel,
+    resolveHistoryAppName
 };
 
 if (typeof module !== "undefined" && module.exports) {

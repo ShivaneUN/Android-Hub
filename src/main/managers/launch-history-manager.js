@@ -118,6 +118,16 @@ class LaunchHistoryManager {
             return { success: false, error: "deviceId et packageName requis." };
         }
 
+        let { resolveHistoryAppName } = {};
+        try {
+            ({ resolveHistoryAppName } = require("../../shared/app-display"));
+        } catch (_err) {
+            resolveHistoryAppName = null;
+        }
+        const cleanAppName = resolveHistoryAppName
+            ? resolveHistoryAppName({ appName, packageName })
+            : (appName || packageName);
+
         const key = this.buildKey(deviceId, packageName, userId);
         const now = Date.now();
         const existing = this.entries[key];
@@ -125,7 +135,7 @@ class LaunchHistoryManager {
         if (existing) {
             existing.lastLaunchedAt = now;
             existing.launchCount = (existing.launchCount || 1) + 1;
-            if (appName) existing.appName = appName;
+            if (cleanAppName) existing.appName = cleanAppName;
             if (iconPath) existing.iconPath = iconPath;
             existing.userId = Number.isInteger(userId) ? userId : null;
             existing.deviceId = deviceId;
@@ -133,7 +143,7 @@ class LaunchHistoryManager {
             this.entries[key] = {
                 deviceId,
                 packageName,
-                appName: appName || packageName,
+                appName: cleanAppName || packageName,
                 iconPath: iconPath || null,
                 lastLaunchedAt: now,
                 launchCount: 1,

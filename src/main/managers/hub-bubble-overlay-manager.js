@@ -195,9 +195,14 @@ class HubBubbleOverlayManager {
         return true;
     }
 
-    async showTip({ text, x, y, width, height, placement = "above" } = {}) {
+    async showTip({ text, detail, color, x, y, width, height, placement = "above" } = {}) {
         const tipText = String(text || "").trim();
         if (!tipText || !this.mainWindow || this.mainWindow.isDestroyed()) return false;
+
+        const tipDetail = String(detail || "").trim();
+        const tipColor = /^#[0-9A-Fa-f]{6}$/.test(String(color || "").trim())
+            ? String(color).trim()
+            : "";
 
         this._clearHideTimer();
         this.mode = "tip";
@@ -209,8 +214,9 @@ class HubBubbleOverlayManager {
             height: Number(height) || 0,
             placement: String(placement || "above")
         };
-        this.bounds.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(tipText.length * 7.2) + 28));
-        this.bounds.height = 40;
+        const estimateSource = tipDetail ? `${tipText} ${tipDetail}` : tipText;
+        this.bounds.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.ceil(estimateSource.length * 7.2) + 44));
+        this.bounds.height = tipDetail || tipColor ? 52 : 40;
         this._placeTip(this._tipAnchor);
 
         const win = await this._ensureWindow();
@@ -218,6 +224,8 @@ class HubBubbleOverlayManager {
         this._send({
             mode: "tip",
             text: tipText,
+            detail: tipDetail,
+            color: tipColor,
             type: "info",
             visible: true
         });

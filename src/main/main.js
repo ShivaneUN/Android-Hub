@@ -3130,6 +3130,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getCustomNamesManager: () => global.customNamesManager,
         getBrowserViewManager: () => global.browserViewManager,
         getMainWindow: () => win,
+        getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null,
         getRenameDialogManager: () => global.renameDialogManager,
         getDeviceColorsManager: () => global.deviceColorsManager,
         getConnectedDeviceIds,
@@ -3144,6 +3145,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     registerDeviceColorsHandlers({
         getDeviceColorsManager: () => global.deviceColorsManager,
         getMainWindow: () => win,
+        getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null,
         getConnectedDeviceIds
     });
     registerDisplayPresetsHandlers({

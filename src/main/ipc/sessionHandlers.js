@@ -218,8 +218,16 @@ function registerSessionHandlers(adbPath, deps = {}) {
             resolved = global.customNamesManager.applySessionNames(sessions);
             for (const session of resolved) {
                 const entry = manager.getSessionEntry(session.sessionId);
-                if (entry && entry.label !== session.label) {
-                    manager.updateSessionMetadata(session.sessionId, { label: session.label });
+                if (!entry) continue;
+                const patch = {};
+                if (entry.label !== session.label) {
+                    patch.label = session.label;
+                }
+                if (session.originalLabel && entry.originalLabel !== session.originalLabel) {
+                    patch.originalLabel = session.originalLabel;
+                }
+                if (Object.keys(patch).length) {
+                    manager.updateSessionMetadata(session.sessionId, patch);
                 }
             }
         }

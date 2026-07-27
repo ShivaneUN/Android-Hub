@@ -60,6 +60,16 @@
             if (data?.action === "close-session" && data.sessionId) {
                 closeSessionById(data.sessionId).catch(console.error);
             }
+            if (data?.action === "home-fab-toggle-lock" && data.fabId) {
+                window.dispatchEvent(new CustomEvent("home-fab-toggle-lock", {
+                    detail: { fabId: data.fabId }
+                }));
+            }
+            if (data?.action === "home-fab-group-toggle-lock" && Array.isArray(data.fabIds)) {
+                window.dispatchEvent(new CustomEvent("home-fab-group-toggle-lock", {
+                    detail: { fabIds: data.fabIds }
+                }));
+            }
         });
     }
 

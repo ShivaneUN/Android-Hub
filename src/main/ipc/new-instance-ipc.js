@@ -84,6 +84,7 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                     stableDeviceId = await global.deviceRegistry.resolveStableDeviceIdFromTransport(session.serial);
                 }
                 const historyDeviceId = stableDeviceId || session.serial;
+                let cachedAppName = null;
                 if (global.appMetadataManager) {
                     const cached = await global.appMetadataManager.getCachedEntry(
                         historyDeviceId,
@@ -92,11 +93,21 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                         { transportSerial: session.serial }
                     );
                     iconPath = cached?.iconPath || null;
+                    cachedAppName = cached?.appName || null;
                 }
+                const { isUsableAppLabel, extractAppNameFromTabLabel, humanizePackageName } = require("../../shared/app-display");
+                const candidates = [
+                    session.appLabel,
+                    cachedAppName,
+                    extractAppNameFromTabLabel(session.tabLabel),
+                    humanizePackageName(session.packageName),
+                    session.packageName
+                ];
+                const appName = candidates.find((value) => isUsableAppLabel(value)) || session.packageName;
                 global.launchHistoryManager.recordLaunch({
                     deviceId: historyDeviceId,
                     packageName: session.packageName,
-                    appName: session.tabLabel || session.packageName,
+                    appName,
                     iconPath,
                     userId: session.userId
                 });

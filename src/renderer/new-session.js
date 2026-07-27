@@ -199,9 +199,14 @@ function formatRelativeTime(timestamp) {
 }
 
 function getHistoryAppLabel(entry) {
+    const device = findDeviceForHistory(connectedDevicesCache, entry?.deviceId);
+    const aliases = [device?.name, device?.originalName, resolveDeviceName(entry?.deviceId)].filter(Boolean);
+    if (window.AppDisplay?.resolveHistoryAppName) {
+        return window.AppDisplay.resolveHistoryAppName(entry, aliases) || "—";
+    }
     const raw = String(entry?.appName || "").trim();
     const pkg = String(entry?.packageName || "").trim();
-    const deviceLabel = resolveDeviceName(entry?.deviceId);
+    const deviceLabel = aliases[0] || "";
     if (!raw || raw === deviceLabel || raw.startsWith(`${deviceLabel} —`) || raw.startsWith(`${deviceLabel} -`)) {
         if (pkg) {
             const shortPkg = pkg.includes(".") ? pkg.split(".").pop() : pkg;
@@ -492,6 +497,17 @@ function createHistoryAppList() {
         getAppName: (entry) => getHistoryAppLabel(entry),
         getPackageName: (entry) => entry.packageName,
         getIconSrc: (entry) => entry.iconUrl || entry.iconPath || null,
+        getTipAttrs: (entry) => historyTipAttrs(
+            getHistoryAppLabel(entry),
+            resolveDeviceName(entry.deviceId),
+            resolveDeviceColorHex(entry.deviceId)
+        ),
+        getDeviceColor: (entry) => resolveDeviceColorHex(entry.deviceId),
+        renderTip: (entry) => buildAppLaunchTipHtml(
+            getHistoryAppLabel(entry),
+            resolveDeviceName(entry.deviceId),
+            resolveDeviceColorHex(entry.deviceId)
+        ),
         renderMeta: (entry) => {
             const parts = [escapeHtml(resolveDeviceName(entry.deviceId))];
             if (Number.isInteger(entry.userId) && entry.userId !== 0) {
@@ -677,6 +693,102 @@ function scheduleLaunchHistoryRefresh() {
     }
 }
 
+function resolveDeviceColorHex(deviceId, devices = connectedDevicesCache) {
+    const id = String(deviceId || "").trim();
+    if (!id) return "";
+    const live = findDeviceForHistory(devices, id);
+    if (live?.deviceColor?.hex) return String(live.deviceColor.hex);
+    return "";
+}
+
+async function resolveDeviceColorHexAsync(deviceId) {
+    const id = String(deviceId || "").trim();
+    if (!id) return "";
+
+    const candidates = new Set([id]);
+    const live = findDeviceForHistory(connectedDevicesCache, id);
+    if (live) {
+        [live.deviceId, live.serial, live.usbSerial, live.wifiSerial]
+            .filter(Boolean)
+            .forEach((key) => candidates.add(String(key)));
+    }
+
+    if (window.deviceColorsAPI?.get) {
+        for (const key of candidates) {
+            try {
+                const response = await window.deviceColorsAPI.get({ deviceId: key });
+                if (response?.deviceColor?.hex) return String(response.deviceColor.hex);
+            } catch (_err) {
+                /* try next key */
+            }
+        }
+    }
+
+    return resolveDeviceColorHex(id);
+}
+
+function formatAppDeviceTipLabel(_appName, deviceName) {
+    return String(deviceName || "").trim();
+}
+
+function historyTipAttrs(appName, deviceName, colorHex) {
+    const label = formatAppDeviceTipLabel(appName, deviceName);
+    if (!label) return "";
+    const color = /^#[0-9A-Fa-f]{6}$/.test(String(colorHex || "").trim())
+        ? String(colorHex).trim()
+        : "";
+    return ` data-dock-tip="${escapeHtml(label)}"${color ? ` data-dock-tip-color="${escapeHtml(color)}"` : ""}`;
+}
+
+function buildAppLaunchTipHtml(appName, deviceName, colorHex) {
+    const label = formatAppDeviceTipLabel(appName, deviceName);
+    if (!label) return "";
+    const color = /^#[0-9A-Fa-f]{6}$/.test(String(colorHex || "").trim())
+        ? String(colorHex).trim()
+        : "";
+    const pillStyle = color ? ` style="background:${escapeHtml(color)}"` : "";
+    return (
+        `<span class="app-launch-tip" aria-hidden="true">` +
+        `<span class="app-launch-tip-pill"${pillStyle}></span>` +
+        `<span class="app-launch-tip-title">${escapeHtml(label)}</span>` +
+        `</span>`
+    );
+}
+
+async function resolveDeviceDisplayNameAsync(deviceId) {
+    const id = String(deviceId || "").trim();
+    if (!id) return "";
+
+    const live = findDeviceForHistory(connectedDevicesCache, id);
+    if (live?.name) return String(live.name).trim();
+
+    const candidates = [id];
+    if (live) {
+        [live.deviceId, live.serial, live.usbSerial, live.wifiSerial]
+            .filter(Boolean)
+            .forEach((key) => {
+                if (!candidates.includes(String(key))) candidates.push(String(key));
+            });
+    }
+
+    if (window.namesAPI?.getDeviceInfo) {
+        for (const key of candidates) {
+            try {
+                const info = await window.namesAPI.getDeviceInfo({
+                    serial: key,
+                    fallbackName: live?.name || key
+                });
+                const name = String(info?.name || "").trim();
+                if (name) return name;
+            } catch (_err) {
+                /* try next */
+            }
+        }
+    }
+
+    return resolveDeviceName(id);
+}
+
 function renderHistoryList() {
     renderRecentsStrip();
     syncHistoryExpandedUi();
@@ -684,6 +796,46 @@ function renderHistoryList() {
     if (!list) return;
     list.setItems(historyEntries);
     list.syncSearchFromInput();
+    void enrichHistoryTipColors();
+}
+
+async function enrichHistoryTipColors() {
+    const nodes = document.querySelectorAll(
+        ".ni-recent-card[data-device-id], .new-instance-history-item[data-device-id]"
+    );
+    if (!nodes.length) return;
+
+    const ids = [...new Set(Array.from(nodes).map((node) => node.dataset.deviceId).filter(Boolean))];
+    const colorById = {};
+    const nameById = {};
+    await Promise.all(ids.map(async (deviceId) => {
+        colorById[deviceId] = await resolveDeviceColorHexAsync(deviceId);
+        nameById[deviceId] = await resolveDeviceDisplayNameAsync(deviceId);
+    }));
+
+    nodes.forEach((node) => {
+        const color = colorById[node.dataset.deviceId] || "";
+        const deviceName = nameById[node.dataset.deviceId] || "";
+        if (color) node.setAttribute("data-dock-tip-color", color);
+        else node.removeAttribute("data-dock-tip-color");
+        if (deviceName) {
+            node.setAttribute("data-dock-tip", deviceName);
+            node.setAttribute("aria-label", deviceName);
+        }
+
+        const pill = node.querySelector(".app-launch-tip-pill");
+        if (pill) {
+            if (color) pill.style.background = color;
+            else pill.style.removeProperty("background");
+        }
+        const tipTitle = node.querySelector(".app-launch-tip-title");
+        if (tipTitle && deviceName) tipTitle.textContent = deviceName;
+        const iconPill = node.querySelector(".home-app-device-pill");
+        if (iconPill) {
+            if (color) iconPill.style.background = color;
+            else iconPill.style.removeProperty("background");
+        }
+    });
 }
 
 function setHistoryExpanded(next) {
@@ -701,6 +853,7 @@ function setHistoryExpanded(next) {
         }
         list.setItems(historyEntries);
         list.syncSearchFromInput();
+        void enrichHistoryTipColors();
     } catch (err) {
         console.error("[NewSession] setHistoryExpanded:", err);
         const { historyList } = getNewInstanceElements();
@@ -750,18 +903,26 @@ function renderRecentsStrip() {
         const forceProfile = (labelCounts[name] || 0) > 1;
         const meta = escapeHtml(formatHistoryEntryMeta(entry, { forceProfile }));
         const safeName = escapeHtml(name);
+        const deviceName = resolveDeviceName(entry.deviceId);
+        const colorHex = resolveDeviceColorHex(entry.deviceId);
+        const tipHtml = buildAppLaunchTipHtml(name, deviceName, colorHex);
+        const tipAttrs = historyTipAttrs(name, deviceName, colorHex);
+        const pillHtml = colorHex
+            ? `<span class="home-app-device-pill device-color-pill" style="background:${escapeHtml(colorHex)}" aria-hidden="true"></span>`
+            : "";
         const iconSrc = entry.iconUrl || entry.iconPath;
         const icon = iconSrc
-            ? `<span class="ni-recent-card-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy"></span>`
-            : `<span class="ni-recent-card-icon">${DEFAULT_APP_ICON_SVG}</span>`;
+            ? `<span class="ni-recent-card-icon"><img src="${escapeHtml(iconSrc)}" alt="" loading="lazy">${pillHtml}</span>`
+            : `<span class="ni-recent-card-icon">${DEFAULT_APP_ICON_SVG}${pillHtml}</span>`;
         const profileClass = Number.isInteger(entry.userId) && (forceProfile || entry.userId !== 0)
             ? " ni-recent-card--profile"
             : "";
         return `
-            <button type="button" class="ni-recent-card${profileClass}" data-recent-index="${index}" title="${safeName}${meta ? ` — ${meta}` : ""}">
+            <button type="button" class="ni-recent-card${profileClass}" data-recent-index="${index}" data-device-id="${escapeHtml(entry.deviceId || "")}"${tipAttrs} aria-label="${escapeHtml(deviceName || name)}">
                 ${icon}
                 <span class="ni-recent-card-name">${safeName}</span>
                 <span class="ni-recent-card-meta">${meta}</span>
+                ${tipHtml}
             </button>
         `;
     }).join("");
@@ -1227,11 +1388,9 @@ async function closeNewInstanceSession(sessionId, reason = "unspecified") {
     }
 }
 
-function buildTypeBTabLabel(deviceName, appLabel) {
-    const device = String(deviceName || "").trim();
+function buildTypeBTabLabel(_deviceName, appLabel) {
     const app = String(appLabel || "").trim();
-    if (device && app) return `${device} — ${app}`;
-    return app || device || t("newSession.launchInstance");
+    return app || t("newSession.launchInstance");
 }
 
 async function launchTypeBSession({
@@ -1263,7 +1422,8 @@ async function launchTypeBSession({
     }
 
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
-    const tabLabel = buildTypeBTabLabel(deviceName, appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName);
+    const resolvedAppLabel = appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName;
+    const tabLabel = buildTypeBTabLabel(deviceName, resolvedAppLabel);
 
     const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
 
@@ -1318,6 +1478,7 @@ async function launchTypeBSession({
         packageName,
         userId: normalizedUserId,
         tabLabel,
+        appLabel: resolvedAppLabel,
         streamOptions,
         presetDisplayId,
         skipPackageLaunch: true,
@@ -1446,7 +1607,12 @@ async function launchFromHistory(entry) {
         return;
     }
 
-    const appLabel = appName || getAppLabel({ package: packageName, displayName: appName, labelName: appName });
+    const appLabel = window.AppDisplay?.resolveHistoryAppName
+        ? window.AppDisplay.resolveHistoryAppName(
+            { appName, packageName },
+            [device.name, device.originalName].filter(Boolean)
+        )
+        : (appName || getAppLabel({ package: packageName, displayName: appName, labelName: appName }));
 
     setStatus(`Lancement : ${appLabel}...`);
     await launchTypeBSession({
@@ -1794,6 +1960,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.launchHistoryAPI?.onUpdated) {
         window.launchHistoryAPI.onUpdated(() => {
             scheduleLaunchHistoryRefresh();
+        });
+    }
+
+    if (window.deviceColorsAPI?.onUpdated) {
+        window.deviceColorsAPI.onUpdated(() => {
+            void enrichHistoryTipColors();
         });
     }
 

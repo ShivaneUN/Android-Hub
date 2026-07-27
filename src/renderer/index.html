@@ -174,9 +174,22 @@
 
       <div class="page" id="page-new">
         <div class="empty-state">
-          <div class="home-dashboard-section home-devices-section tablet-only" hidden>
-            <p class="home-dashboard-label" data-i18n="sidebar.connectedDevices">Appareils connectés</p>
-            <div class="home-devices-panel" id="home-devices-panel"></div>
+          <div class="home-module home-dashboard-section home-devices-section tablet-only" data-module-id="devices" data-orientation="horizontal" hidden>
+            <div class="home-module-chrome">
+              <p class="home-dashboard-label home-module-title">
+                <span data-i18n="sidebar.connectedDevices">Appareils connectés</span>
+                <button type="button" class="home-module-menu-btn" data-module-menu="devices" aria-haspopup="menu" aria-expanded="false" data-i18n-aria-label="homeDashboard.moduleMenu" aria-label="Options du module">&#8942;</button>
+              </p>
+              <div class="home-module-menu" id="home-module-menu-devices" role="menu" hidden>
+                <button type="button" role="menuitem" data-module-action="lock" data-i18n="homeDashboard.moduleLock">Verrouiller</button>
+                <button type="button" role="menuitem" data-module-action="align" data-i18n="homeDashboard.moduleAlignOff">Ne plus aligner les titres</button>
+                <button type="button" role="menuitem" data-module-action="horizontal" data-i18n="homeDashboard.moduleHorizontal">Horizontal</button>
+                <button type="button" role="menuitem" data-module-action="vertical" data-i18n="homeDashboard.moduleVertical">Vertical</button>
+              </div>
+            </div>
+            <div class="home-module-body">
+              <div class="home-devices-panel" id="home-devices-panel"></div>
+            </div>
           </div>
           <img class="empty-state-mascot" src="assets/android-hub-logo.png" alt="" width="120" height="120">
           <div class="empty-state-intro" id="empty-state-intro">
@@ -184,32 +197,40 @@
             <p class="subtitle" data-i18n="emptyState.subtitle">Affichage et contrôle multi-appareils Android</p>
             <p class="hint" data-i18n="emptyState.hint">Branchez un appareil en USB</p>
           </div>
-          <div class="home-dashboard-section home-sessions-section tablet-only" hidden>
-            <p class="home-dashboard-label" data-i18n="homeDashboard.activeSessions">Sessions actives</p>
-            <div class="home-sessions-grid" id="home-sessions-grid"></div>
-            <p class="home-sessions-empty" id="home-sessions-empty" hidden data-i18n="homeDashboard.noSessions">Aucune session ouverte</p>
-          </div>
-          <div class="home-dashboard-section home-actions-section tablet-only" hidden>
-            <div class="home-action-cards">
-              <button type="button" class="home-action-card" id="home-action-new-instance">
-                <span class="home-action-card-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
-                </span>
-                <span class="home-action-card-title" data-i18n="homeDashboard.newInstance">Nouvelle instance</span>
-                <span class="home-action-card-desc" data-i18n="homeDashboard.newInstanceDesc">Lancer une app</span>
-              </button>
-              <button type="button" class="home-action-card" id="home-action-stream-deck">
-                <span class="home-action-card-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                </span>
-                <span class="home-action-card-title" data-i18n="homeDashboard.streamDeck">Stream Deck</span>
-                <span class="home-action-card-desc" data-i18n="homeDashboard.streamDeckDesc">Grille · Focus · Duo</span>
-              </button>
+          <div class="home-module home-dashboard-section home-sessions-section tablet-only" data-module-id="sessions" data-orientation="horizontal" hidden>
+            <div class="home-module-chrome">
+              <p class="home-dashboard-label home-module-title">
+                <span data-i18n="homeDashboard.activeSessions">Sessions actives</span>
+                <button type="button" class="home-module-menu-btn" data-module-menu="sessions" aria-haspopup="menu" aria-expanded="false" data-i18n-aria-label="homeDashboard.moduleMenu" aria-label="Options du module">&#8942;</button>
+              </p>
+              <div class="home-module-menu" id="home-module-menu-sessions" role="menu" hidden>
+                <button type="button" role="menuitem" data-module-action="lock" data-i18n="homeDashboard.moduleLock">Verrouiller</button>
+                <button type="button" role="menuitem" data-module-action="align" data-i18n="homeDashboard.moduleAlignOff">Ne plus aligner les titres</button>
+                <button type="button" role="menuitem" data-module-action="horizontal" data-i18n="homeDashboard.moduleHorizontal">Horizontal</button>
+                <button type="button" role="menuitem" data-module-action="vertical" data-i18n="homeDashboard.moduleVertical">Vertical</button>
+              </div>
+            </div>
+            <div class="home-module-body">
+              <div class="home-sessions-grid" id="home-sessions-grid"></div>
+              <p class="home-sessions-empty" id="home-sessions-empty" hidden data-i18n="homeDashboard.noSessions">Aucune session ouverte</p>
             </div>
           </div>
-          <div class="home-dashboard-section home-apps-section tablet-only" hidden>
-            <p class="home-dashboard-label" data-i18n="homeDashboard.recentApps">Applications récentes</p>
-            <div class="home-apps-recent" id="home-apps-recent"></div>
+          <div class="home-module home-dashboard-section home-apps-section tablet-only" data-module-id="apps" data-orientation="vertical" hidden>
+            <div class="home-module-chrome">
+              <p class="home-dashboard-label home-module-title">
+                <span data-i18n="homeDashboard.recentApps">Applications récentes</span>
+                <button type="button" class="home-module-menu-btn" data-module-menu="apps" aria-haspopup="menu" aria-expanded="false" data-i18n-aria-label="homeDashboard.moduleMenu" aria-label="Options du module">&#8942;</button>
+              </p>
+              <div class="home-module-menu" id="home-module-menu-apps" role="menu" hidden>
+                <button type="button" role="menuitem" data-module-action="lock" data-i18n="homeDashboard.moduleLock">Verrouiller</button>
+                <button type="button" role="menuitem" data-module-action="align" data-i18n="homeDashboard.moduleAlignOff">Ne plus aligner les titres</button>
+                <button type="button" role="menuitem" data-module-action="horizontal" data-i18n="homeDashboard.moduleHorizontal">Horizontal</button>
+                <button type="button" role="menuitem" data-module-action="vertical" data-i18n="homeDashboard.moduleVertical">Vertical</button>
+              </div>
+            </div>
+            <div class="home-module-body">
+              <div class="home-apps-recent" id="home-apps-recent"></div>
+            </div>
           </div>
           <div class="home-session-close-confirm hidden" id="home-session-close-confirm" role="dialog" aria-modal="true" aria-labelledby="home-session-close-title">
             <p class="home-session-close-title" id="home-session-close-title" data-i18n="homeDashboard.closeSessionTitle">Fermer la session ?</p>
@@ -236,13 +257,29 @@
 
 </div>
 
-<button type="button" id="home-wifi-reconnect-btn" class="home-wifi-reconnect-btn" data-i18n-dock-tip="homeDashboard.wifiReconnectTip" data-dock-tip="Reconnecter un appareil en Wi‑Fi" aria-haspopup="dialog" aria-controls="home-wifi-reconnect-popup">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M5 12.5a9 9 0 0 1 14 0"/>
-    <path d="M8.5 15.5a5 5 0 0 1 7 0"/>
-    <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>
-  </svg>
-</button>
+<div class="home-fab-bar" id="home-fab-bar">
+  <button type="button" id="home-fab-new-instance" class="home-fab-btn" data-fab-id="new-instance" data-i18n-dock-tip="homeDashboard.newInstance" data-dock-tip="Nouvelle instance" aria-label="Nouvelle instance">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3"/>
+      <path d="M12 8v8M8 12h8"/>
+    </svg>
+  </button>
+  <button type="button" id="home-fab-stream-deck" class="home-fab-btn" data-fab-id="stream-deck" data-i18n-dock-tip="homeDashboard.streamDeck" data-dock-tip="Stream Deck" aria-label="Stream Deck">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+      <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+      <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+      <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+    </svg>
+  </button>
+  <button type="button" id="home-wifi-reconnect-btn" class="home-fab-btn home-wifi-reconnect-btn" data-fab-id="wifi" data-i18n-dock-tip="homeDashboard.wifiReconnectTip" data-dock-tip="Reconnecter un appareil en Wi‑Fi" aria-haspopup="dialog" aria-controls="home-wifi-reconnect-popup" aria-label="Wi‑Fi">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M5 12.5a9 9 0 0 1 14 0"/>
+      <path d="M8.5 15.5a5 5 0 0 1 7 0"/>
+      <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+</div>
 <div id="home-wifi-reconnect-popup" class="home-wifi-reconnect-popup hidden" role="dialog" aria-modal="true" aria-labelledby="home-wifi-reconnect-title" hidden>
   <div class="home-wifi-reconnect-popup-head">
     <p class="home-wifi-reconnect-popup-title" id="home-wifi-reconnect-title" data-i18n="homeDashboard.wifiReconnectTitle">Appareils Wi‑Fi connus</p>

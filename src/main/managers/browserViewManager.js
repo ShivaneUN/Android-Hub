@@ -248,6 +248,7 @@ class BrowserViewManager {
         if (!entry) return false;
 
         if (extraQuery.label) entry.label = extraQuery.label;
+        if (extraQuery.originalLabel) entry.originalLabel = extraQuery.originalLabel;
         if (extraQuery.deviceId || extraQuery.serial) {
             entry.deviceId = extraQuery.deviceId || extraQuery.serial;
         }

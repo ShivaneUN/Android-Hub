@@ -209,18 +209,50 @@ body.theme-tablet .quick-actions-dock.dock-covered {
   pointer-events: none;
 }
 
-/* Bouton Wi‑Fi : au-dessus du dock, hors zone d’agrandissement hover.
-   Hors de .main-layout (overflow:hidden) pour rester visible comme #nav-aide. */
+/* Boutons d’accueil (+ / Stream Deck / Wi‑Fi) : pastilles libres au-dessus du dock. */
+.home-fab-bar,
 .home-wifi-reconnect-btn,
 .home-wifi-reconnect-popup {
   display: none !important;
 }
 
-body.theme-tablet .home-wifi-reconnect-btn {
+body.theme-tablet .home-fab-bar {
   position: fixed;
-  left: 50%;
-  bottom: var(--home-wifi-btn-bottom);
+  inset: 0;
   z-index: 200;
+  display: block !important;
+  pointer-events: none;
+  transform: none;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Pastilles Wi‑Fi / Stream Deck / + :
+   hors accueil → masquées sauf si placées à gauche du dock central. */
+body.theme-tablet .home-fab-btn.is-hidden-off-home,
+body.theme-tablet .home-fab-group.is-hidden-off-home {
+  display: none !important;
+}
+
+body.theme-tablet .home-fab-bar.is-all-hidden-off-home ~ .home-wifi-reconnect-popup {
+  display: none !important;
+}
+
+body.theme-tablet .home-fab-btn,
+body.theme-tablet .home-wifi-reconnect-btn {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  z-index: 201;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -233,22 +265,113 @@ body.theme-tablet .home-wifi-reconnect-btn {
   background: rgba(22, 27, 36, 0.96);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
   color: #d5dde8;
-  transform: translateX(-50%);
-  cursor: pointer;
+  transform: none;
+  cursor: grab;
   pointer-events: auto;
+  flex-shrink: 0;
+  touch-action: none;
+  user-select: none;
+  box-sizing: border-box;
 }
 
+/* Boîte du groupe de pastilles.
+   Ctrl + clic gauche = déplacer · Ctrl + clic droit = verrouiller le groupe. */
+body.theme-tablet .home-fab-group {
+  position: fixed;
+  z-index: 200;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+body.theme-tablet .home-fab-group.is-dragging {
+  cursor: grabbing;
+  z-index: 229;
+  border-color: rgba(125, 211, 252, 0.85);
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.35),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+body.theme-tablet .home-fab-group.is-group-locked {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+}
+
+/* Ligne-guide du bloc (axe barre centrale). */
+body.theme-tablet .home-fab-guide-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 198;
+  pointer-events: none;
+}
+
+body.theme-tablet .home-fab-guide {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(125, 211, 252, 0.55);
+}
+
+body.theme-tablet .home-fab-guide--x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+body.theme-tablet .home-fab-guide--dock {
+  width: 2px;
+  background: rgba(125, 211, 252, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.3),
+    0 0 10px rgba(56, 189, 248, 0.35);
+}
+
+body.theme-tablet .home-fab-guide--dock.is-active {
+  background: rgba(56, 189, 248, 1);
+}
+
+body.theme-tablet .home-fab-btn.is-locked,
+body.theme-tablet .home-wifi-reconnect-btn.is-locked {
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.35),
+    0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-tablet .home-fab-btn.is-dragging,
+body.theme-tablet .home-wifi-reconnect-btn.is-dragging {
+  cursor: grabbing;
+  z-index: 230;
+  opacity: 0.95;
+  /* Pas d’ombre pendant le drag : évite l’impression de décalage vs slots */
+  box-shadow: none;
+}
+
+body.theme-tablet .home-fab-btn:hover,
 body.theme-tablet .home-wifi-reconnect-btn:hover {
   color: #fff;
   background: rgba(36, 44, 58, 0.98);
   border-color: rgba(79, 140, 255, 0.45);
 }
 
+body.theme-tablet .home-fab-btn svg,
 body.theme-tablet .home-wifi-reconnect-btn svg {
   width: 18px;
   height: 18px;
   display: block;
+  margin: 0 auto;
   flex-shrink: 0;
+  pointer-events: none;
+  overflow: visible;
 }
 
 body.theme-tablet .home-wifi-reconnect-popup {
@@ -729,6 +852,12 @@ body.theme-tablet [data-dock-tip] {
   position: relative;
 }
 
+/* Les pastilles FAB doivent rester fixed (sinon left/top = offset relatif → décalage Wi‑Fi / Stream Deck). */
+body.theme-tablet .home-fab-btn[data-dock-tip],
+body.theme-tablet .home-wifi-reconnect-btn[data-dock-tip] {
+  position: fixed !important;
+}
+
 body.theme-tablet [data-dock-tip]::after {
   content: none !important;
   display: none !important;
@@ -792,27 +921,28 @@ body.theme-tablet .tablet-only {
   display: block;
 }
 
-/* Accueil tablette : appareils en haut, logo clairement en dessous. */
+body.theme-tablet .home-module.tablet-only {
+  display: block;
+}
+
+body.theme-tablet .home-module.tablet-only[hidden] {
+  display: none !important;
+}
+
+/* Accueil tablette : surface pleine pour modules libres. */
 body.theme-tablet .empty-state {
   position: relative;
   width: 100%;
-  max-width: 460px;
-  height: auto;
-  max-height: 100%;
-  justify-content: flex-start;
-  padding: 20px 0 96px;
+  max-width: none;
+  min-height: 100%;
+  height: 100%;
+  justify-content: center;
+  padding: 20px 0 120px;
   box-sizing: border-box;
   overflow: visible;
 }
 
 body.theme-tablet .home-devices-section {
-  position: static;
-  top: auto;
-  left: auto;
-  right: auto;
-  width: 100%;
-  margin: 0 0 28px;
-  flex-shrink: 0;
   text-align: center;
 }
 
@@ -829,10 +959,11 @@ body.theme-tablet .home-devices-panel {
 }
 
 body.theme-tablet .home-apps-section {
-  width: 100%;
-  margin-top: 22px;
-  margin-bottom: 8px;
+  width: auto;
+  margin-top: 0;
+  margin-bottom: 0;
   text-align: center;
+  overflow: visible;
 }
 
 body.theme-tablet .home-apps-section[hidden] {
@@ -846,8 +977,9 @@ body.theme-tablet .home-apps-section .home-dashboard-label {
 body.theme-tablet .home-apps-recent {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 12px;
+  overflow: visible;
 }
 
 body.theme-tablet .empty-state-mascot {
@@ -900,6 +1032,8 @@ body.theme-tablet .empty-state-mascot {
   cursor: pointer;
   color: inherit;
   font: inherit;
+  position: relative;
+  overflow: visible;
 }
 
 .home-app-tile:hover .home-app-tile-icon {
@@ -916,7 +1050,8 @@ body.theme-tablet .empty-state-mascot {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
@@ -926,6 +1061,20 @@ body.theme-tablet .empty-state-mascot {
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: inherit;
+}
+
+.home-app-device-pill {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #0a0e14;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .home-app-tile-icon.is-placeholder {
@@ -954,12 +1103,13 @@ body.theme-tablet .empty-state-mascot {
 }
 
 .home-sessions-section {
-  width: 100%;
-  max-width: 520px;
+  width: auto;
+  max-width: none;
 }
 
 .home-sessions-grid {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
@@ -984,8 +1134,15 @@ body.theme-tablet .empty-state-mascot {
   font: inherit;
   text-align: left;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-  transition: border-color 0.15s, transform 0.12s;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
   outline: none;
+}
+
+.home-session-tile.has-device-color {
+  border-color: var(--device-color);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--device-color) 40%, transparent),
+    0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
 .home-session-tile:hover {
@@ -993,9 +1150,37 @@ body.theme-tablet .empty-state-mascot {
   transform: translateY(-1px);
 }
 
+.home-session-tile.has-device-color:hover {
+  border-color: var(--device-color);
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--device-color) 55%, transparent),
+    0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
 .home-session-tile.is-active {
   border-color: #3fb950;
   box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.35), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.home-session-tile.has-device-color.is-active {
+  border-color: var(--device-color);
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--device-color) 50%, transparent),
+    0 0 0 3px rgba(63, 185, 80, 0.28),
+    0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.home-session-device-pill {
+  position: absolute;
+  right: 8px;
+  bottom: 34px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid rgba(10, 14, 20, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  z-index: 3;
+  pointer-events: none;
 }
 
 .home-session-thumb {
@@ -1207,18 +1392,264 @@ body.theme-tablet .empty-state-mascot {
 
 body.theme-tablet .empty-state {
   position: relative;
+  min-height: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+/* Lignes-guides d’alignement des titres (visibles pendant le drag). */
+body.theme-tablet .home-module-guide-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: visible;
+}
+
+body.theme-tablet .home-module-guide {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(96, 165, 250, 0.85);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.25);
+}
+
+body.theme-tablet .home-module-guide--x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+body.theme-tablet .home-module-guide--y {
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+body.theme-tablet .home-module-guide--dock {
+  background: rgba(125, 211, 252, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.35),
+    0 0 10px rgba(56, 189, 248, 0.35);
+  width: 2px;
+}
+
+/* Modules libres : pas de fond — contenu flottant sur le wallpaper.
+   Titre + contenu centrés ensemble ; le JS conserve le centre du titre
+   quand la largeur change (ajout/retrait d’appareils, etc.). */
+body.theme-tablet .home-module {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  max-width: min(520px, calc(100% - 24px));
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  text-align: center;
+  user-select: none;
+  touch-action: none;
+  overflow: visible;
+}
+
+body.theme-tablet .home-module[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-module.is-dragging,
+body.theme-tablet .home-module.is-menu-open {
+  z-index: 50;
+  opacity: 1;
+}
+
+body.theme-tablet .home-module-chrome {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  margin-bottom: 10px;
+  overflow: visible;
+}
+
+body.theme-tablet .home-module-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 5px 10px 5px 12px;
+  cursor: grab;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+body.theme-tablet .home-module-title > span {
+  flex: 0 1 auto;
+}
+
+body.theme-tablet .home-module.is-locked .home-module-title {
+  cursor: default;
+}
+
+body.theme-tablet .home-module:not(.is-locked) .home-module-title:active {
+  cursor: grabbing;
+}
+
+body.theme-tablet .home-module-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+body.theme-tablet .home-module-menu-btn:hover,
+body.theme-tablet .home-module-menu-btn[aria-expanded="true"] {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+body.theme-tablet .home-module-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 220;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 27, 36, 0.97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform: none;
+}
+
+body.theme-tablet .home-module-menu[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-module-menu button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #e8ecf4;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+body.theme-tablet .home-module-menu button:hover,
+body.theme-tablet .home-module-menu button.is-active {
+  background: rgba(79, 140, 255, 0.18);
+}
+
+body.theme-tablet .home-module-body {
+  display: block;
+}
+
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-devices-panel,
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-recent {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-sessions-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 48px));
+}
+
+body.theme-tablet .home-module[data-orientation="horizontal"] .home-sessions-grid .home-session-tile {
+  flex: 0 0 148px;
+}
+
+body.theme-tablet .home-module[data-orientation="vertical"] .home-devices-panel {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-recent {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  gap: 12px;
+}
+
+body.theme-tablet .home-module[data-orientation="vertical"] .home-sessions-grid {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+}
+
+body.theme-tablet .home-module[data-orientation="vertical"] .home-sessions-grid .home-session-tile {
+  flex: 0 0 auto;
+  width: 148px;
+}
+
+body.theme-tablet .home-devices-section .home-dashboard-label {
+  text-align: center;
+}
+
+body.theme-tablet .home-devices-panel {
+  justify-content: center;
 }
 
 body.theme-tablet .home-sessions-section,
 body.theme-tablet .home-actions-section {
-  width: 100%;
-  max-width: 520px;
-  margin: 0 0 18px;
+  width: auto;
+  max-width: none;
+  margin: 0;
   text-align: center;
 }
 
 body.theme-tablet .home-sessions-section[hidden],
 body.theme-tablet .home-actions-section[hidden] {
+  display: none !important;
+}
+
+body.theme-tablet .home-actions-section {
   display: none !important;
 }
 

@@ -40,6 +40,47 @@
   #bubble.hub-toast-success { border-color: rgba(62, 207, 111, 0.45); }
   #bubble.hub-toast-error { border-color: rgba(229, 72, 77, 0.5); color: #ffd5d7; }
   #bubble.hub-toast-info { border-color: rgba(79, 140, 255, 0.35); }
+
+  #bubble.hub-tip-rich {
+    white-space: normal;
+    padding: 9px 12px;
+  }
+
+  .hub-tip-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hub-tip-pill {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #4f8cff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  }
+
+  .hub-tip-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .hub-tip-title {
+    font-size: 13px;
+    font-weight: 650;
+    color: #f5f7fb;
+    line-height: 1.25;
+  }
+
+  .hub-tip-detail {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #9aa3b2;
+    line-height: 1.25;
+  }
 </style>
 </head>
 <body>
@@ -56,6 +97,36 @@
       window.hubBubbleOverlayAPI?.reportSize?.({ width, height });
     }
 
+    function sanitizeHex(color) {
+      const raw = String(color || "").trim();
+      return /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderRichTip(payload) {
+      const title = String(payload.text || "").trim();
+      const detail = String(payload.detail || "").trim();
+      const color = sanitizeHex(payload.color);
+      // Tip device : pastille + nom seul (detail ignoré s'il duplique le titre).
+      const label = title || detail;
+      const pill = color
+        ? `<span class="hub-tip-pill" style="background:${color}" aria-hidden="true"></span>`
+        : `<span class="hub-tip-pill" aria-hidden="true"></span>`;
+      return (
+        `<div class="hub-tip-row">` +
+        pill +
+        `<div class="hub-tip-title">${escapeHtml(label)}</div>` +
+        `</div>`
+      );
+    }
+
     window.hubBubbleOverlayAPI?.onRender?.((payload = {}) => {
       if (!payload.visible) {
         bubble.classList.remove("visible");
@@ -66,7 +137,15 @@
       bubble.className = "";
       bubble.id = "bubble";
       bubble.classList.add(`hub-toast-${payload.type || "info"}`);
-      bubble.textContent = String(payload.text || "");
+
+      const hasRich = Boolean(payload.detail || payload.color);
+      if (payload.mode === "tip" && hasRich) {
+        bubble.classList.add("hub-tip-rich");
+        bubble.innerHTML = renderRichTip(payload);
+      } else {
+        bubble.textContent = String(payload.text || "");
+      }
+
       requestAnimationFrame(() => {
         bubble.classList.add("visible");
         if (reportTimer) clearTimeout(reportTimer);

@@ -53,7 +53,14 @@
     "wifiReconnectEmpty": "No saved Wi‑Fi devices",
     "wifiReconnectAction": "Reconnect",
     "wifiReconnectLoading": "Loading…",
-    "wifiReconnectError": "Could not load the list"
+    "wifiReconnectError": "Could not load the list",
+    "moduleMenu": "Module options",
+    "moduleLock": "Lock",
+    "moduleUnlock": "Unlock",
+    "moduleHorizontal": "Horizontal",
+    "moduleVertical": "Vertical",
+    "moduleAlignOn": "Align titles",
+    "moduleAlignOff": "Stop aligning titles"
   },
   "uiTheme": {
     "classicTitle": "Classic interface",
@@ -157,6 +164,10 @@
     "color": "Color",
     "auto": "Auto",
     "close": "Close",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "lockGroup": "Lock group",
+    "unlockGroup": "Unlock group",
     "confirmResetTitle": "Reset name",
     "confirmResetMessage": "Reset to the original name?",
     "cancel": "Cancel",

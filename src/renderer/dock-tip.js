@@ -15,6 +15,10 @@
     function resolvePlacement(el) {
         if (!el) return "above";
         if (el.classList.contains("tabs-new-instance")) return "below";
+        if (el.classList.contains("home-app-tile") || el.classList.contains("ni-recent-card")) return "above";
+        if (el.closest(".new-instance-history-list") || el.classList.contains("new-instance-history-item")) {
+            return "right";
+        }
         if (el.closest(".dock-battery-more-panel")) return "left";
         if (el.closest(".dock-battery-strip")) return "above";
         if (el.classList.contains("sidebar-wifi-toggle") && !el.closest(".dock-battery-strip")) {
@@ -51,8 +55,12 @@
         el.removeAttribute("title");
         const rect = el.getBoundingClientRect();
         activeEl = el;
+        const detail = el.getAttribute("data-dock-tip-detail") || "";
+        const color = el.getAttribute("data-dock-tip-color") || "";
         void window.hubBubbleAPI.showTip({
             text,
+            detail,
+            color,
             x: rect.left,
             y: rect.top,
             width: rect.width,

@@ -1,16 +1,22 @@
 const { ipcMain } = require("electron");
 const { DEVICE_COLORS } = require("../../shared/device-colors");
 
-function notifyDeviceColorsUpdated(mainWindow) {
+function notifyDeviceColorsUpdated(mainWindow, hubModalWindow) {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("device-colors:updated");
+    }
+    if (hubModalWindow && !hubModalWindow.isDestroyed()) {
+        hubModalWindow.webContents.send("device-colors:updated");
     }
 }
 
 function registerDeviceColorsHandlers(deps) {
     const getManager = deps.getDeviceColorsManager;
     const getMainWindow = deps.getMainWindow;
+    const getHubModalWindow = deps.getHubModalWindow;
     const getConnectedDeviceIds = deps.getConnectedDeviceIds;
+
+    const notify = () => notifyDeviceColorsUpdated(getMainWindow?.(), getHubModalWindow?.());
 
     ipcMain.handle("device-colors:getPalette", () => ({
         success: true,
@@ -36,7 +42,7 @@ function registerDeviceColorsHandlers(deps) {
 
         const result = manager.setManualColor(deviceId, colorId);
         if (result.success) {
-            notifyDeviceColorsUpdated(getMainWindow());
+            notify();
         }
         return result;
     });
@@ -52,7 +58,7 @@ function registerDeviceColorsHandlers(deps) {
             : [];
         const result = manager.setAutoMode(deviceId, connectedDeviceIds);
         if (result.success) {
-            notifyDeviceColorsUpdated(getMainWindow());
+            notify();
         }
         return result;
     });
