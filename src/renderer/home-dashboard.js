@@ -305,8 +305,32 @@
     layoutHomeCenterSplit(document.getElementById("home-devices-panel"), ".sidebar-device-card");
   }
 
+  /** Sessions : 1–2 → placement centré (comme appareils) ; 3+ → grille 3×2 + scroll. */
   function layoutHomeSessionsSplit() {
-    layoutHomeCenterSplit(document.getElementById("home-sessions-grid"), ".home-session-tile");
+    const grid = document.getElementById("home-sessions-grid");
+    if (!grid) return;
+
+    const existing = grid.querySelector(":scope > .home-center-split");
+    if (existing) {
+      const items = [
+        ...existing.querySelector(".home-center-split-left")?.children || [],
+        ...existing.querySelector(".home-center-split-mid")?.children || [],
+        ...existing.querySelector(".home-center-split-right")?.children || []
+      ];
+      items.forEach((el) => el.remove());
+      existing.remove();
+      items.forEach((el) => grid.appendChild(el));
+    }
+
+    const moduleEl = grid.closest(".home-module");
+    const vertical = moduleEl?.dataset?.orientation === "vertical";
+    const count = grid.querySelectorAll(".home-session-tile").length;
+    const few = count > 0 && count <= 2;
+    grid.classList.toggle("is-few", few);
+    grid.classList.remove("is-compact");
+    // Preview 3×2 = 6 visibles ; 1–2 : pas de scroll.
+    const visibleMax = few ? 2 : (vertical ? 2 : 6);
+    grid.classList.toggle("is-scrollable", !few && count > visibleMax);
   }
 
   function renderHomeSessions(sessions) {
@@ -320,8 +344,10 @@
     if (!homeSessionsCache.length) {
       homeSessionsKey = "";
       grid.innerHTML = "";
+      grid.classList.remove("is-compact", "is-few", "is-scrollable");
       empty.hidden = false;
       stopHomePreviewPolling();
+      scheduleHomeModulesSeparation();
       return;
     }
 
@@ -392,6 +418,7 @@
     layoutHomeSessionsSplit();
     startHomePreviewPolling();
     void refreshHomeSessionPreviews();
+    scheduleHomeModulesSeparation();
   }
 
   async function syncHomeSessions() {
@@ -2360,14 +2387,13 @@
     };
   }
 
-  /** Repousse les modules dont le contenu (absolute) empiète sur le dock. */
+  /** Repousse les modules hors du dock en remontant tout le stack (écarts relatifs conservés). */
   function ensureHomeModulesClearOfDock() {
     if (!canMutateHomeModuleLayout() || !homeModulesState) return;
     const host = document.querySelector(".empty-state");
     if (!host) return;
-    const hostRect = host.getBoundingClientRect();
     const dock = getCentralDockExclusionRect();
-    let changed = false;
+    let maxOverflow = 0;
 
     HOME_MODULE_IDS.forEach((moduleId) => {
       const moduleEl = getHomeModuleEl(moduleId);
@@ -2376,19 +2402,23 @@
 
       const viewBox = getHomeModuleViewportBox(moduleEl, state.x, state.y);
       if (!viewBox || !boxesOverlap(viewBox, dock)) return;
+      const overflow = (viewBox.y + viewBox.h) - dock.top;
+      if (overflow > maxOverflow) maxOverflow = overflow;
+    });
 
-      const pushed = pushBoxOutOfDock(viewBox.x, viewBox.y, viewBox.w, viewBox.h);
-      const vis = getHomeModuleVisualMetrics(moduleEl);
-      const nextX = pushed.x - hostRect.left - vis.offsetX;
-      const nextY = pushed.y - hostRect.top - vis.offsetY;
-      const clamped = clampHomeModulePosition(moduleEl, nextX, nextY);
-      if (Math.abs(clamped.x - state.x) > 0.5 || Math.abs(clamped.y - state.y) > 0.5) {
-        state.x = Math.round(clamped.x);
-        state.y = Math.round(clamped.y);
-        applyHomeModuleState(moduleId);
-        rememberHomeModuleTitleCenter(moduleId);
-        changed = true;
-      }
+    if (maxOverflow <= 0.5) return;
+
+    let changed = false;
+    HOME_MODULE_IDS.forEach((moduleId) => {
+      const moduleEl = getHomeModuleEl(moduleId);
+      const state = homeModulesState[moduleId];
+      if (!moduleEl || !state || moduleEl.hidden) return;
+      const nextY = Math.max(0, state.y - maxOverflow);
+      if (Math.abs(nextY - state.y) <= 0.5) return;
+      state.y = Math.round(nextY);
+      applyHomeModuleState(moduleId);
+      rememberHomeModuleTitleCenter(moduleId);
+      changed = true;
     });
 
     if (changed) saveHomeModulesState();
@@ -2398,15 +2428,17 @@
   function scheduleHomeModulesSeparation() {
     if (!canMutateHomeModuleLayout()) return;
     if (homeModuleSepTimer) window.clearTimeout(homeModuleSepTimer);
+    // Debounce un peu plus long pour éviter le saut 2 positions (RO + sync).
     homeModuleSepTimer = window.setTimeout(() => {
       homeModuleSepTimer = 0;
       if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
       requestAnimationFrame(() => {
-        if (!canMutateHomeModuleLayout()) return;
+        if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
         unstickOverlappingHomeModules();
         ensureHomeModulesClearOfDock();
+        if (homeModulesStillOverlap()) unstickOverlappingHomeModules();
       });
-    }, 40);
+    }, 120);
   }
 
   function cancelHomeModulesSeparation() {
@@ -2558,8 +2590,9 @@
             if (!moveEl || !state) continue;
 
             // Toujours empiler sous le module du dessus (garde X du module déplacé)
+            const moveVis = getHomeModuleVisualMetrics(moveEl);
             let nextX = state.x;
-            let nextY = keep.y + keep.h + gap;
+            let nextY = keep.y + keep.h + gap - moveVis.offsetY;
 
             // Si chevauchement surtout horizontal (côte à côte), pousser sur le côté
             const overlapX = Math.min(mov.x + mov.w, keep.x + keep.w) - Math.max(mov.x, keep.x);
@@ -2568,16 +2601,21 @@
             const sideBySide = overlapY > overlapX && centersDx > Math.max(keep.w, mov.w) * 0.55;
             if (sideBySide) {
               nextX = mov.x >= keep.x
-                ? keep.x + keep.w + gap
-                : keep.x - mov.w - gap;
+                ? keep.x + keep.w + gap - moveVis.offsetX
+                : keep.x - mov.w - gap - moveVis.offsetX;
               nextY = state.y;
             }
 
             let clamped = clampHomeModulePosition(moveEl, nextX, nextY);
             // Si toujours en collision après clamp, forcer sous keep
-            const trial = { x: clamped.x, y: clamped.y, w: mov.w, h: mov.h };
+            const trial = {
+              x: clamped.x + moveVis.offsetX,
+              y: clamped.y + moveVis.offsetY,
+              w: mov.w,
+              h: mov.h
+            };
             if (homeModulesOverlap(trial, keep, gap)) {
-              clamped = clampHomeModulePosition(moveEl, state.x, keep.y + keep.h + gap);
+              clamped = clampHomeModulePosition(moveEl, state.x, keep.y + keep.h + gap - moveVis.offsetY);
             }
             // Dernier recours : descendre sans clamp host trop strict
             if (
@@ -2586,7 +2624,7 @@
             ) {
               clamped = {
                 x: state.x,
-                y: Math.round(keep.y + keep.h + gap)
+                y: Math.round(keep.y + keep.h + gap - moveVis.offsetY)
               };
             }
 
@@ -2618,7 +2656,8 @@
           const state = homeModulesState[cur.id];
           const el = getHomeModuleEl(cur.id);
           if (!state || !el) continue;
-          const nextY = prev.y + prev.h + gap;
+          const curVis = getHomeModuleVisualMetrics(el);
+          const nextY = prev.y + prev.h + gap - curVis.offsetY;
           const clamped = clampHomeModulePosition(el, state.x, nextY);
           state.x = Math.round(clamped.x);
           state.y = Math.round(Math.max(clamped.y, nextY));
@@ -3063,7 +3102,9 @@
           const state = homeModulesState[mov.id];
           const el = getHomeModuleEl(mov.id);
           if (!state || !el) continue;
-          const fixed = resolveHomeModuleOverlaps(mov.id, state.x, keep.y + keep.h + HOME_MODULE_GAP);
+          const movVis = getHomeModuleVisualMetrics(el);
+          const belowY = keep.y + keep.h + HOME_MODULE_GAP - movVis.offsetY;
+          const fixed = resolveHomeModuleOverlaps(mov.id, state.x, belowY);
           // Préserver X d’origine si possible
           const withX = resolveHomeModuleOverlaps(mov.id, state.x, fixed.y);
           if (withX.x !== state.x || withX.y !== state.y) {
