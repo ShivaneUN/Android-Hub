@@ -750,7 +750,7 @@
     });
   }
 
-  const HOME_FABS_STORAGE_KEY = "android-hub.home-fabs.v5";
+  const HOME_FABS_STORAGE_KEY = "android-hub.home-fabs.v6";
   const HOME_SHORTCUT_FABS_STORAGE_KEY = "android-hub.home-shortcut-fabs.v1";
   const HOME_FAB_SIZE = 40;
   /** Écart cible entre pastilles accrochées. */
@@ -905,7 +905,12 @@
   function loadHomeFabsState() {
     try {
       let raw = localStorage.getItem(HOME_FABS_STORAGE_KEY);
-      if (!raw) raw = localStorage.getItem("android-hub.home-fabs.v4");
+      let migrated = false;
+      if (!raw) {
+        raw = localStorage.getItem("android-hub.home-fabs.v5")
+          || localStorage.getItem("android-hub.home-fabs.v4");
+        migrated = Boolean(raw);
+      }
       const parsed = raw ? JSON.parse(raw) : null;
       const defaults = defaultHomeFabsState();
       homeFabsState = {};
@@ -914,6 +919,25 @@
         homeFabsState[id].x = Math.round(Number(homeFabsState[id].x) || 0);
         homeFabsState[id].y = Math.round(Number(homeFabsState[id].y) || 0);
         homeFabsState[id].locked = Boolean(homeFabsState[id].locked);
+        if (migrated) {
+          let oldView = null;
+          try {
+            oldView = JSON.parse(localStorage.getItem("android-hub.home-layout-host.v2") || "null")
+              || JSON.parse(localStorage.getItem("android-hub.home-layout-host.v1") || "null");
+          } catch (_err) {
+            oldView = null;
+          }
+          const ow = Number(oldView?.viewW) || Number(oldView?.hostW) || 0;
+          const oh = Number(oldView?.viewH) || Number(oldView?.hostH) || 0;
+          if (ow > 1 && oh > 1) {
+            homeFabsState[id].rx = (Number(homeFabsState[id].x) || 0) / ow;
+            homeFabsState[id].ry = (Number(homeFabsState[id].y) || 0) / oh;
+          } else {
+            delete homeFabsState[id].rx;
+            delete homeFabsState[id].ry;
+          }
+          delete homeFabsState[id]._pixelsDirty;
+        }
       });
     } catch (_err) {
       homeFabsState = defaultHomeFabsState();
@@ -1257,6 +1281,7 @@
           );
           homeFabsState[moveId].x = resolved.x;
           homeFabsState[moveId].y = resolved.y;
+          homeFabsState[moveId]._pixelsDirty = true;
           moved = true;
         }
       }
@@ -1269,6 +1294,7 @@
       const resolved = resolveHomeFabPosition(fabId, state.x, state.y, size);
       state.x = resolved.x;
       state.y = resolved.y;
+      state._pixelsDirty = true;
       applyHomeFabState(fabId);
     });
     if (persist) {
@@ -1399,9 +1425,7 @@
     const size = measureHomeFabSize(fabId);
     const next = resolveHomeFabPosition(fabId, x, y, size);
     const best = findHomeFabSnapCandidate(fabId, next.x, next.y);
-    homeFabsState[fabId].x = best ? best.x : next.x;
-    homeFabsState[fabId].y = best ? best.y : next.y;
-    applyHomeFabState(fabId);
+    setHomeFabPixelPos(fabId, best ? best.x : next.x, best ? best.y : next.y);
     separateAllHomeFabs(fabId);
     return { x: homeFabsState[fabId].x, y: homeFabsState[fabId].y };
   }
@@ -1410,11 +1434,41 @@
     const btn = getHomeFabEl(fabId);
     const state = homeFabsState?.[fabId];
     if (!btn || !state) return;
-    btn.style.left = `${Math.round(state.x)}px`;
-    btn.style.top = `${Math.round(state.y)}px`;
+    const vw = Math.max(1, window.innerWidth || 1);
+    const vh = Math.max(1, window.innerHeight || 1);
+
+    // Pendant le drag : pixels (le handler gère left/top).
+    if (homeFabDrag?.fabId === fabId || homeFabGroupDrag?.fabIds?.includes?.(fabId)) {
+      btn.style.left = `${Math.round(Number(state.x) || 0)}px`;
+      btn.style.top = `${Math.round(Number(state.y) || 0)}px`;
+      btn.style.width = `${HOME_FAB_SIZE}px`;
+      btn.style.height = `${HOME_FAB_SIZE}px`;
+      btn.classList.toggle("is-locked", Boolean(state.locked));
+      return;
+    }
+
+    if (Number.isFinite(state.rx) && Number.isFinite(state.ry) && !state._pixelsDirty) {
+      state.x = Math.round(state.rx * vw);
+      state.y = Math.round(state.ry * vh);
+    } else {
+      state.rx = (Number(state.x) || 0) / vw;
+      state.ry = (Number(state.y) || 0) / vh;
+      delete state._pixelsDirty;
+    }
+    btn.style.left = `${state.rx * 100}%`;
+    btn.style.top = `${state.ry * 100}%`;
     btn.style.width = `${HOME_FAB_SIZE}px`;
     btn.style.height = `${HOME_FAB_SIZE}px`;
     btn.classList.toggle("is-locked", Boolean(state.locked));
+  }
+
+  /** Met à jour pixels + ratios d’une pastille (position utilisateur / collision). */
+  function setHomeFabPixelPos(fabId, x, y, { apply = true } = {}) {
+    if (!homeFabsState?.[fabId]) return;
+    homeFabsState[fabId].x = Math.round(x);
+    homeFabsState[fabId].y = Math.round(y);
+    homeFabsState[fabId]._pixelsDirty = true;
+    if (apply) applyHomeFabState(fabId);
   }
 
   function applyHomeFabsLayout() {
@@ -1425,9 +1479,7 @@
         const state = homeFabsState?.[fabId];
         if (!state) return;
         const next = resolveHomeFabPosition(fabId, state.x, state.y, HOME_FAB_SIZE);
-        state.x = next.x;
-        state.y = next.y;
-        applyHomeFabState(fabId);
+        setHomeFabPixelPos(fabId, next.x, next.y);
       });
       separateAllHomeFabs(null, { persist: false });
     }
@@ -1777,9 +1829,7 @@
       const state = homeFabsState[id];
       const origin = origins[id];
       if (!state || !origin) return;
-      state.x = Math.round(origin.x + dx);
-      state.y = Math.round(origin.y + dy);
-      applyHomeFabState(id);
+      setHomeFabPixelPos(id, origin.x + dx, origin.y + dy);
     });
     // Garantir qu’aucun membre du bloc n’est sur la barre / modules / autre pastille
     const bounds = getHomeFabClusterBounds(fabIds);
@@ -1792,9 +1842,7 @@
         fabIds.forEach((id) => {
           const state = homeFabsState[id];
           if (!state) return;
-          state.x += fixDx;
-          state.y += fixDy;
-          applyHomeFabState(id);
+          setHomeFabPixelPos(id, state.x + fixDx, state.y + fixDy);
         });
       }
     }
@@ -2128,6 +2176,8 @@
         });
         clearHomeFabGuides();
         separateAllHomeFabs(null);
+        captureHomeLayoutRatiosFromPixels();
+        saveHomeFabsState();
         positionWifiReconnectPopupNearFab();
         syncHomeFabsVisibility();
         homeFabGroupDrag = null;
@@ -2136,19 +2186,22 @@
 
       if (!homeFabDrag || homeFabDrag.pointerId !== event.pointerId) return;
       const fabId = homeFabDrag.fabId;
+      const moved = homeFabDrag.moved;
       const btn = getHomeFabEl(fabId);
       clearHomeFabGuides();
+      homeFabDrag = null;
       if (btn && homeFabsState?.[fabId]) {
         btn.classList.remove("is-dragging");
-        if (homeFabDrag.moved) {
+        if (moved) {
           snapHomeFabPosition(fabId, homeFabsState[fabId].x, homeFabsState[fabId].y);
         } else {
           separateAllHomeFabs(fabId);
         }
+        captureHomeLayoutRatiosFromPixels();
+        saveHomeFabsState();
         positionWifiReconnectPopupNearFab();
         syncHomeFabsVisibility();
       }
-      homeFabDrag = null;
     };
 
     window.addEventListener("pointerup", endFabDrag);
@@ -2166,11 +2219,279 @@
 
     window.addEventListener("resize", () => {
       if (!homeFabsState) return;
-      applyHomeFabsLayout();
+      scheduleHomeLayoutScaleOnResize();
     });
   }
 
-  const HOME_MODULES_STORAGE_KEY = "android-hub.home-modules.v2";
+  const HOME_LAYOUT_HOST_KEY = "android-hub.home-layout-host.v3";
+  let homeLayoutMetrics = { hostW: 0, hostH: 0, viewW: 0, viewH: 0 };
+  let homeLayoutResizeTimer = 0;
+  let homeLayoutSyncLock = false;
+
+  function readHomeLayoutMetrics() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HOME_LAYOUT_HOST_KEY) || "null");
+      if (parsed && Number(parsed.hostW) > 0 && Number(parsed.hostH) > 0) {
+        return {
+          hostW: Number(parsed.hostW),
+          hostH: Number(parsed.hostH),
+          viewW: Number(parsed.viewW) || Number(parsed.hostW),
+          viewH: Number(parsed.viewH) || Number(parsed.hostH)
+        };
+      }
+    } catch (_err) {
+      /* ignore */
+    }
+    return { hostW: 0, hostH: 0, viewW: 0, viewH: 0 };
+  }
+
+  function writeHomeLayoutMetrics(next) {
+    homeLayoutMetrics = {
+      hostW: Math.round(next.hostW || 0),
+      hostH: Math.round(next.hostH || 0),
+      viewW: Math.round(next.viewW || window.innerWidth || 0),
+      viewH: Math.round(next.viewH || window.innerHeight || 0)
+    };
+    try {
+      localStorage.setItem(HOME_LAYOUT_HOST_KEY, JSON.stringify(homeLayoutMetrics));
+    } catch (_err) {
+      /* ignore quota */
+    }
+  }
+
+  function getHomeHostSize() {
+    const host = document.querySelector(".empty-state");
+    if (!host) return null;
+    // clientWidth/Height = boîte de référence des left/top en % (position absolute)
+    const w = host.clientWidth || host.getBoundingClientRect().width;
+    const h = host.clientHeight || host.getBoundingClientRect().height;
+    if (!(w >= 240) || !(h >= 180)) return null;
+    return {
+      w,
+      h,
+      vw: window.innerWidth || w,
+      vh: window.innerHeight || h
+    };
+  }
+
+  function writeHomeModuleRatiosFromPixels(state, hostW, hostH) {
+    if (!state || !(hostW > 1) || !(hostH > 1)) return;
+    state.rx = (Number(state.x) || 0) / hostW;
+    state.ry = (Number(state.y) || 0) / hostH;
+  }
+
+  function writeHomeFabRatiosFromPixels(state, viewW, viewH) {
+    if (!state || !(viewW > 1) || !(viewH > 1)) return;
+    state.rx = (Number(state.x) || 0) / viewW;
+    state.ry = (Number(state.y) || 0) / viewH;
+  }
+
+  let homeLayoutResizePending = false;
+
+  /**
+   * Ancre les positions courantes (pixels) comme ratios du host/viewport actuel.
+   * À appeler après un drag / correction manuelle — jamais pendant un resize.
+   */
+  function captureHomeLayoutRatiosFromPixels() {
+    if (homeLayoutResizePending) return false;
+    if (!canMutateHomeModuleLayout()) return false;
+    const size = getHomeHostSize();
+    if (!size) return false;
+    if (!homeModulesState) loadHomeModulesState();
+    HOME_MODULE_IDS.forEach((id) => {
+      writeHomeModuleRatiosFromPixels(homeModulesState[id], size.w, size.h);
+    });
+    if (!homeFabsState) loadHomeFabsState();
+    HOME_FAB_ALL_IDS.forEach((id) => {
+      writeHomeFabRatiosFromPixels(homeFabsState?.[id], size.vw, size.vh);
+    });
+    writeHomeLayoutMetrics({
+      hostW: size.w,
+      hostH: size.h,
+      viewW: size.vw,
+      viewH: size.vh
+    });
+    return true;
+  }
+
+  function ensureHomeModuleRatios(state, refW, refH) {
+    if (!state) return;
+    if (Number.isFinite(state.rx) && Number.isFinite(state.ry)) return;
+    const w = refW > 1 ? refW : 1;
+    const h = refH > 1 ? refH : 1;
+    state.rx = (Number(state.x) || 0) / w;
+    state.ry = (Number(state.y) || 0) / h;
+  }
+
+  function ensureHomeFabRatios(state, refW, refH) {
+    if (!state) return;
+    if (Number.isFinite(state.rx) && Number.isFinite(state.ry)) return;
+    const w = refW > 1 ? refW : 1;
+    const h = refH > 1 ? refH : 1;
+    state.rx = (Number(state.x) || 0) / w;
+    state.ry = (Number(state.y) || 0) / h;
+  }
+
+  /**
+   * Sync pixels JS + styles % après un changement de taille.
+   * Le placement visuel vient surtout des left/top en % (reflow navigateur).
+   */
+  function scaleHomeLayoutToCurrentSize() {
+    if (homeLayoutSyncLock) return false;
+    if (!canMutateHomeModuleLayout()) return false;
+    const size = getHomeHostSize();
+    if (!size) return false;
+
+    homeLayoutSyncLock = true;
+    homeLayoutResizePending = true;
+    try {
+      const prev = (homeLayoutMetrics.hostW > 0 ? homeLayoutMetrics : readHomeLayoutMetrics());
+      const refW = prev.hostW > 1 ? prev.hostW : size.w;
+      const refH = prev.hostH > 1 ? prev.hostH : size.h;
+      const refVW = prev.viewW > 1 ? prev.viewW : size.vw;
+      const refVH = prev.viewH > 1 ? prev.viewH : size.vh;
+
+      const sizeChanged = Math.abs(refW - size.w) >= 2
+        || Math.abs(refH - size.h) >= 2
+        || Math.abs(refVW - size.vw) >= 2
+        || Math.abs(refVH - size.vh) >= 2;
+
+      if (!homeModulesState) loadHomeModulesState();
+      HOME_MODULE_IDS.forEach((id) => {
+        const state = homeModulesState[id];
+        if (!state) return;
+        ensureHomeModuleRatios(state, refW, refH);
+        state.x = Math.round(state.rx * size.w);
+        state.y = Math.round(state.ry * size.h);
+        applyHomeModuleState(id);
+      });
+
+      if (!homeFabsState) loadHomeFabsState();
+      HOME_FAB_ALL_IDS.forEach((id) => {
+        const state = homeFabsState?.[id];
+        if (!state) return;
+        ensureHomeFabRatios(state, refVW, refVH);
+        state.x = Math.round(state.rx * size.vw);
+        state.y = Math.round(state.ry * size.vh);
+        applyHomeFabState(id);
+      });
+      updateHomeFabGroupBoxes?.();
+      positionWifiReconnectPopupNearFab?.();
+
+      writeHomeLayoutMetrics({
+        hostW: size.w,
+        hostH: size.h,
+        viewW: size.vw,
+        viewH: size.vh
+      });
+
+      try {
+        if (homeModulesState) {
+          localStorage.setItem(HOME_MODULES_STORAGE_KEY, JSON.stringify(homeModulesState));
+        }
+        if (homeFabsState) {
+          localStorage.setItem(HOME_FABS_STORAGE_KEY, JSON.stringify(homeFabsState));
+        }
+      } catch (_err) {
+        /* ignore quota */
+      }
+
+      HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
+      if (sizeChanged) scheduleHomeModulesSeparation();
+      return sizeChanged;
+    } finally {
+      homeLayoutSyncLock = false;
+      // Laisser passer le reflow avant d’autoriser une recapture pixels→ratios
+      window.setTimeout(() => {
+        homeLayoutResizePending = false;
+      }, 200);
+    }
+  }
+
+  function scheduleHomeLayoutScaleOnResize() {
+    homeLayoutResizePending = true;
+    if (homeLayoutResizeTimer) window.clearTimeout(homeLayoutResizeTimer);
+    homeLayoutResizeTimer = window.setTimeout(() => {
+      homeLayoutResizeTimer = 0;
+      if (!isHomeVisible()) {
+        homeLayoutResizePending = false;
+        return;
+      }
+      scaleHomeLayoutToCurrentSize();
+    }, 50);
+  }
+
+  /** Observe la taille réelle du host (maximize / unmaximize / resize). */
+  function bindHomeLayoutHostResizeObserver() {
+    const host = document.querySelector(".empty-state");
+    if (!host || host.dataset.homeLayoutRo === "1") return;
+    host.dataset.homeLayoutRo = "1";
+    try {
+      const ro = new ResizeObserver(() => {
+        if (!isHomeVisible()) return;
+        scheduleHomeLayoutScaleOnResize();
+      });
+      ro.observe(host);
+    } catch (_err) {
+      /* ResizeObserver indisponible */
+    }
+    // Electron : maximize peut aussi passer par visualViewport
+    try {
+      window.visualViewport?.addEventListener?.("resize", () => {
+        if (!isHomeVisible()) return;
+        scheduleHomeLayoutScaleOnResize();
+      });
+    } catch (_err) {
+      /* ignore */
+    }
+  }
+
+  /** Au boot : ratios manquants → capturer ; sinon réappliquer à la taille courante. */
+  function bootHomeLayoutRatios() {
+    let tries = 0;
+    const tick = () => {
+      if (!isHomeVisible()) {
+        if (tries++ >= 40) return;
+        window.setTimeout(tick, 50);
+        return;
+      }
+      const size = getHomeHostSize();
+      if (!size || !canMutateHomeModuleLayout()) {
+        if (tries++ >= 40) return;
+        window.setTimeout(tick, 50);
+        return;
+      }
+      if (!homeModulesState) loadHomeModulesState();
+      if (!homeFabsState) loadHomeFabsState();
+
+      const modulesMissing = HOME_MODULE_IDS.some((id) => {
+        const s = homeModulesState[id];
+        return s && (!Number.isFinite(s.rx) || !Number.isFinite(s.ry));
+      });
+      const fabsMissing = HOME_FAB_ALL_IDS.some((id) => {
+        const s = homeFabsState?.[id];
+        return s && (!Number.isFinite(s.rx) || !Number.isFinite(s.ry));
+      });
+
+      if (modulesMissing || fabsMissing) {
+        captureHomeLayoutRatiosFromPixels();
+        try {
+          if (homeModulesState) {
+            localStorage.setItem(HOME_MODULES_STORAGE_KEY, JSON.stringify(homeModulesState));
+          }
+          if (homeFabsState) {
+            localStorage.setItem(HOME_FABS_STORAGE_KEY, JSON.stringify(homeFabsState));
+          }
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      scaleHomeLayoutToCurrentSize();
+    };
+    tick();
+  }
+
+  const HOME_MODULES_STORAGE_KEY = "android-hub.home-modules.v3";
   const HOME_MODULE_IDS = ["devices", "sessions", "apps"];
   const HOME_MODULE_GAP = 12;
   /** Distance d’aimantation aux lignes-guides des titres. */
@@ -2187,9 +2508,11 @@
   function loadHomeModulesState() {
     try {
       let raw = localStorage.getItem(HOME_MODULES_STORAGE_KEY);
+      let migrated = false;
       if (!raw) {
-        // Migrer v1 → v2 (ajoute align: true par défaut)
-        raw = localStorage.getItem("android-hub.home-modules.v1");
+        raw = localStorage.getItem("android-hub.home-modules.v2")
+          || localStorage.getItem("android-hub.home-modules.v1");
+        migrated = Boolean(raw);
       }
       const parsed = raw ? JSON.parse(raw) : null;
       homeModulesState = {
@@ -2203,6 +2526,26 @@
         }
         if (typeof homeModulesState[id].contentHidden !== "boolean") {
           homeModulesState[id].contentHidden = false;
+        }
+        // Migration v2→v3 : recalculer les ratios depuis l’ancien host si connu
+        if (migrated) {
+          let oldHost = null;
+          try {
+            oldHost = JSON.parse(localStorage.getItem("android-hub.home-layout-host.v2") || "null")
+              || JSON.parse(localStorage.getItem("android-hub.home-layout-host.v1") || "null");
+          } catch (_err) {
+            oldHost = null;
+          }
+          const ow = Number(oldHost?.hostW) || 0;
+          const oh = Number(oldHost?.hostH) || 0;
+          if (ow > 1 && oh > 1) {
+            homeModulesState[id].rx = (Number(homeModulesState[id].x) || 0) / ow;
+            homeModulesState[id].ry = (Number(homeModulesState[id].y) || 0) / oh;
+          } else {
+            delete homeModulesState[id].rx;
+            delete homeModulesState[id].ry;
+          }
+          delete homeModulesState[id]._pixelsDirty;
         }
       });
     } catch (_err) {
@@ -2321,9 +2664,44 @@
     moduleEl.classList.toggle("is-locked", Boolean(state.locked));
     moduleEl.classList.toggle("is-content-hidden", Boolean(state.contentHidden));
     moduleEl.classList.toggle("is-align-off", state.align === false);
-    moduleEl.style.left = `${Math.max(0, Number(state.x) || 0)}px`;
-    moduleEl.style.top = `${Math.max(0, Number(state.y) || 0)}px`;
+
+    // Pendant le drag : rester en px (le handler écrit left/top).
+    if (homeModuleDrag?.moduleId === moduleId) {
+      moduleEl.style.left = `${Math.max(0, Number(state.x) || 0)}px`;
+      moduleEl.style.top = `${Math.max(0, Number(state.y) || 0)}px`;
+      updateHomeModuleMenuLabels(moduleEl);
+      return;
+    }
+
+    const size = getHomeHostSize();
+    const prev = homeLayoutMetrics.hostW > 0 ? homeLayoutMetrics : readHomeLayoutMetrics();
+    if (Number.isFinite(state.rx) && Number.isFinite(state.ry) && !state._pixelsDirty) {
+      if (size) {
+        state.x = Math.round(state.rx * size.w);
+        state.y = Math.round(state.ry * size.h);
+      }
+    } else if (size) {
+      state.rx = (Number(state.x) || 0) / size.w;
+      state.ry = (Number(state.y) || 0) / size.h;
+      delete state._pixelsDirty;
+    } else if (!Number.isFinite(state.rx) || !Number.isFinite(state.ry)) {
+      const refW = prev.hostW > 1 ? prev.hostW : 1;
+      const refH = prev.hostH > 1 ? prev.hostH : 1;
+      state.rx = (Number(state.x) || 0) / refW;
+      state.ry = (Number(state.y) || 0) / refH;
+    }
+    moduleEl.style.left = `${Math.max(0, Number(state.rx) || 0) * 100}%`;
+    moduleEl.style.top = `${Math.max(0, Number(state.ry) || 0) * 100}%`;
     updateHomeModuleMenuLabels(moduleEl);
+  }
+
+  /** Met à jour pixels + ratios d’un module. */
+  function setHomeModulePixelPos(moduleId, x, y, { apply = true } = {}) {
+    if (!homeModulesState?.[moduleId]) return;
+    homeModulesState[moduleId].x = Math.round(x);
+    homeModulesState[moduleId].y = Math.round(y);
+    homeModulesState[moduleId]._pixelsDirty = true;
+    if (apply) applyHomeModuleState(moduleId);
   }
 
   /** Mémorise le centre X du titre pour le recentrer après un reflow. */
@@ -2432,8 +2810,7 @@
       if (!moduleEl || !state || moduleEl.hidden) return;
       const nextY = Math.max(0, state.y - maxOverflow);
       if (Math.abs(nextY - state.y) <= 0.5) return;
-      state.y = Math.round(nextY);
-      applyHomeModuleState(moduleId);
+      setHomeModulePixelPos(moduleId, state.x, nextY);
       rememberHomeModuleTitleCenter(moduleId);
       changed = true;
     });
@@ -2493,6 +2870,10 @@
           const y = Number(saved.y);
           if (Number.isFinite(x)) homeModulesState[id].x = Math.round(x);
           if (Number.isFinite(y)) homeModulesState[id].y = Math.round(y);
+          const rx = Number(saved.rx);
+          const ry = Number(saved.ry);
+          if (Number.isFinite(rx)) homeModulesState[id].rx = rx;
+          if (Number.isFinite(ry)) homeModulesState[id].ry = ry;
           if (saved.orientation) homeModulesState[id].orientation = saved.orientation;
           if (typeof saved.locked === "boolean") homeModulesState[id].locked = saved.locked;
           if (typeof saved.align === "boolean") homeModulesState[id].align = saved.align;
@@ -2647,9 +3028,7 @@
 
             if (clamped.x === state.x && clamped.y === state.y) continue;
 
-            state.x = Math.round(clamped.x);
-            state.y = Math.round(clamped.y);
-            applyHomeModuleState(moveId);
+            setHomeModulePixelPos(moveId, clamped.x, clamped.y);
             // Remesurer pour la suite de cette passe
             const updated = getHomeModuleCollisionBox(moveId);
             if (updated) boxes[j] = updated;
@@ -2676,15 +3055,14 @@
           const curVis = getHomeModuleVisualMetrics(el);
           const nextY = prev.y + prev.h + gap - curVis.offsetY;
           const clamped = clampHomeModulePosition(el, state.x, nextY);
-          state.x = Math.round(clamped.x);
-          state.y = Math.round(Math.max(clamped.y, nextY));
-          applyHomeModuleState(cur.id);
+          setHomeModulePixelPos(cur.id, clamped.x, Math.max(clamped.y, nextY));
           changed = true;
         }
       }
 
       if (changed) {
         HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
+        captureHomeLayoutRatiosFromPixels();
         saveHomeModulesState();
       }
     } finally {
@@ -3180,10 +3558,22 @@
     if (!root || root.dataset.homeModulesBound === "1") return;
     root.dataset.homeModulesBound = "1";
     loadHomeModulesState();
+    homeLayoutMetrics = readHomeLayoutMetrics();
     applyHomeModulesLayout();
     bindHomeModuleTitleCenterObservers();
+    bindHomeLayoutHostResizeObserver();
     HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
-    scheduleHomeModulesSeparation();
+    // Ratios déjà connus → repositionner ; sinon figer depuis les pixels affichés.
+    const ratiosMissing = HOME_MODULE_IDS.some((id) => {
+      const s = homeModulesState?.[id];
+      return s && (!Number.isFinite(s.rx) || !Number.isFinite(s.ry));
+    });
+    if (ratiosMissing) captureHomeLayoutRatiosFromPixels();
+    else scaleHomeLayoutToCurrentSize();
+    requestAnimationFrame(() => {
+      bootHomeLayoutRatios();
+      scheduleHomeModulesSeparation();
+    });
 
     root.addEventListener("click", (event) => {
       const menuBtn = event.target.closest?.(".home-module-menu-btn");
@@ -3335,13 +3725,14 @@
         }
         // Snap d’abord, puis anti-collision — refuse de rester sur un autre module
         const fixed = resolveHomeModuleOverlaps(moduleId, left, top);
-        homeModulesState[moduleId].x = fixed.x;
-        homeModulesState[moduleId].y = fixed.y;
-        applyHomeModuleState(moduleId);
+        homeModuleDrag = null;
+        setHomeModulePixelPos(moduleId, fixed.x, fixed.y);
         unstickOverlappingHomeModules();
         ensureHomeModulesClearOfDock();
-        saveHomeModulesState(true);
         applyHomeFabsLayout();
+        captureHomeLayoutRatiosFromPixels();
+        saveHomeModulesState(true);
+        saveHomeFabsState();
         rememberHomeModuleTitleCenter(moduleId);
       }
       homeModuleDrag = null;
@@ -3360,6 +3751,7 @@
       if (hostRect.width < 80 || hostRect.height < 80) return;
       const openModule = document.querySelector(".home-module.is-menu-open");
       if (openModule) positionHomeModuleMenu(openModule);
+      scheduleHomeLayoutScaleOnResize();
     });
   }
 
@@ -4505,6 +4897,7 @@
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!canMutateHomeModuleLayout()) return;
+          bootHomeLayoutRatios();
           HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
         });
       });
@@ -4527,6 +4920,7 @@
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!canMutateHomeModuleLayout()) return;
+            bootHomeLayoutRatios();
             HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
           });
         });
