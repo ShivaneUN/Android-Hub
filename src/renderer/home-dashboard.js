@@ -355,17 +355,40 @@
   }
 
   /**
-   * True si un autre module visible est positionné plus bas
+   * Ancre stable pour « module en dessous » : Y du titre + largeur visuelle,
+   * sans dépendre de la hauteur expandée (sinon le plafond ne se met plus à jour).
+   */
+  function getHomeModuleNeighborProbe(moduleId) {
+    const moduleEl = getHomeModuleEl(moduleId);
+    if (!moduleEl || moduleEl.hidden) return null;
+    const title = getHomeModuleTitleBoxInHost(moduleId);
+    const coll = getHomeModuleCollisionBox(moduleId);
+    if (!title && !coll) return null;
+    const y = title ? title.titleY : coll.y;
+    const x = coll ? coll.x : Math.max(0, title.titleCenterX - title.titleW / 2);
+    const w = coll ? Math.max(1, coll.w) : Math.max(1, title.titleW);
+    return { id: moduleId, x, y, w };
+  }
+
+  /**
+   * True si un autre module visible est plus bas ET se chevauche en X
    * (→ hauteur contenu plafonnée ; sinon expand jusqu’au dock).
    */
   function homeModuleHasNeighborBelow(moduleId) {
-    const self = getHomeModuleCollisionBox(moduleId);
+    const self = getHomeModuleNeighborProbe(moduleId);
     if (!self) return false;
+    const gap = typeof HOME_MODULE_GAP === "number" ? HOME_MODULE_GAP : 12;
     return HOME_MODULE_IDS.some((oid) => {
       if (oid === moduleId) return false;
-      const other = getHomeModuleCollisionBox(oid);
+      const other = getHomeModuleNeighborProbe(oid);
       if (!other) return false;
-      return other.y > self.y + self.h * 0.35;
+      // Assez bas pour ne pas traiter deux modules côte à côte comme « dessous ».
+      if (other.y < self.y + 56) return false;
+      const overlapsX = !(
+        self.x + self.w + gap <= other.x
+        || other.x + other.w + gap <= self.x
+      );
+      return overlapsX;
     });
   }
 
@@ -376,6 +399,42 @@
     return null;
   }
 
+  /**
+   * Pendant un drag : hauteur plafonnée (comme avec voisin ↓) pour que la
+   * boîte de collision ne bloque pas le déplacement. Au drop, le budget
+   * réel (expand / plafond) est recalculé selon la place disponible.
+   */
+  function setHomeModulesDragCompact(active) {
+    const host = document.querySelector(".empty-state");
+    host?.classList.toggle("is-home-modules-dragging", !!active);
+    HOME_MODULE_IDS.forEach((moduleId) => {
+      const el = getHomeModuleContentEl(moduleId);
+      const moduleEl = getHomeModuleEl(moduleId);
+      if (!el || !moduleEl) return;
+      if (active) {
+        el.classList.add("is-height-capped", "is-drag-layout-compact");
+        el.classList.remove("is-height-free");
+        moduleEl.classList.add("is-content-capped", "is-drag-layout-compact");
+        moduleEl.classList.remove("is-content-free");
+        el.style.removeProperty("--home-content-max-h");
+      } else {
+        el.classList.remove("is-drag-layout-compact");
+        moduleEl.classList.remove("is-drag-layout-compact");
+      }
+    });
+  }
+
+  function setHomeModuleContentMaxHeight(moduleId) {
+    const el = getHomeModuleContentEl(moduleId);
+    if (!el || !el.classList.contains("is-height-free")) return;
+    const dock = getCentralDockExclusionRect(10);
+    const rect = el.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    const maxH = Math.max(80, Math.floor(dock.top - rect.top - 10));
+    el.style.setProperty("--home-content-max-h", `${maxH}px`);
+    el.classList.add("is-scrollable");
+  }
+
   /** Plafonne ou étend la zone scrollable d’un module selon voisin ↓ / dock. */
   function applyHomeModuleContentHeightBudget(moduleId) {
     const el = getHomeModuleContentEl(moduleId);
@@ -383,28 +442,98 @@
     if (!el || !moduleEl || moduleEl.hidden || moduleEl.classList.contains("is-content-hidden")) {
       return;
     }
+    // Pendant le drag : rester compact (sinon l’expand rebloque le clamp).
+    if (homeModuleDrag) {
+      el.classList.add("is-height-capped", "is-drag-layout-compact");
+      el.classList.remove("is-height-free");
+      moduleEl.classList.add("is-content-capped", "is-drag-layout-compact");
+      moduleEl.classList.remove("is-content-free");
+      el.style.removeProperty("--home-content-max-h");
+      return;
+    }
+
     const hasBelow = homeModuleHasNeighborBelow(moduleId);
     el.classList.toggle("is-height-capped", hasBelow);
     el.classList.toggle("is-height-free", !hasBelow);
     moduleEl.classList.toggle("is-content-capped", hasBelow);
     moduleEl.classList.toggle("is-content-free", !hasBelow);
+    el.classList.remove("is-drag-layout-compact");
+    moduleEl.classList.remove("is-drag-layout-compact");
 
     if (hasBelow) {
       el.style.removeProperty("--home-content-max-h");
       return;
     }
 
-    const dock = getCentralDockExclusionRect(10);
-    const rect = el.getBoundingClientRect();
-    if (!(rect.width > 0) || !(rect.height >= 0)) return;
-    const maxH = Math.max(120, Math.floor(dock.top - rect.top - 10));
-    el.style.setProperty("--home-content-max-h", `${maxH}px`);
-    el.classList.add("is-scrollable");
+    setHomeModuleContentMaxHeight(moduleId);
   }
 
   function applyAllHomeModulesContentHeightBudgets() {
     if (!canMutateHomeModuleLayout()) return;
     HOME_MODULE_IDS.forEach(applyHomeModuleContentHeightBudget);
+  }
+
+  /** Flags libres précédents — pour resync apps quand le plafond change. */
+  const homeModuleFreeFlags = Object.create(null);
+  let homeContentBudgetTimer = 0;
+
+  /**
+   * Recalcule expand/plafond après layout, puis resync les apps si besoin
+   * (le nombre de tuiles dépend du mode libre / plafonné).
+   */
+  function refreshHomeModulesContentBudgets() {
+    if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
+    applyAllHomeModulesContentHeightBudgets();
+    // Remesure après application des classes (reflow).
+    HOME_MODULE_IDS.forEach(setHomeModuleContentMaxHeight);
+
+    const appsFree = !homeModuleHasNeighborBelow("apps");
+    const appsFreeChanged = homeModuleFreeFlags.apps !== appsFree;
+    HOME_MODULE_IDS.forEach((id) => {
+      homeModuleFreeFlags[id] = !homeModuleHasNeighborBelow(id);
+    });
+
+    if (appsFreeChanged) {
+      void syncHomeApps();
+      return;
+    }
+
+    // Met à jour is-scrollable devices/sessions sans rebuild apps.
+    const devicesPanel = document.getElementById("home-devices-panel");
+    if (devicesPanel) {
+      const moduleEl = devicesPanel.closest(".home-module");
+      const vertical = moduleEl?.dataset?.orientation === "vertical";
+      const count = devicesPanel.querySelectorAll(".sidebar-device-card").length;
+      const few = count > 0 && count <= 2;
+      const visibleMax = few ? 2 : (vertical ? 2 : 6);
+      const free = homeModuleFreeFlags.devices === true;
+      devicesPanel.classList.toggle("is-scrollable", !few && (count > visibleMax || free));
+    }
+    const sessionsGrid = document.getElementById("home-sessions-grid");
+    if (sessionsGrid) {
+      const moduleEl = sessionsGrid.closest(".home-module");
+      const vertical = moduleEl?.dataset?.orientation === "vertical";
+      const count = sessionsGrid.querySelectorAll(".home-session-tile").length;
+      const few = count > 0 && count <= 2;
+      const visibleMax = few ? 2 : (vertical ? 2 : 6);
+      const free = homeModuleFreeFlags.sessions === true;
+      sessionsGrid.classList.toggle("is-scrollable", !few && (count > visibleMax || free));
+    }
+  }
+
+  function scheduleHomeModulesContentBudgets() {
+    if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
+    if (homeContentBudgetTimer) window.clearTimeout(homeContentBudgetTimer);
+    homeContentBudgetTimer = window.setTimeout(() => {
+      homeContentBudgetTimer = 0;
+      if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!canMutateHomeModuleLayout() || homeModuleDrag) return;
+          refreshHomeModulesContentBudgets();
+        });
+      });
+    }, 16);
   }
 
   function layoutHomeAppsStrip() {
@@ -2466,7 +2595,7 @@
 
       HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
       if (sizeChanged) scheduleHomeModulesSeparation();
-      requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
+      scheduleHomeModulesContentBudgets();
       return sizeChanged;
     } finally {
       homeLayoutSyncLock = false;
@@ -2900,7 +3029,7 @@
         unstickOverlappingHomeModules();
         ensureHomeModulesClearOfDock();
         if (homeModulesStillOverlap()) unstickOverlappingHomeModules();
-        applyAllHomeModulesContentHeightBudgets();
+        scheduleHomeModulesContentBudgets();
       });
     }, 120);
   }
@@ -3604,7 +3733,7 @@
     applyHomeModuleState(moduleId);
     saveHomeModulesState();
     closeAllHomeModuleMenus();
-    requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
+    scheduleHomeModulesContentBudgets();
   }
 
   function toggleHomeModuleLock(moduleId) {
@@ -3626,6 +3755,7 @@
     applyHomeModuleState(moduleId);
     closeAllHomeModuleMenus();
     scheduleHomeModulesSeparation();
+    scheduleHomeModulesContentBudgets();
   }
 
   function bindHomeModules() {
@@ -3648,6 +3778,7 @@
     requestAnimationFrame(() => {
       bootHomeLayoutRatios();
       scheduleHomeModulesSeparation();
+      scheduleHomeModulesContentBudgets();
     });
 
     root.addEventListener("click", (event) => {
@@ -3717,6 +3848,9 @@
         titleMetrics,
         alignEnabled: homeModulesState[moduleId]?.align !== false
       };
+      // Compact avant le 1er clamp : sinon un module expandé ne peut presque pas bouger.
+      setHomeModulesDragCompact(true);
+      void moduleEl.offsetHeight;
       moduleEl.classList.add("is-dragging");
       closeAllHomeModuleMenus();
       title.setPointerCapture?.(event.pointerId);
@@ -3799,17 +3933,26 @@
           top = snapped.y;
         }
         // Snap d’abord, puis anti-collision — refuse de rester sur un autre module
+        // (toujours en hauteur compacte pendant le drag).
         const fixed = resolveHomeModuleOverlaps(moduleId, left, top);
         homeModuleDrag = null;
+        setHomeModulesDragCompact(false);
         setHomeModulePixelPos(moduleId, fixed.x, fixed.y);
+        // Recalcule expand/plafond selon la nouvelle place, puis corrige collisions.
+        refreshHomeModulesContentBudgets();
         unstickOverlappingHomeModules();
         ensureHomeModulesClearOfDock();
+        refreshHomeModulesContentBudgets();
         applyHomeFabsLayout();
         captureHomeLayoutRatiosFromPixels();
         saveHomeModulesState(true);
         saveHomeFabsState();
         rememberHomeModuleTitleCenter(moduleId);
-        requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
+        scheduleHomeModulesContentBudgets();
+      } else {
+        homeModuleDrag = null;
+        setHomeModulesDragCompact(false);
+        refreshHomeModulesContentBudgets();
       }
       homeModuleDrag = null;
     };
@@ -4858,6 +5001,8 @@
   window.layoutHomeSessionsSplit = layoutHomeSessionsSplit;
   window.layoutHomeAppsStrip = layoutHomeAppsStrip;
   window.applyAllHomeModulesContentHeightBudgets = applyAllHomeModulesContentHeightBudgets;
+  window.refreshHomeModulesContentBudgets = refreshHomeModulesContentBudgets;
+  window.scheduleHomeModulesContentBudgets = scheduleHomeModulesContentBudgets;
   window.syncRecentApps = syncHomeApps;
   window.syncHomeApps = syncHomeApps;
   window.pinHomeApp = pinHomeApp;

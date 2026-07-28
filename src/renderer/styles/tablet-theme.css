@@ -1288,6 +1288,24 @@ body.theme-tablet .empty-state-mascot {
   max-height: var(--home-content-max-h, 280px);
 }
 
+/* Drag : forcer le plafond même si is-height-free était actif. */
+.empty-state.is-home-modules-dragging .home-devices-panel:not(.is-few),
+.home-devices-panel.is-drag-layout-compact:not(.is-few) {
+  max-height: calc(2 * var(--home-device-row-h) + var(--home-device-gap)) !important;
+}
+
+.empty-state.is-home-modules-dragging .home-sessions-grid:not(.is-few),
+.home-sessions-grid.is-drag-layout-compact:not(.is-few) {
+  max-height: calc(2 * var(--home-session-row-h) + var(--home-session-gap)) !important;
+}
+
+.empty-state.is-home-modules-dragging .home-apps-strip,
+.home-apps-strip.is-drag-layout-compact {
+  max-height: calc(2 * 78px + 8px) !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .home-devices-panel.is-few {
   display: flex;
   flex-wrap: wrap;
