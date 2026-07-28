@@ -156,11 +156,27 @@
 
   function isHomeVisible() {
     const page = document.getElementById("page-new");
+    const content = document.querySelector(".content");
+    const pageVisible = Boolean(page && !page.classList.contains("hidden"));
+    const notSession = !content?.classList.contains("content--session-view");
+    const notDeck = !content?.classList.contains("content--stream-deck");
+    // Surface DOM prioritaire : le flag __hubShowingHome peut rester false
+    // alors que page-new est déjà visible → les pastilles centrales disparaissaient.
+    if (
+      document.body.classList.contains("theme-tablet")
+      && pageVisible
+      && notSession
+      && notDeck
+    ) {
+      if (window.__hubShowingHome !== true) window.__hubShowingHome = true;
+      return true;
+    }
     return Boolean(
       document.body.classList.contains("theme-tablet")
-      && page
-      && !page.classList.contains("hidden")
+      && pageVisible
       && window.__hubShowingHome
+      && notSession
+      && notDeck
     );
   }
 
@@ -495,6 +511,7 @@
 
     if (appsFreeChanged) {
       void syncHomeApps();
+      syncHomeFabsVisibility();
       return;
     }
 
@@ -519,6 +536,7 @@
       const free = homeModuleFreeFlags.sessions === true;
       sessionsGrid.classList.toggle("is-scrollable", !few && (count > visibleMax || free));
     }
+    syncHomeFabsVisibility();
   }
 
   function scheduleHomeModulesContentBudgets() {
@@ -1116,6 +1134,13 @@
         homeFabsState[id].x = Math.round(Number(homeFabsState[id].x) || 0);
         homeFabsState[id].y = Math.round(Number(homeFabsState[id].y) || 0);
         homeFabsState[id].locked = Boolean(homeFabsState[id].locked);
+        // Ratios hors écran (ex. après maximize) → recalcul depuis les pixels.
+        const rx = Number(homeFabsState[id].rx);
+        const ry = Number(homeFabsState[id].ry);
+        if (!Number.isFinite(rx) || !Number.isFinite(ry) || rx < -0.05 || ry < -0.05 || rx > 1.2 || ry > 1.2) {
+          delete homeFabsState[id].rx;
+          delete homeFabsState[id].ry;
+        }
         if (migrated) {
           let oldView = null;
           try {
@@ -1191,12 +1216,16 @@
     };
   }
 
-  /** Zones interdites pour les pastilles : barre centrale + modules + bouton Aide. */
+  /** Zones interdites pour les pastilles : barre centrale + titre module + Aide.
+   *  (Titre/chrome seulement — pas le body expandé, sinon plus aucune place libre.) */
   function getFabForbiddenZones(pad = 10) {
     const zones = [getCentralDockExclusionRect(pad)];
     document.querySelectorAll(".home-module").forEach((el) => {
       if (el.hidden || el.classList.contains("is-dragging")) return;
-      const r = el.getBoundingClientRect();
+      const chrome = el.querySelector(".home-module-chrome")
+        || el.querySelector(".home-module-title")
+        || el;
+      const r = chrome.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
       zones.push({
         left: r.left - pad,
@@ -2137,6 +2166,41 @@
     return cx < zone.right;
   }
 
+  /** Réaffiche les pastilles sur l’accueil sans les repositionner (garde left/top sauvés). */
+  function restoreHomeFabsOnHome() {
+    loadHomeShortcutFabPrefs();
+    // Recharge depuis le storage : positions utilisateur intactes.
+    loadHomeFabsState();
+    applyHomeShortcutFabAvailability();
+    HOME_FAB_ALL_IDS.forEach((id) => applyHomeFabState(id));
+    // Si une pastille est hors écran (pas seulement près du dock), la ramener doucement.
+    HOME_FAB_IDS.forEach((fabId) => softClampHomeFabToViewport(fabId));
+    updateHomeFabGroupBoxes?.();
+    positionWifiReconnectPopupNearFab?.();
+    syncHomeFabsVisibility();
+  }
+
+  /** Clamp écran uniquement — ne pousse PAS hors du dock (placement bas volontaire). */
+  function softClampHomeFabToViewport(fabId) {
+    const state = homeFabsState?.[fabId];
+    const btn = getHomeFabEl(fabId);
+    if (!state || !btn || btn.hidden) return;
+    const size = HOME_FAB_SIZE;
+    const maxX = Math.max(8, window.innerWidth - size - 8);
+    const maxY = Math.max(8, window.innerHeight - size - 8);
+    const x = Number(state.x) || 0;
+    const y = Number(state.y) || 0;
+    if (x >= 0 && y >= 0 && x <= maxX + size && y <= maxY + size) {
+      // Dans / près de l’écran : conserver (y compris au-dessus / à côté du dock).
+      return;
+    }
+    setHomeFabPixelPos(
+      fabId,
+      Math.min(Math.max(8, x), maxX),
+      Math.min(Math.max(8, y), maxY)
+    );
+  }
+
   function syncHomeFabsVisibility() {
     const bar = document.getElementById("home-fab-bar");
     if (!bar) return;
@@ -2150,16 +2214,31 @@
       || Boolean(content?.classList.contains("content--session-view"));
 
     let anyVisible = false;
-    HOME_FAB_IDS.forEach((fabId) => {
+    HOME_FAB_TOGGLE_IDS.forEach((fabId) => {
       const btn = getHomeFabEl(fabId);
       const state = homeFabsState?.[fabId];
-      if (!btn || !state || btn.hidden) return;
+      if (!btn) return;
+      if (btn.hidden || !state) {
+        btn.classList.remove("is-hidden-off-home");
+        return;
+      }
       // Accueil : tout visible. Session / Stream Deck : seulement à gauche du dock.
       const hide = offHome && !isFabInOffHomeKeepZone(state.x, state.y, HOME_FAB_SIZE);
       btn.classList.toggle("is-hidden-off-home", hide);
       btn.setAttribute("aria-hidden", hide ? "true" : "false");
       if (!hide) anyVisible = true;
     });
+
+    // Sur l’accueil, jamais laisser une pastille active coincée en « off-home ».
+    if (!offHome) {
+      HOME_FAB_TOGGLE_IDS.forEach((fabId) => {
+        const btn = getHomeFabEl(fabId);
+        if (!btn || btn.hidden) return;
+        btn.classList.remove("is-hidden-off-home");
+        btn.setAttribute("aria-hidden", "false");
+        anyVisible = true;
+      });
+    }
 
     bar.querySelectorAll(".home-fab-group").forEach((box) => {
       const ids = (box.dataset.fabIds || "").split(",").filter(Boolean);
@@ -2574,6 +2653,11 @@
       });
       updateHomeFabGroupBoxes?.();
       positionWifiReconnectPopupNearFab?.();
+
+      // Ne pas resolve/pousser hors dock au rescale — conserve le placement bas.
+      HOME_FAB_IDS.forEach((fabId) => softClampHomeFabToViewport(fabId));
+      updateHomeFabGroupBoxes?.();
+      syncHomeFabsVisibility();
 
       writeHomeLayoutMetrics({
         hostW: size.w,
@@ -4970,11 +5054,13 @@
         restoreHomeModulesFromStorage();
         clearHomeModuleTitleCenters();
         void syncHomeSessions();
+        restoreHomeFabsOnHome();
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!canMutateHomeModuleLayout()) return;
             HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
             scheduleHomeModulesSeparation();
+            restoreHomeFabsOnHome();
           });
         });
       }
@@ -5105,6 +5191,7 @@
     syncHomeFabsVisibility();
     return getHomeShortcutFabPrefs();
   };
+  window.restoreHomeFabsOnHome = restoreHomeFabsOnHome;
   window.__hubModalMainActions = {
     ...(window.__hubModalMainActions || {}),
     getHomeShortcutFabPrefs,
@@ -5207,6 +5294,7 @@
     void syncDockBatteries();
     syncEmptyStateIntro();
     syncHomeFabsVisibility();
+    restoreHomeFabsOnHome();
   });
 
   const originalGoHome = window.goToLaunchHome;
@@ -5217,12 +5305,13 @@
       restoreHomeModulesFromStorage();
       syncEmptyStateIntro();
       void syncHomeSessions();
-      syncHomeFabsVisibility();
+      restoreHomeFabsOnHome();
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!canMutateHomeModuleLayout()) return;
           bootHomeLayoutRatios();
           HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
+          restoreHomeFabsOnHome();
         });
       });
       return result;
@@ -5240,12 +5329,13 @@
         restoreHomeModulesFromStorage();
         syncEmptyStateIntro();
         void syncHomeSessions();
-        syncHomeFabsVisibility();
+        restoreHomeFabsOnHome();
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!canMutateHomeModuleLayout()) return;
             bootHomeLayoutRatios();
             HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
+            restoreHomeFabsOnHome();
           });
         });
         return result;
