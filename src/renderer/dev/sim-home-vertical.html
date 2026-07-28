@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simu — apps : Rec | sep | Pin en colonnes verticales</title>
+  <style>
+    :root {
+      --bg: #0b0f16;
+      --card: rgba(22, 27, 36, 0.92);
+      --line: rgba(255, 255, 255, 0.12);
+      --text: #e8eef8;
+      --muted: #9aa8bc;
+      --accent: #4f8cff;
+      --ok: #3fb950;
+      --warn: #e5534b;
+      --device-w: 220px;
+      --session-w: 220px;
+      --row-h: 72px;
+      --session-row-h: 96px;
+      --gap: 10px;
+      --safe-bottom: 100px;
+      --app-col-w: 72px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 13px/1.35 system-ui, Segoe UI, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .top {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(12, 16, 24, 0.92);
+    }
+    .top h1 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+    .top p { margin: 0; color: var(--muted); font-size: 12px; max-width: 980px; }
+    .rules {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .rule {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(18, 24, 34, 0.8);
+      font-size: 11.5px;
+      color: #c5d0e0;
+    }
+    .rule b { color: #9ec1ff; }
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tabs button {
+      border: 1px solid var(--line);
+      background: #151b26;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      border-color: color-mix(in srgb, var(--accent) 70%, #fff);
+      background: color-mix(in srgb, var(--accent) 22%, #151b26);
+    }
+
+    .stage-wrap {
+      position: relative;
+      height: calc(100vh - 175px);
+      min-height: 540px;
+      overflow: hidden;
+    }
+    .stage {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 55% at 55% 42%, #1a2438 0%, transparent 58%),
+        var(--bg);
+    }
+    .stage[hidden] { display: none !important; }
+
+    .module {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: max-content;
+      z-index: 2;
+    }
+    .title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(18, 24, 34, 0.92);
+      border: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #c9d4e4;
+    }
+    .badge {
+      margin: 0 0 6px;
+      font-size: 10.5px;
+      color: #9ec1ff;
+      background: rgba(79, 140, 255, 0.12);
+      border: 1px solid rgba(79, 140, 255, 0.28);
+      border-radius: 6px;
+      padding: 2px 7px;
+    }
+    .badge.tight {
+      color: #f0c27a;
+      background: rgba(240, 162, 0, 0.12);
+      border-color: rgba(240, 162, 0, 0.3);
+    }
+
+    .body {
+      width: max-content;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding-right: 3px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.22) transparent;
+    }
+    .body.devices, .body.sessions {
+      display: grid;
+      gap: var(--gap);
+    }
+    .body.devices { grid-template-columns: var(--device-w); }
+    .body.sessions { grid-template-columns: var(--session-w); }
+    .body.is-capped.devices { max-height: calc(2 * var(--row-h) + var(--gap)); }
+    .body.is-capped.sessions { max-height: calc(2 * var(--session-row-h) + var(--gap)); }
+    .body.is-capped.apps-cols { max-height: calc(2 * 78px + 8px); }
+    .body.is-free { max-height: var(--free-max, 280px); }
+
+    .device {
+      width: var(--device-w);
+      min-height: var(--row-h);
+      display: grid;
+      grid-template-columns: 10px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--card);
+      border: 1px solid var(--line);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .name { font-weight: 600; font-size: 12.5px; }
+    .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .toggle {
+      width: 34px; height: 18px; border-radius: 999px;
+      background: #2a7a45; position: relative;
+    }
+    .toggle::after {
+      content: "";
+      position: absolute; top: 2px; right: 2px;
+      width: 14px; height: 14px; border-radius: 50%; background: #fff;
+    }
+
+    .session {
+      width: var(--session-w);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1.5px solid color-mix(in srgb, var(--accent) 55%, #2a3344);
+      background: #12171f;
+      position: relative;
+    }
+    .session .thumb {
+      height: 58px;
+      background: linear-gradient(135deg, #1e2a3d, #121820);
+      display: grid; place-items: center;
+      color: var(--muted); font-size: 11px;
+    }
+    .session .live {
+      position: absolute; top: 6px; left: 6px;
+      font-size: 9px; font-weight: 700;
+      padding: 2px 5px; border-radius: 4px;
+      background: var(--warn); color: #fff;
+    }
+    .session .fps {
+      position: absolute; top: 6px; right: 6px;
+      font-size: 10px; color: #d7e0ef;
+      background: rgba(0,0,0,0.45); padding: 2px 5px; border-radius: 4px;
+    }
+    .session .smeta {
+      padding: 6px 8px 8px;
+      font-size: 11.5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .session.active { border-color: var(--ok); }
+
+    /* —— Horizontal actuel : Pin | sep | Rec en LIGNE —— */
+    .apps-h {
+      display: grid;
+      grid-template-columns: auto auto auto;
+      align-items: stretch;
+      gap: 10px;
+      width: max-content;
+    }
+    .apps-h .col {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .apps-h .sep {
+      width: 1px;
+      align-self: stretch;
+      min-height: 72px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    /* —— Vertical proposé ——
+       Récentes (gauche) | barre verticale | Épinglés (droite)
+       Dans chaque colonne : 1 app par “étage”, les suivantes EN DESSOUS */
+    .apps-cols {
+      display: grid;
+      grid-template-columns: var(--app-col-w) 1px var(--app-col-w);
+      column-gap: 12px;
+      align-items: start;
+      width: max-content;
+      padding: 2px 4px;
+    }
+    .apps-cols .col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-width: var(--app-col-w);
+    }
+    .apps-cols .col-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.2;
+      min-height: 24px;
+    }
+    .apps-cols .sep {
+      width: 1px;
+      align-self: stretch;
+      min-height: 100%;
+      background: rgba(255, 255, 255, 0.28);
+      border-radius: 1px;
+    }
+
+    .app {
+      width: var(--app-col-w);
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: none;
+      color: inherit;
+      padding: 0;
+    }
+    .icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      border: 1px solid var(--line); background: #1a2130;
+      display: grid; place-items: center;
+      font-size: 10px; font-weight: 700; color: #9ec1ff;
+      position: relative;
+    }
+    .icon .mark {
+      position: absolute; top: -3px; right: -3px;
+      width: 8px; height: 8px; border-radius: 50%;
+      border: 2px solid #0b0f16;
+    }
+    .icon .mark.ok { background: var(--ok); }
+    .icon .mark.bad { background: var(--warn); }
+    .app label {
+      font-size: 10px; color: var(--muted);
+      max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      text-align: center;
+    }
+    .more {
+      width: 44px; height: 44px; border-radius: 999px;
+      border: 1px solid var(--line); background: rgba(22,27,36,0.96);
+      color: var(--text); font-size: 18px; flex: 0 0 auto;
+    }
+
+    .schema {
+      margin-top: 8px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      color: #9ec1ff;
+      background: rgba(12,16,24,0.75);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: pre;
+      line-height: 1.35;
+    }
+
+    .dock-zone {
+      position: absolute;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      height: 48px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      background: rgba(16, 20, 28, 0.92);
+      border: 1px solid var(--line);
+      z-index: 5;
+    }
+    .dock-zone i {
+      width: 34px; height: 34px; border-radius: 999px;
+      background: #1a2130; border: 1px solid var(--line);
+      display: grid; place-items: center;
+      font-style: normal; font-size: 11px; color: var(--muted);
+    }
+    .safe-line {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      bottom: var(--safe-bottom);
+      border-top: 1px dashed rgba(229, 83, 75, 0.55);
+      z-index: 4;
+      pointer-events: none;
+    }
+    .safe-line span {
+      position: absolute;
+      top: -18px;
+      right: 0;
+      font-size: 10px;
+      color: #f0a8a3;
+      background: rgba(12,16,24,0.85);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .scroll-hint {
+      margin-top: 4px;
+      font-size: 10px;
+      color: #8fa0b5;
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>Simu — apps vertical : Récentes | sep | Épinglés (colonnes)</h1>
+    <p>
+      Barre de séparation <b>verticale</b> conservée.
+      <b>Récentes à gauche</b>, <b>Épinglés à droite</b>.
+      Dans chaque colonne : 1 app, les suivantes <b>en dessous</b> (stack vertical). Scroll ↓ du module.
+    </p>
+    <div class="rules">
+      <div class="rule"><b>Horizontal (actuel)</b> → apps en ligne : Pin — | — Rec</div>
+      <div class="rule"><b>Vertical (proposé)</b> → 2 colonnes : Rec ↓ | Pin ↓</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="active" data-tab="a">A · Stack (apps bas expand)</button>
+    <button type="button" data-tab="b">B · Apps milieu (plafonné + scroll ↓)</button>
+    <button type="button" data-tab="c">C · Comparaison H vs V</button>
+  </div>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage-a">
+      <div class="safe-line"><span>zone dock</span></div>
+      <div class="module" style="left:40%; top:16px;">
+        <p class="title">Appareils connectés ⋮</p>
+        <div class="badge tight">voisin ↓ → plafonné + scroll</div>
+        <div class="body devices is-capped" data-fill="devices"></div>
+      </div>
+      <div class="module" style="left:40%; top:200px;">
+        <p class="title">Sessions actives ⋮</p>
+        <div class="badge tight">voisin ↓ → plafonné + scroll</div>
+        <div class="body sessions is-capped" data-fill="sessions"></div>
+      </div>
+      <div class="module" style="left:38%; top:400px;">
+        <p class="title">Applications récentes ⋮</p>
+        <div class="badge">Rec ← | → Pin · colonnes verticales · expand + scroll ↓</div>
+        <div class="body apps-cols is-free" data-fill="apps-v"></div>
+        <div class="scroll-hint">↓ défiler le module pour voir plus d’apps dans chaque colonne</div>
+      </div>
+      <div class="dock-zone" aria-hidden="true"><i>ph</i><i>sc</i><i>au</i><i>⌂</i><i>#</i><i>⚙</i><i>FR</i></div>
+    </div>
+
+    <div class="stage" id="stage-b" hidden>
+      <div class="safe-line"><span>zone dock</span></div>
+      <div class="module" style="left:10%; top:18px;">
+        <p class="title">Appareils connectés ⋮</p>
+        <div class="badge tight">voisin ↓ → plafonné</div>
+        <div class="body devices is-capped" data-fill="devices"></div>
+      </div>
+      <div class="module" style="left:42%; top:200px;">
+        <p class="title">Applications récentes ⋮</p>
+        <div class="badge tight">plafonné (~2 apps visibles / colonne) · scroll ↓</div>
+        <div class="body apps-cols is-capped" data-fill="apps-v"></div>
+        <div class="scroll-hint">↓ Rec et Pin défilent ensemble dans le module</div>
+      </div>
+      <div class="module" style="left:38%; top:420px;">
+        <p class="title">Sessions actives ⋮</p>
+        <div class="badge">pas de voisin ↓ → expand</div>
+        <div class="body sessions is-free" data-fill="sessions"></div>
+      </div>
+      <div class="dock-zone" aria-hidden="true"><i>ph</i><i>sc</i><i>au</i><i>⌂</i><i>#</i><i>⚙</i><i>FR</i></div>
+    </div>
+
+    <div class="stage" id="stage-c" hidden>
+      <div class="safe-line"><span>zone dock</span></div>
+      <div class="module" style="left:4%; top:28px;">
+        <p class="title">Horizontal (actuel)</p>
+        <div class="badge tight">Pin puis Rec en ligne, sep verticale</div>
+        <div class="apps-h" data-fill="apps-h"></div>
+        <div class="schema">[Pin][Pin][Pin][+] | [Rec][Rec][Rec][+]</div>
+      </div>
+      <div class="module" style="left:52%; top:28px;">
+        <p class="title">Vertical (proposé)</p>
+        <div class="badge">Rec à gauche · sep · Pin à droite · stack ↓</div>
+        <div class="body apps-cols is-capped" style="max-height: 260px;" data-fill="apps-v"></div>
+        <div class="schema">Rec1 | Pin1
+Rec2 | Pin2
+Rec3 | Pin3
+ +   |  +</div>
+        <div class="scroll-hint">↓ scroll vertical du module</div>
+      </div>
+      <div class="dock-zone" aria-hidden="true"><i>ph</i><i>sc</i><i>au</i><i>⌂</i><i>#</i><i>⚙</i><i>FR</i></div>
+    </div>
+  </div>
+
+  <script>
+    const DEVICES = [
+      ["Xiaomi Pad 5", "19% · WiFi", false],
+      ["Xiaomi Pad 6", "49% · WiFi", true],
+      ["Galaxy Tab S9", "81% · USB", true],
+      ["Pixel Tablet", "64% · WiFi", true],
+      ["Lenovo P12", "12% · USB", false],
+      ["OnePlus Pad", "55% · WiFi", true]
+    ];
+    const SESSIONS = [
+      ["Mirror Pad 5", "Xiaomi Pad 5 (Mirror)", "58", true],
+      ["Discord clone", "Pad 6 · Discord #2", "42", false],
+      ["Spotify", "Tab S9 · Spotify", "30", false],
+      ["Opera", "Pixel · Opera", "24", false],
+      ["Feca", "P12 · Feca", "18", false],
+      ["Maps", "Pad · Maps", "28", false]
+    ];
+    const PINNED = [
+      ["Wa", "WhatsApp", "ok"],
+      ["Ch", "Chrome", ""],
+      ["Mp", "Maps", "bad"],
+      ["Yt", "YouTube", ""],
+      ["Ig", "Instagram", "ok"],
+      ["Tk", "TikTok", ""]
+    ];
+    const RECENT = [
+      ["Fe", "Feca", "ok"],
+      ["Op", "Opera", ""],
+      ["Sp", "Spotify", ""],
+      ["Dc", "Discord", "ok"],
+      ["Inf", "Infomil", ""],
+      ["Nb", "Notion", ""],
+      ["Sl", "Slack", "ok"],
+      ["Tw", "Twitch", ""]
+    ];
+
+    function deviceHtml([name, meta, ok]) {
+      return `<div class="device"><span class="dot ${ok ? "ok" : "warn"}"></span><div><div class="name">${name}</div><div class="meta">${meta}</div></div><span class="toggle"></span></div>`;
+    }
+    function sessionHtml([thumb, label, fps, active]) {
+      return `<div class="session${active ? " active" : ""}"><span class="live">LIVE</span><span class="fps">${fps} fps</span><div class="thumb">${thumb}</div><div class="smeta">${label}</div></div>`;
+    }
+    function appBtn([t, l, mark]) {
+      const m = mark ? `<span class="mark ${mark}"></span>` : "";
+      return `<button class="app" type="button"><span class="icon">${t}${m}</span><label>${l}</label></button>`;
+    }
+
+    /** Vertical : colonne Rec (gauche) | sep | colonne Pin (droite) */
+    function appsVerticalHtml() {
+      const rec = RECENT.map(appBtn).join("") + `<button class="more" type="button" title="Plus de récentes">+</button>`;
+      const pin = PINNED.map(appBtn).join("") + `<button class="more" type="button" title="Plus d’épinglées">+</button>`;
+      return (
+        `<div class="col"><div class="col-tag">Récentes</div>${rec}</div>` +
+        `<div class="sep" role="separator" aria-orientation="vertical"></div>` +
+        `<div class="col"><div class="col-tag">Épinglés</div>${pin}</div>`
+      );
+    }
+
+    /** Horizontal actuel : Pin | sep | Rec en ligne */
+    function appsHorizontalHtml() {
+      const pin = PINNED.slice(0, 3).map(appBtn).join("") + `<button class="more" type="button">+</button>`;
+      const rec = RECENT.slice(0, 3).map(appBtn).join("") + `<button class="more" type="button">+</button>`;
+      return `<div class="col">${pin}</div><span class="sep" role="separator"></span><div class="col">${rec}</div>`;
+    }
+
+    document.querySelectorAll("[data-fill]").forEach((el) => {
+      const kind = el.getAttribute("data-fill");
+      if (kind === "devices") el.innerHTML = DEVICES.map(deviceHtml).join("");
+      else if (kind === "sessions") el.innerHTML = SESSIONS.map(sessionHtml).join("");
+      else if (kind === "apps-v") el.innerHTML = appsVerticalHtml();
+      else if (kind === "apps-h") el.innerHTML = appsHorizontalHtml();
+    });
+
+    function layoutFreeBodies(stage) {
+      const safeBottom = 100;
+      stage.querySelectorAll(".body.is-free").forEach((body) => {
+        const module = body.closest(".module");
+        const rect = module.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        const titleBlock = (module.querySelector(".title")?.offsetHeight || 0)
+          + (module.querySelector(".badge")?.offsetHeight || 0)
+          + (module.querySelector(".scroll-hint")?.offsetHeight || 0) + 14;
+        const topInStage = rect.top - stageRect.top + titleBlock;
+        const available = Math.max(120, stageRect.height - safeBottom - topInStage - 8);
+        body.style.setProperty("--free-max", `${Math.floor(available)}px`);
+      });
+    }
+
+    function showTab(id) {
+      document.querySelectorAll(".stage").forEach((s) => {
+        s.hidden = s.id !== `stage-${id}`;
+      });
+      document.querySelectorAll(".tabs button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === id);
+      });
+      const stage = document.getElementById(`stage-${id}`);
+      if (stage) requestAnimationFrame(() => layoutFreeBodies(stage));
+    }
+
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => showTab(btn.dataset.tab));
+    });
+    window.addEventListener("resize", () => {
+      const visible = document.querySelector(".stage:not([hidden])");
+      if (visible) layoutFreeBodies(visible);
+    });
+    showTab("a");
+  </script>
+</body>
+</html>

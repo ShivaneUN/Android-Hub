@@ -330,7 +330,9 @@
     panel.classList.toggle("is-few", few);
     // Comme sessions : 1–2 centrés ; 3+ grille 3×2 + scroll.
     const visibleMax = few ? 2 : (vertical ? 2 : 6);
-    panel.classList.toggle("is-scrollable", !few && count > visibleMax);
+    const hasBelow = homeModuleHasNeighborBelow("devices");
+    panel.classList.toggle("is-scrollable", !few && (count > visibleMax || !hasBelow));
+    applyHomeModuleContentHeightBudget("devices");
   }
 
   /** Sessions : 1–2 → placement centré (comme appareils) ; 3+ → grille 3×2 + scroll. */
@@ -347,7 +349,73 @@
     grid.classList.toggle("is-few", few);
     grid.classList.remove("is-compact");
     const visibleMax = few ? 2 : (vertical ? 2 : 6);
-    grid.classList.toggle("is-scrollable", !few && count > visibleMax);
+    const hasBelow = homeModuleHasNeighborBelow("sessions");
+    grid.classList.toggle("is-scrollable", !few && (count > visibleMax || !hasBelow));
+    applyHomeModuleContentHeightBudget("sessions");
+  }
+
+  /**
+   * True si un autre module visible est positionné plus bas
+   * (→ hauteur contenu plafonnée ; sinon expand jusqu’au dock).
+   */
+  function homeModuleHasNeighborBelow(moduleId) {
+    const self = getHomeModuleCollisionBox(moduleId);
+    if (!self) return false;
+    return HOME_MODULE_IDS.some((oid) => {
+      if (oid === moduleId) return false;
+      const other = getHomeModuleCollisionBox(oid);
+      if (!other) return false;
+      return other.y > self.y + self.h * 0.35;
+    });
+  }
+
+  function getHomeModuleContentEl(moduleId) {
+    if (moduleId === "devices") return document.getElementById("home-devices-panel");
+    if (moduleId === "sessions") return document.getElementById("home-sessions-grid");
+    if (moduleId === "apps") return document.getElementById("home-apps-strip");
+    return null;
+  }
+
+  /** Plafonne ou étend la zone scrollable d’un module selon voisin ↓ / dock. */
+  function applyHomeModuleContentHeightBudget(moduleId) {
+    const el = getHomeModuleContentEl(moduleId);
+    const moduleEl = getHomeModuleEl(moduleId);
+    if (!el || !moduleEl || moduleEl.hidden || moduleEl.classList.contains("is-content-hidden")) {
+      return;
+    }
+    const hasBelow = homeModuleHasNeighborBelow(moduleId);
+    el.classList.toggle("is-height-capped", hasBelow);
+    el.classList.toggle("is-height-free", !hasBelow);
+    moduleEl.classList.toggle("is-content-capped", hasBelow);
+    moduleEl.classList.toggle("is-content-free", !hasBelow);
+
+    if (hasBelow) {
+      el.style.removeProperty("--home-content-max-h");
+      return;
+    }
+
+    const dock = getCentralDockExclusionRect(10);
+    const rect = el.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height >= 0)) return;
+    const maxH = Math.max(120, Math.floor(dock.top - rect.top - 10));
+    el.style.setProperty("--home-content-max-h", `${maxH}px`);
+    el.classList.add("is-scrollable");
+  }
+
+  function applyAllHomeModulesContentHeightBudgets() {
+    if (!canMutateHomeModuleLayout()) return;
+    HOME_MODULE_IDS.forEach(applyHomeModuleContentHeightBudget);
+  }
+
+  function layoutHomeAppsStrip() {
+    const strip = document.getElementById("home-apps-strip");
+    const appsSection = document.querySelector(".home-apps-section");
+    if (!strip || !appsSection) return;
+    const vertical = appsSection.dataset?.orientation === "vertical";
+    appsSection.classList.toggle("is-apps-vertical", vertical);
+    appsSection.classList.toggle("is-apps-horizontal", !vertical);
+    strip.classList.toggle("is-apps-cols", vertical);
+    applyHomeModuleContentHeightBudget("apps");
   }
 
   function renderHomeSessions(sessions) {
@@ -2398,6 +2466,7 @@
 
       HOME_MODULE_IDS.forEach(rememberHomeModuleTitleCenter);
       if (sizeChanged) scheduleHomeModulesSeparation();
+      requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
       return sizeChanged;
     } finally {
       homeLayoutSyncLock = false;
@@ -2831,6 +2900,7 @@
         unstickOverlappingHomeModules();
         ensureHomeModulesClearOfDock();
         if (homeModulesStillOverlap()) unstickOverlappingHomeModules();
+        applyAllHomeModulesContentHeightBudgets();
       });
     }, 120);
   }
@@ -3524,12 +3594,17 @@
     applyHomeModuleState(moduleId);
     if (moduleId === "devices") layoutHomeDevicesSplit();
     if (moduleId === "sessions") layoutHomeSessionsSplit();
+    if (moduleId === "apps") {
+      layoutHomeAppsStrip();
+      void syncHomeApps();
+    }
     const fixed = resolveHomeModuleOverlaps(moduleId, state.x, state.y);
     state.x = fixed.x;
     state.y = fixed.y;
     applyHomeModuleState(moduleId);
     saveHomeModulesState();
     closeAllHomeModuleMenus();
+    requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
   }
 
   function toggleHomeModuleLock(moduleId) {
@@ -3734,6 +3809,7 @@
         saveHomeModulesState(true);
         saveHomeFabsState();
         rememberHomeModuleTitleCenter(moduleId);
+        requestAnimationFrame(() => applyAllHomeModulesContentHeightBudgets());
       }
       homeModuleDrag = null;
     };
@@ -4627,10 +4703,20 @@
       if (pinnedNamesChanged) savePinnedApps();
       await applyInstanceCustomNamesToHomeEntries(recentEntries);
 
-      const pinnedVisible = pinnedEntries.slice(0, HOME_APPS_STRIP_VISIBLE);
-      const recentVisible = recentEntries.slice(0, HOME_APPS_STRIP_VISIBLE);
-      const pinnedHasMore = pinnedEntries.length > HOME_APPS_STRIP_VISIBLE;
-      const recentHasMore = recentEntries.length > HOME_APPS_STRIP_VISIBLE;
+      const vertical = appsSection?.dataset?.orientation === "vertical";
+      // Budget voisin : en horizontal plafonné → 3 visibles ; libre → autant que possible.
+      // En vertical → colonnes (toutes les apps, scroll ↓).
+      const appsFree = !homeModuleHasNeighborBelow("apps");
+      const stripLimit = vertical
+        ? Math.max(pinnedEntries.length, recentEntries.length, HOME_APPS_STRIP_VISIBLE)
+        : (appsFree
+          ? Math.max(HOME_APPS_STRIP_VISIBLE, HOME_PINNED_APPS_MAX, HOME_RECENT_APPS_MAX)
+          : HOME_APPS_STRIP_VISIBLE);
+
+      const pinnedVisible = pinnedEntries.slice(0, stripLimit);
+      const recentVisible = recentEntries.slice(0, stripLimit);
+      const pinnedHasMore = !vertical && pinnedEntries.length > stripLimit;
+      const recentHasMore = !vertical && recentEntries.length > stripLimit;
 
       const pinnedTiles = await Promise.all(
         pinnedVisible.map((entry, index) => buildHomeAppTileHtml(entry, index, {
@@ -4656,26 +4742,31 @@
       const hasSep = pinnedTiles.length > 0 && recentTiles.length > 0;
       appsSection?.classList.toggle("has-apps-sep", hasSep);
 
-      const parts = [];
-      if (pinnedTiles.length) {
-        parts.push(
+      const pinnedBlock = pinnedTiles.length
+        ? (
           `<div class="home-apps-strip-group" data-apps-group="pinned">` +
           pinnedTiles.join("") +
           (pinnedHasMore ? moreBtnHtml("pinned", morePinnedLabel) : "") +
           `</div>`
-        );
-      }
-      if (hasSep) {
-        parts.push(`<span class="home-apps-strip-sep" aria-hidden="true"></span>`);
-      }
-      if (recentTiles.length) {
-        parts.push(
+        )
+        : "";
+      const recentBlock = recentTiles.length
+        ? (
           `<div class="home-apps-strip-group" data-apps-group="recent">` +
           recentTiles.join("") +
           (recentHasMore ? moreBtnHtml("recent", moreRecentLabel) : "") +
           `</div>`
-        );
-      }
+        )
+        : "";
+      const sepBlock = hasSep
+        ? `<span class="home-apps-strip-sep" aria-hidden="true"></span>`
+        : "";
+
+      // Vertical : Récentes | sep | Épinglés (colonnes).
+      // Horizontal : Épinglés | sep | Récentes (inchangé).
+      const parts = vertical
+        ? [recentBlock, sepBlock, pinnedBlock].filter(Boolean)
+        : [pinnedBlock, sepBlock, recentBlock].filter(Boolean);
 
       strip.innerHTML = parts.join("");
       // Ne pas fermer si ouvert : devices-refreshed / métadonnées rebuildent la strip.
@@ -4696,6 +4787,7 @@
         });
       }
       strip.querySelectorAll(".home-apps-more-btn").forEach(bindHomeAppsMoreButton);
+      layoutHomeAppsStrip();
     } catch (_err) {
       appsSection?.classList.remove("has-apps-sep");
       if (!homeAppsMoreOpenKind) closeHomeAppsMorePopup();
@@ -4764,6 +4856,8 @@
   window.syncHomeSessions = syncHomeSessions;
   window.layoutHomeDevicesSplit = layoutHomeDevicesSplit;
   window.layoutHomeSessionsSplit = layoutHomeSessionsSplit;
+  window.layoutHomeAppsStrip = layoutHomeAppsStrip;
+  window.applyAllHomeModulesContentHeightBudgets = applyAllHomeModulesContentHeightBudgets;
   window.syncRecentApps = syncHomeApps;
   window.syncHomeApps = syncHomeApps;
   window.pinHomeApp = pinHomeApp;
@@ -4771,6 +4865,91 @@
   window.isHomeAppPinned = isHomeAppPinned;
   window.getHomePinnedApps = getHomePinnedApps;
   window.stopHomePreviewPolling = stopHomePreviewPolling;
+
+  /**
+   * Simu locale : modules en vertical + contenu rempli
+   * (devices / sessions / épinglés / historique). DevTools → hubSimHomeVertical()
+   */
+  window.hubSimHomeVertical = function hubSimHomeVertical() {
+    if (!homeModulesState) loadHomeModulesState();
+    HOME_MODULE_IDS.forEach((id) => {
+      if (!homeModulesState[id]) return;
+      homeModulesState[id].orientation = "vertical";
+      homeModulesState[id].contentHidden = false;
+      applyHomeModuleState(id);
+    });
+    saveHomeModulesState(true);
+
+    document.querySelectorAll(".home-module.tablet-only").forEach((el) => {
+      el.hidden = false;
+    });
+    document.getElementById("empty-state-intro")?.setAttribute("hidden", "");
+    document.querySelector(".empty-state-mascot")?.setAttribute("hidden", "");
+
+    const devices = [
+      { name: "Xiaomi Pad 5", battery: 19, ok: false },
+      { name: "Xiaomi Pad 6", battery: 49, ok: true },
+      { name: "Galaxy Tab S9", battery: 81, ok: true },
+      { name: "Pixel Tablet", battery: 64, ok: true },
+      { name: "Lenovo P12", battery: 12, ok: false }
+    ];
+    const panel = document.getElementById("home-devices-panel");
+    if (panel) {
+      panel.innerHTML = devices.map((d, i) => (
+        `<div class="sidebar-device-card" data-sim-device="${i}">` +
+        `<div class="sidebar-device-main">` +
+        `<span class="device-status-dot" style="background:${d.ok ? "#3fb950" : "#e5534b"}"></span>` +
+        `<div class="sidebar-device-text"><div class="sidebar-device-name">${d.name}</div>` +
+        `<div class="sidebar-device-meta">${d.battery}% · WiFi</div></div>` +
+        `<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>` +
+        `</div></div>`
+      )).join("");
+      layoutHomeDevicesSplit();
+    }
+
+    const sessions = [
+      { sessionId: "sim-1", label: "Xiaomi Pad 5 (Mirror)", active: true, deviceColor: { hex: "#e5534b" } },
+      { sessionId: "sim-2", label: "Pad 6 · Discord #2", active: false, deviceColor: { hex: "#4f8cff" } },
+      { sessionId: "sim-3", label: "Tab S9 · Spotify", active: false, deviceColor: { hex: "#3fb950" } },
+      { sessionId: "sim-4", label: "Pixel · Opera", active: false, deviceColor: { hex: "#f0a500" } },
+      { sessionId: "sim-5", label: "P12 · Feca", active: false, deviceColor: { hex: "#a78bfa" } }
+    ];
+    homeFpsBySession = { "sim-1": 58, "sim-2": 42, "sim-3": 30, "sim-4": 24, "sim-5": 18 };
+    homeSessionsKey = "";
+    renderHomeSessions(sessions);
+
+    const strip = document.getElementById("home-apps-strip");
+    const appsSection = document.querySelector(".home-apps-section");
+    if (strip && appsSection) {
+      appsSection.classList.add("has-apps-sep");
+      const tile = (label, kind, badge) => (
+        `<button type="button" class="home-app-tile" data-sim-app="${kind}">` +
+        `<span class="home-app-tile-icon">${label.slice(0, 2)}` +
+        (badge ? `<span class="home-app-tile-dot" style="background:${badge}"></span>` : "") +
+        `</span><span class="home-app-tile-label">${label}</span></button>`
+      );
+      const more = (kind) => (
+        `<button type="button" class="home-apps-more-btn" data-apps-more="${kind}" aria-label="+">` +
+        `<span aria-hidden="true">+</span></button>`
+      );
+      strip.innerHTML =
+        `<div class="home-apps-strip-group" data-apps-group="pinned">` +
+        tile("WhatsApp", "pin", "#3fb950") + tile("Chrome", "pin") + tile("Maps", "pin", "#e5534b") + more("pinned") +
+        `</div>` +
+        `<span class="home-apps-strip-sep" aria-hidden="true"></span>` +
+        `<div class="home-apps-strip-group" data-apps-group="recent">` +
+        tile("Feca", "rec", "#3fb950") + tile("Opera", "rec") + tile("Spotify", "rec") + more("recent") +
+        `</div>`;
+    }
+
+    scheduleHomeModulesSeparation();
+    return {
+      orientation: "vertical",
+      devices: devices.length,
+      sessions: sessions.length,
+      apps: "3 pinned + 3 recent (+)"
+    };
+  };
   window.getHomeShortcutFabPrefs = getHomeShortcutFabPrefs;
   window.setHomeShortcutFabEnabled = setHomeShortcutFabEnabled;
   window.applyHomeShortcutFabs = () => {
