@@ -77,13 +77,13 @@ class CustomNamesManager {
     }
 
     getDeviceDisplayName(serial, fallbackName) {
-        const record = this.data.devices[serial];
+        const { record } = this.findDeviceRecord([serial], serial);
         if (record?.customName) return record.customName;
         return record?.originalName || fallbackName || serial;
     }
 
     getDeviceOriginalName(serial, fallbackName) {
-        const record = this.data.devices[serial];
+        const { record } = this.findDeviceRecord([serial], serial);
         return record?.originalName || fallbackName || serial;
     }
 
@@ -358,6 +358,33 @@ class CustomNamesManager {
         const record = this.data.sessions[sessionKey];
         if (record?.customName) return record.customName;
         return record?.originalName || fallbackName;
+    }
+
+    /**
+     * Nom d’affichage d’une app d’instance (historique / épinglées Accueil),
+     * via la clé Type-B `instance:device:package:userId`.
+     */
+    resolveInstanceDisplayName(entry = {}, fallbackName = "") {
+        const deviceId = String(entry.deviceId || entry.stableDeviceId || "").trim();
+        const packageName = String(entry.packageName || entry.package || "").trim();
+        if (!deviceId || !packageName) return fallbackName;
+
+        const rawUid = entry.userId;
+        const userId = rawUid === undefined || rawUid === null || rawUid === ""
+            ? 0
+            : (Number.isInteger(rawUid) ? rawUid : Number(rawUid));
+        const meta = {
+            type: "B",
+            deviceId,
+            stableDeviceId: entry.stableDeviceId || null,
+            packageName,
+            userId: Number.isFinite(userId) ? userId : 0
+        };
+        const sessionKey = this.buildSessionKey(meta);
+        const aliasKeys = this.collectSessionAliasKeys(meta);
+        const { record } = this.findSessionRecord(aliasKeys, sessionKey);
+        if (record?.customName) return String(record.customName);
+        return fallbackName;
     }
 
     getSessionOriginalName(sessionKey, fallbackName) {

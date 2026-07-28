@@ -1,5 +1,17 @@
 const { ipcMain } = require("electron");
 
+function applyCustomInstanceAppNames(entries, namesManager) {
+    if (!namesManager || !Array.isArray(entries)) return entries;
+    return entries.map((entry) => {
+        const resolved = namesManager.resolveInstanceDisplayName(
+            entry,
+            entry?.appName || entry?.packageName || ""
+        );
+        if (!resolved || resolved === entry.appName) return entry;
+        return { ...entry, appName: resolved };
+    });
+}
+
 function registerLaunchHistoryHandlers(deps) {
     const getBridge = deps.getAppsWorkerBridge;
     const getFacade = deps.getLaunchHistoryManager;
@@ -20,8 +32,12 @@ function registerLaunchHistoryHandlers(deps) {
             const enrichedEntries = metadataManager
                 ? await metadataManager.enrichHistoryEntries(entries)
                 : entries;
-            console.log("[LaunchHistory] list IPC", enrichedEntries.length, "entrée(s)");
-            return { success: true, entries: enrichedEntries };
+            const namedEntries = applyCustomInstanceAppNames(
+                enrichedEntries,
+                deps.getCustomNamesManager?.()
+            );
+            console.log("[LaunchHistory] list IPC", namedEntries.length, "entrée(s)");
+            return { success: true, entries: namedEntries };
         } catch (err) {
             console.warn("[LaunchHistory] list IPC:", err.message);
             return { success: false, error: err.message, entries: [] };

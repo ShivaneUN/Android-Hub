@@ -173,6 +173,7 @@ contextBridge.exposeInMainWorld("namesAPI", {
     resetSession: (payload) => ipcRenderer.invoke("names:resetSession", payload),
     getDeviceInfo: (payload) => ipcRenderer.invoke("names:getDeviceInfo", payload),
     getSessionInfo: (payload) => ipcRenderer.invoke("names:getSessionInfo", payload),
+    resolveInstanceAppNames: (items) => ipcRenderer.invoke("names:resolveInstanceAppNames", items),
     openRenameDialog: (payload) => ipcRenderer.invoke("names:openRenameDialog", payload),
     cancelRenameDialog: () => ipcRenderer.invoke("names:cancelRenameDialog"),
     showContextMenu: (payload) => ipcRenderer.invoke("context-menu:show", payload),

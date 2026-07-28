@@ -1136,7 +1136,11 @@
     "moduleAlignOff": "Stop aligning titles",
     "moduleHideContent": "Hide content",
     "moduleShowContent": "Show content",
-    "pinnedApps": "Pinned"
+    "pinnedApps": "Pinned",
+    "morePinnedApps": "More pinned",
+    "moreRecentApps": "More recent",
+    "showMorePinned": "More pinned apps",
+    "showMoreRecent": "More recent apps"
   },
   "uiTheme": {
     "classicTitle": "Classic interface",

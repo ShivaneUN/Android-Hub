@@ -3156,7 +3156,8 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     registerLaunchHistoryHandlers({
         getAppsWorkerBridge: () => appsWorkerBridge,
         getLaunchHistoryManager: () => launchHistoryManager,
-        getAppMetadataManager: () => appMetadataManager
+        getAppMetadataManager: () => appMetadataManager,
+        getCustomNamesManager: () => global.customNamesManager
     });
 
     registerAppMetadataHandlers({

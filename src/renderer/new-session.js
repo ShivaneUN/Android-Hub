@@ -23,7 +23,7 @@ const DELETE_ICON_SVG = `<svg viewBox="0 0 24 24" stroke-width="2" aria-hidden="
 const DEVICE_USB_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 17h6"/></svg>`;
 const DEVICE_WIFI_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`;
 let historyExpanded = false;
-const RECENTS_STRIP_LIMIT = 3;
+const RECENTS_STRIP_LIMIT = 9;
 
 const newInstanceSessions = new Map();
 let activeNewInstanceSessionId = null;
@@ -217,8 +217,23 @@ function getHistoryAppLabel(entry) {
 }
 
 function resolveDeviceName(historyDeviceId, devices = connectedDevicesCache) {
-    const device = findDeviceForHistory(devices, historyDeviceId);
-    return device?.name || historyDeviceId;
+    const id = String(historyDeviceId || "").trim();
+    if (!id) return "";
+
+    const live = findDeviceForHistory(devices, id);
+    if (live?.name) return String(live.name).trim();
+
+    // Inclure les appareils hors ligne (noms custom déjà appliqués côté main).
+    const all = typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : [];
+    const any = (Array.isArray(all) ? all : []).find((device) =>
+        device?.deviceId === id
+        || device?.serial === id
+        || device?.usbSerial === id
+        || device?.wifiSerial === id
+    );
+    if (any?.name) return String(any.name).trim();
+
+    return id;
 }
 
 function findDeviceForHistory(devices, historyDeviceId) {
@@ -836,8 +851,18 @@ async function resolveDeviceDisplayNameAsync(deviceId) {
     const id = String(deviceId || "").trim();
     if (!id) return "";
 
-    const live = findDeviceForHistory(connectedDevicesCache, id);
-    if (live?.name) return String(live.name).trim();
+    const syncName = resolveDeviceName(id);
+    if (syncName && syncName !== id) return syncName;
+
+    const live = findDeviceForHistory(connectedDevicesCache, id)
+        || (typeof window.getCurrentDevices === "function"
+            ? (window.getCurrentDevices() || []).find((device) =>
+                device?.deviceId === id
+                || device?.serial === id
+                || device?.usbSerial === id
+                || device?.wifiSerial === id
+            )
+            : null);
 
     const candidates = [id];
     if (live) {
@@ -853,17 +878,20 @@ async function resolveDeviceDisplayNameAsync(deviceId) {
             try {
                 const info = await window.namesAPI.getDeviceInfo({
                     serial: key,
-                    fallbackName: live?.name || key
+                    fallbackName: live?.name || live?.originalName || key
                 });
+                const custom = String(info?.customName || "").trim();
+                if (custom) return custom;
                 const name = String(info?.name || "").trim();
-                if (name) return name;
+                if (name && name !== key && name !== id) return name;
+                if (info?.hasCustomName && name) return name;
             } catch (_err) {
                 /* try next */
             }
         }
     }
 
-    return resolveDeviceName(id);
+    return syncName || id;
 }
 
 function renderHistoryList() {
@@ -911,6 +939,20 @@ async function enrichHistoryTipColors() {
         if (iconPill) {
             if (color) iconPill.style.background = color;
             else iconPill.style.removeProperty("background");
+        }
+
+        // Mettre à jour le libellé appareil visible (pas seulement l’infobulle).
+        if (deviceName) {
+            const meta = node.querySelector(".app-list-item-meta, .ni-recent-card-meta");
+            if (meta) {
+                const parts = String(meta.textContent || "").split(" • ").map((p) => p.trim()).filter(Boolean);
+                if (parts.length) {
+                    parts[0] = deviceName;
+                    meta.textContent = parts.join(" • ");
+                } else {
+                    meta.textContent = deviceName;
+                }
+            }
         }
     });
 }
@@ -2050,6 +2092,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.deviceColorsAPI?.onUpdated) {
         window.deviceColorsAPI.onUpdated(() => {
             void enrichHistoryTipColors();
+        });
+    }
+
+    if (window.namesAPI?.onUpdated) {
+        window.namesAPI.onUpdated(() => {
+            renderHistoryList();
         });
     }
 

@@ -312,8 +312,17 @@
                 .join("");
         }
 
+        _itemSelector() {
+            // "app-list-item foo" → ".app-list-item.foo" (pas descendant CSS)
+            const classes = String(this.options.itemClassName || "app-list-item")
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean);
+            return classes.length ? `.${classes.join(".")}` : ".app-list-item";
+        }
+
         _handleClick(event) {
-            const itemEl = event.target.closest(`.${this.options.itemClassName}`);
+            const itemEl = event.target.closest(this._itemSelector());
             if (!itemEl || !this.container.contains(itemEl)) return;
 
             if (event.target.closest("[data-app-list-action]")) {

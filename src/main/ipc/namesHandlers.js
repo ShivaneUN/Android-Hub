@@ -283,13 +283,36 @@ function registerNamesHandlers(deps) {
         manager.consolidateDeviceRecord(stableId, fallbackName, aliasKeys);
         manager.ensureDeviceOriginal(stableId, fallbackName);
 
+        const lookupKeys = [...new Set([stableId, serial, ...aliasKeys].filter(Boolean))];
+        const { record } = manager.findDeviceRecord(lookupKeys, stableId);
+
         return {
             success: true,
             name: manager.getDeviceDisplayName(stableId, fallbackName),
             originalName: manager.getDeviceOriginalName(stableId, fallbackName),
+            customName: record?.customName || null,
             hasCustomName: manager.hasDeviceCustomName(stableId, aliasKeys),
             deviceId: stableId
         };
+    });
+
+    ipcMain.handle("names:resolveInstanceAppNames", async (_event, items = []) => {
+        const manager = getManager();
+        if (!manager || !Array.isArray(items)) {
+            return { success: false, names: {} };
+        }
+
+        const names = {};
+        for (const item of items) {
+            if (!item?.deviceId || !item?.packageName) continue;
+            const userId = item.userId === undefined || item.userId === null || item.userId === ""
+                ? 0
+                : Number(item.userId);
+            const key = `${item.deviceId}::${item.packageName}::${Number.isFinite(userId) ? userId : 0}`;
+            const resolved = manager.resolveInstanceDisplayName(item, item.appName || null);
+            if (resolved) names[key] = resolved;
+        }
+        return { success: true, names };
     });
 
     ipcMain.handle("names:getSessionInfo", async (_event, { sessionId }) => {

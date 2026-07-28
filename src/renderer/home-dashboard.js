@@ -4,6 +4,8 @@
   let pinnedAppsLoaded = false;
   const HOME_PINNED_APPS_STORAGE_KEY = "android-hub.home-pinned-apps.v1";
   const HOME_PINNED_APPS_MAX = 16;
+  const HOME_APPS_STRIP_VISIBLE = 3;
+  const HOME_RECENT_APPS_MAX = 24;
   /** Nombre max de pastilles compactes visibles ; le reste passe dans +N. */
   const DOCK_BATTERY_VISIBLE_MAX = 5;
   let dockMoreOpen = false;
@@ -2299,7 +2301,100 @@
     homeModuleTitleCenterX[moduleId] = box.titleCenterX;
   }
 
-  /** Séparation planifiée : uniquement pour décoller des collisions (Y), pas de recalcul global. */
+  /**
+   * Taille visuelle réelle d’un module (titre + contenu absolute).
+   * offsetX/Y = décalage du coin haut-gauche visuel vs position sauvegardée (left/top).
+   */
+  function getHomeModuleVisualMetrics(moduleEl) {
+    if (!moduleEl || moduleEl.hidden) {
+      return { offsetX: 0, offsetY: 0, w: 160, h: 80 };
+    }
+    const moduleRect = moduleEl.getBoundingClientRect();
+    let minL = Infinity;
+    let minT = Infinity;
+    let maxR = -Infinity;
+    let maxB = -Infinity;
+    const addRect = (el) => {
+      if (!el) return;
+      try {
+        if (getComputedStyle(el).display === "none") return;
+      } catch (_err) {
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 && r.height < 1) return;
+      minL = Math.min(minL, r.left);
+      minT = Math.min(minT, r.top);
+      maxR = Math.max(maxR, r.right);
+      maxB = Math.max(maxB, r.bottom);
+    };
+
+    addRect(moduleEl.querySelector(".home-module-chrome") || moduleEl.querySelector(".home-module-title"));
+    if (!moduleEl.classList.contains("is-content-hidden")) {
+      addRect(moduleEl.querySelector(".home-module-body"));
+    }
+    if (!Number.isFinite(minL)) {
+      const w = Math.max(moduleEl.offsetWidth || 160, 8);
+      const h = Math.max(moduleEl.offsetHeight || 80, 8);
+      return { offsetX: 0, offsetY: 0, w, h };
+    }
+    return {
+      offsetX: minL - moduleRect.left,
+      offsetY: minT - moduleRect.top,
+      w: Math.max(1, maxR - minL),
+      h: Math.max(1, maxB - minT)
+    };
+  }
+
+  /** Boîte visuelle viewport pour anti-collision dock / modules. */
+  function getHomeModuleViewportBox(moduleEl, x, y) {
+    const host = document.querySelector(".empty-state");
+    if (!host || !moduleEl) return null;
+    const hostRect = host.getBoundingClientRect();
+    const vis = getHomeModuleVisualMetrics(moduleEl);
+    return {
+      x: hostRect.left + x + vis.offsetX,
+      y: hostRect.top + y + vis.offsetY,
+      w: vis.w,
+      h: vis.h
+    };
+  }
+
+  /** Repousse les modules dont le contenu (absolute) empiète sur le dock. */
+  function ensureHomeModulesClearOfDock() {
+    if (!canMutateHomeModuleLayout() || !homeModulesState) return;
+    const host = document.querySelector(".empty-state");
+    if (!host) return;
+    const hostRect = host.getBoundingClientRect();
+    const dock = getCentralDockExclusionRect();
+    let changed = false;
+
+    HOME_MODULE_IDS.forEach((moduleId) => {
+      const moduleEl = getHomeModuleEl(moduleId);
+      const state = homeModulesState[moduleId];
+      if (!moduleEl || !state || moduleEl.hidden) return;
+
+      const viewBox = getHomeModuleViewportBox(moduleEl, state.x, state.y);
+      if (!viewBox || !boxesOverlap(viewBox, dock)) return;
+
+      const pushed = pushBoxOutOfDock(viewBox.x, viewBox.y, viewBox.w, viewBox.h);
+      const vis = getHomeModuleVisualMetrics(moduleEl);
+      const nextX = pushed.x - hostRect.left - vis.offsetX;
+      const nextY = pushed.y - hostRect.top - vis.offsetY;
+      const clamped = clampHomeModulePosition(moduleEl, nextX, nextY);
+      if (Math.abs(clamped.x - state.x) > 0.5 || Math.abs(clamped.y - state.y) > 0.5) {
+        state.x = Math.round(clamped.x);
+        state.y = Math.round(clamped.y);
+        applyHomeModuleState(moduleId);
+        rememberHomeModuleTitleCenter(moduleId);
+        changed = true;
+      }
+    });
+
+    if (changed) saveHomeModulesState();
+  }
+
+  /** Séparation planifiée : décoller collisions + repousser hors du dock. */
   function scheduleHomeModulesSeparation() {
     if (!canMutateHomeModuleLayout()) return;
     if (homeModuleSepTimer) window.clearTimeout(homeModuleSepTimer);
@@ -2309,6 +2404,7 @@
       requestAnimationFrame(() => {
         if (!canMutateHomeModuleLayout()) return;
         unstickOverlappingHomeModules();
+        ensureHomeModulesClearOfDock();
       });
     }, 40);
   }
@@ -2578,8 +2674,11 @@
           return;
         }
         restoreHomeModuleTitleCenter(moduleId);
+        scheduleHomeModulesSeparation();
       });
       ro.observe(moduleEl);
+      const bodyEl = moduleEl.querySelector(".home-module-body");
+      if (bodyEl) ro.observe(bodyEl);
     });
   }
 
@@ -2795,38 +2894,33 @@
     const host = document.querySelector(".empty-state");
     if (!host || !moduleEl) return { x, y };
     const hostRect = host.getBoundingClientRect();
-    const width = moduleEl.offsetWidth || 160;
-    const height = moduleEl.offsetHeight || 80;
+    const vis = getHomeModuleVisualMetrics(moduleEl);
+    const width = vis.w;
+    const height = vis.h;
     // Host invalide / vue session : ne pas écraser la position (sinon → x=0 à gauche)
     if (hostRect.width < 240 || hostRect.height < 180) {
       return { x, y };
     }
-    // Module plus large que le host : garder x, seulement borner y si besoin
-    const maxX = Math.max(0, hostRect.width - width - 8);
-    const maxY = Math.max(0, hostRect.height - height - 8);
+    const maxX = Math.max(0, hostRect.width - width - vis.offsetX - 8);
+    const maxY = Math.max(0, hostRect.height - height - vis.offsetY - 8);
     let next = {
-      x: width + 8 >= hostRect.width ? x : Math.min(Math.max(0, x), maxX),
-      y: height + 8 >= hostRect.height ? y : Math.min(Math.max(0, y), maxY)
+      x: width + vis.offsetX + 8 >= hostRect.width ? x : Math.min(Math.max(0, x), maxX),
+      y: height + vis.offsetY + 8 >= hostRect.height ? y : Math.min(Math.max(0, y), maxY)
     };
 
-    // Interdire le chevauchement avec la barre centrale
+    // Interdire le chevauchement avec la barre centrale (titre + contenu absolute)
     const dock = getCentralDockExclusionRect();
-    const viewBox = {
-      x: hostRect.left + next.x,
-      y: hostRect.top + next.y,
-      w: width,
-      h: height
-    };
-    if (boxesOverlap(viewBox, dock)) {
-      const pushed = pushBoxOutOfDock(viewBox.x, viewBox.y, width, height);
+    const viewBox = getHomeModuleViewportBox(moduleEl, next.x, next.y);
+    if (viewBox && boxesOverlap(viewBox, dock)) {
+      const pushed = pushBoxOutOfDock(viewBox.x, viewBox.y, viewBox.w, viewBox.h);
       next = {
-        x: pushed.x - hostRect.left,
-        y: pushed.y - hostRect.top
+        x: pushed.x - hostRect.left - vis.offsetX,
+        y: pushed.y - hostRect.top - vis.offsetY
       };
-      if (width + 8 < hostRect.width) {
+      if (width + vis.offsetX + 8 < hostRect.width) {
         next.x = Math.min(Math.max(0, next.x), maxX);
       }
-      if (height + 8 < hostRect.height) {
+      if (height + vis.offsetY + 8 < hostRect.height) {
         next.y = Math.min(Math.max(0, next.y), maxY);
       }
     }
@@ -2865,43 +2959,45 @@
     const moduleEl = getHomeModuleEl(moduleId);
     if (!moduleEl) return { x, y };
 
-    const w = Math.max(1, moduleEl.offsetWidth || 160);
-    const h = Math.max(1, moduleEl.offsetHeight || 80);
+    const vis = getHomeModuleVisualMetrics(moduleEl);
     const gap = HOME_MODULE_GAP;
     let next = clampHomeModulePosition(moduleEl, x, y);
-    next = { x: next.x, y: next.y, w, h };
+    next = { x: next.x, y: next.y, w: vis.w, h: vis.h, ox: vis.offsetX, oy: vis.offsetY };
 
     for (let pass = 0; pass < 20; pass += 1) {
       let blocker = null;
       for (const otherId of HOME_MODULE_IDS) {
         if (otherId === moduleId) continue;
-        // Pendant le drag, l’autre module peut encore avoir l’ancienne boîte visuelle
         const other = getHomeModuleCollisionBox(otherId);
         if (!other) continue;
-        if (!homeModulesOverlap(next, other, gap)) continue;
+        const trial = { x: next.x + next.ox, y: next.y + next.oy, w: next.w, h: next.h };
+        if (!homeModulesOverlap(trial, other, gap)) continue;
         if (!blocker || other.y + other.h > blocker.y + blocker.h) {
           blocker = other;
         }
       }
       if (!blocker) break;
 
-      // Toujours placer SOUS le bloqueur (il n’y a pas la place sur lui)
-      const belowY = blocker.y + blocker.h + gap;
-      const sideRight = blocker.x + blocker.w + gap;
-      const sideLeft = blocker.x - w - gap;
+      const belowY = blocker.y + blocker.h + gap - next.oy;
+      const sideRight = blocker.x + blocker.w + gap - next.ox;
+      const sideLeft = blocker.x - next.w - gap - next.ox;
 
-      // Préférer rester sur le même X (empilement) ; sinon essayer à côté
       const candidates = [
         { x: next.x, y: belowY },
-        { x: sideRight, y: blocker.y },
-        { x: sideLeft, y: blocker.y },
-        { x: next.x, y: blocker.y - h - gap }
+        { x: sideRight, y: blocker.y - next.oy },
+        { x: sideLeft, y: blocker.y - next.oy },
+        { x: next.x, y: blocker.y - next.h - gap - next.oy }
       ];
 
       let chosen = null;
       for (const c of candidates) {
         const clamped = clampHomeModulePosition(moduleEl, c.x, c.y);
-        const trial = { x: clamped.x, y: clamped.y, w, h };
+        const trial = {
+          x: clamped.x + vis.offsetX,
+          y: clamped.y + vis.offsetY,
+          w: vis.w,
+          h: vis.h
+        };
         const hits = HOME_MODULE_IDS.some((oid) => {
           if (oid === moduleId) return false;
           const o = getHomeModuleCollisionBox(oid);
@@ -2914,13 +3010,11 @@
       }
 
       if (!chosen) {
-        // Forcer sous le bloqueur même si le clamp recadre
         chosen = clampHomeModulePosition(moduleEl, next.x, belowY);
         if (chosen.y < belowY) chosen = { x: next.x, y: belowY };
       }
 
       if (Math.abs(chosen.x - next.x) < 0.5 && Math.abs(chosen.y - next.y) < 0.5) {
-        // Bloqué : descendre un cran de plus
         next.y = belowY + pass + 1;
         next.x = chosen.x;
       } else {
@@ -2930,15 +3024,18 @@
     }
 
     const finalPos = clampHomeModulePosition(moduleEl, next.x, next.y);
-    // Dernière vérif : si encore en collision, forcer sous le plus bas module
     const still = HOME_MODULE_IDS
       .filter((id) => id !== moduleId)
       .map((id) => getHomeModuleCollisionBox(id))
       .filter(Boolean)
-      .filter((o) => homeModulesOverlap({ x: finalPos.x, y: finalPos.y, w, h }, o, gap));
+      .filter((o) => homeModulesOverlap(
+        { x: finalPos.x + vis.offsetX, y: finalPos.y + vis.offsetY, w: vis.w, h: vis.h },
+        o,
+        gap
+      ));
     if (still.length) {
       const bottom = still.reduce((m, o) => Math.max(m, o.y + o.h), 0);
-      return { x: finalPos.x, y: Math.round(bottom + gap) };
+      return { x: finalPos.x, y: Math.round(bottom + gap - vis.offsetY) };
     }
     return finalPos;
   }
@@ -3128,9 +3225,13 @@
           snapped.y
         );
         // N’accepter le snap que s’il ne provoque pas un chevauchement irrésolu
-        const w = moduleEl.offsetWidth || 160;
-        const h = moduleEl.offsetHeight || 80;
-        const trial = { x: resolved.x, y: resolved.y, w, h };
+        const vis = getHomeModuleVisualMetrics(moduleEl);
+        const trial = {
+          x: resolved.x + vis.offsetX,
+          y: resolved.y + vis.offsetY,
+          w: vis.w,
+          h: vis.h
+        };
         const stillHits = HOME_MODULE_IDS.some((oid) => {
           if (oid === homeModuleDrag.moduleId) return false;
           const o = getHomeModuleCollisionBox(oid);
@@ -3180,6 +3281,7 @@
         homeModulesState[moduleId].y = fixed.y;
         applyHomeModuleState(moduleId);
         unstickOverlappingHomeModules();
+        ensureHomeModulesClearOfDock();
         saveHomeModulesState(true);
         applyHomeFabsLayout();
         rememberHomeModuleTitleCenter(moduleId);
@@ -3886,6 +3988,171 @@
     });
   }
 
+  let homeAppsMoreIgnoreCloseUntil = 0;
+  /** @type {"pinned"|"recent"|null} */
+  let homeAppsMoreOpenKind = null;
+  let homeAppsMoreOpenSeq = 0;
+
+  function getHomeAppsMoreAnchor(kind) {
+    return document.querySelector(`.home-apps-more-btn[data-apps-more="${kind}"]`);
+  }
+
+  function closeHomeAppsMorePopup() {
+    homeAppsMoreOpenKind = null;
+    const popup = document.getElementById("home-apps-more-popup");
+    if (!popup) return;
+    popup.classList.add("hidden");
+    popup.setAttribute("hidden", "");
+    popup.dataset.appsGroup = "";
+    const grid = document.getElementById("home-apps-more-grid");
+    if (grid) grid.innerHTML = "";
+    document.querySelectorAll(".home-apps-more-btn[aria-expanded='true']").forEach((btn) => {
+      btn.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function positionHomeAppsMorePopup(anchorEl) {
+    const popup = document.getElementById("home-apps-more-popup");
+    if (!popup || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const popupW = popup.offsetWidth || 280;
+    const popupH = popup.offsetHeight || 220;
+    let left = rect.left + rect.width / 2 - popupW / 2;
+    let top = rect.bottom + 8;
+    if (top + popupH > window.innerHeight - 8) {
+      top = rect.top - popupH - 8;
+    }
+    left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - popupH - 8));
+    popup.style.left = `${Math.round(left)}px`;
+    popup.style.top = `${Math.round(top)}px`;
+  }
+
+  /** Après rebuild de la strip : garder le popup ouvert et le ré-ancrer. */
+  function preserveHomeAppsMoreAfterStripSync() {
+    const kind = homeAppsMoreOpenKind;
+    if (!kind) {
+      closeHomeAppsMorePopup();
+      return;
+    }
+    const popup = document.getElementById("home-apps-more-popup");
+    const anchor = getHomeAppsMoreAnchor(kind);
+    if (!popup || !anchor) {
+      closeHomeAppsMorePopup();
+      return;
+    }
+    popup.dataset.appsGroup = kind;
+    popup.classList.remove("hidden");
+    popup.removeAttribute("hidden");
+    document.querySelectorAll(".home-apps-more-btn").forEach((btn) => {
+      btn.setAttribute("aria-expanded", btn.dataset.appsMore === kind ? "true" : "false");
+    });
+    positionHomeAppsMorePopup(anchor);
+  }
+
+  async function openHomeAppsMorePopup(kind, anchorEl) {
+    const popup = document.getElementById("home-apps-more-popup");
+    const titleEl = document.getElementById("home-apps-more-title");
+    const grid = document.getElementById("home-apps-more-grid");
+    if (!popup || !grid) return;
+
+    const pinned = kind === "pinned";
+    const entries = pinned ? pinnedEntries : recentEntries;
+    const overflow = entries.slice(HOME_APPS_STRIP_VISIBLE);
+    if (!overflow.length) {
+      closeHomeAppsMorePopup();
+      return;
+    }
+
+    const openSeq = ++homeAppsMoreOpenSeq;
+    homeAppsMoreOpenKind = kind;
+    // Ignore les fermetures « extérieur » pendant l’ouverture + chargement des tuiles.
+    homeAppsMoreIgnoreCloseUntil = Date.now() + 800;
+    const titleKey = pinned ? "homeDashboard.morePinnedApps" : "homeDashboard.moreRecentApps";
+    const titleFallback = pinned ? "Autres épinglées" : "Autres récentes";
+    if (titleEl) titleEl.textContent = tHome(titleKey, titleFallback);
+    grid.innerHTML = `<p class="home-apps-more-loading">${escapeAttr(tHome("homeDashboard.wifiReconnectLoading", "Chargement…"))}</p>`;
+    popup.dataset.appsGroup = kind;
+    popup.classList.remove("hidden");
+    popup.removeAttribute("hidden");
+    document.querySelectorAll(".home-apps-more-btn").forEach((btn) => {
+      btn.setAttribute("aria-expanded", btn.dataset.appsMore === kind ? "true" : "false");
+    });
+    positionHomeAppsMorePopup(getHomeAppsMoreAnchor(kind) || anchorEl);
+
+    const tiles = await Promise.all(
+      overflow.map((entry, index) => buildHomeAppTileHtml(entry, HOME_APPS_STRIP_VISIBLE + index, {
+        pinned,
+        indexAttr: pinned ? "data-pinned-index" : "data-recent-index"
+      }))
+    );
+    // Une autre ouverture / fermeture a pris le relais.
+    if (openSeq !== homeAppsMoreOpenSeq || homeAppsMoreOpenKind !== kind) return;
+    if (popup.dataset.appsGroup !== kind || popup.classList.contains("hidden")) return;
+
+    grid.innerHTML = tiles.join("");
+    bindHomeAppTileInteractions(grid, entries, {
+      pinned,
+      indexAttr: pinned ? "data-pinned-index" : "data-recent-index"
+    });
+    grid.querySelectorAll(".home-app-tile").forEach((tile) => {
+      tile.addEventListener("click", () => closeHomeAppsMorePopup(), { once: true });
+    });
+    positionHomeAppsMorePopup(getHomeAppsMoreAnchor(kind) || anchorEl);
+    homeAppsMoreIgnoreCloseUntil = Date.now() + 150;
+  }
+
+  function bindHomeAppsMoreButton(btn) {
+    if (!btn || btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("pointerdown", (event) => {
+      // Empêche le listener document (fermeture) de voir ce geste comme un clic extérieur.
+      event.stopPropagation();
+    });
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const kind = btn.dataset.appsMore === "pinned" ? "pinned" : "recent";
+      const isOpen = homeAppsMoreOpenKind === kind;
+      if (isOpen) {
+        closeHomeAppsMorePopup();
+        return;
+      }
+      void openHomeAppsMorePopup(kind, btn);
+    });
+  }
+
+  async function applyInstanceCustomNamesToHomeEntries(entries) {
+    if (!Array.isArray(entries) || !entries.length || !window.namesAPI?.resolveInstanceAppNames) {
+      return false;
+    }
+    try {
+      const response = await window.namesAPI.resolveInstanceAppNames(
+        entries.map((entry) => ({
+          deviceId: entry.deviceId,
+          packageName: entry.packageName,
+          userId: entry.userId ?? 0,
+          appName: entry.appName || entry.packageName
+        }))
+      );
+      const names = response?.names && typeof response.names === "object" ? response.names : null;
+      if (!names) return false;
+
+      let changed = false;
+      entries.forEach((entry) => {
+        const key = buildHomeAppKey(entry);
+        const nextName = names[key];
+        if (nextName && nextName !== entry.appName) {
+          entry.appName = nextName;
+          changed = true;
+        }
+      });
+      return changed;
+    } catch (_err) {
+      return false;
+    }
+  }
+
   async function syncHomeApps() {
     const strip = document.getElementById("home-apps-strip");
     const appsSection = document.querySelector(".home-apps-section");
@@ -3900,22 +4167,40 @@
         const entries = Array.isArray(response?.entries) ? response.entries : [];
         recentEntries = entries
           .filter((entry) => !pinnedKeys.has(buildHomeAppKey(entry)))
-          .slice(0, 8);
+          .slice(0, HOME_RECENT_APPS_MAX);
       } else {
         recentEntries = [];
       }
 
+      // Noms custom des apps clonées (sessions Type-B) → tuiles Accueil.
+      const pinnedNamesChanged = await applyInstanceCustomNamesToHomeEntries(pinnedEntries);
+      if (pinnedNamesChanged) savePinnedApps();
+      await applyInstanceCustomNamesToHomeEntries(recentEntries);
+
+      const pinnedVisible = pinnedEntries.slice(0, HOME_APPS_STRIP_VISIBLE);
+      const recentVisible = recentEntries.slice(0, HOME_APPS_STRIP_VISIBLE);
+      const pinnedHasMore = pinnedEntries.length > HOME_APPS_STRIP_VISIBLE;
+      const recentHasMore = recentEntries.length > HOME_APPS_STRIP_VISIBLE;
+
       const pinnedTiles = await Promise.all(
-        pinnedEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
+        pinnedVisible.map((entry, index) => buildHomeAppTileHtml(entry, index, {
           pinned: true,
           indexAttr: "data-pinned-index"
         }))
       );
       const recentTiles = await Promise.all(
-        recentEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
+        recentVisible.map((entry, index) => buildHomeAppTileHtml(entry, index, {
           pinned: false,
           indexAttr: "data-recent-index"
         }))
+      );
+
+      const morePinnedLabel = tHome("homeDashboard.showMorePinned", "Plus d’épinglées");
+      const moreRecentLabel = tHome("homeDashboard.showMoreRecent", "Plus de récentes");
+      const moreBtnHtml = (kind, label) => (
+        `<button type="button" class="home-apps-more-btn" data-apps-more="${kind}" aria-haspopup="dialog" aria-expanded="false" aria-controls="home-apps-more-popup" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">` +
+        `<span aria-hidden="true">+</span>` +
+        `</button>`
       );
 
       const hasSep = pinnedTiles.length > 0 && recentTiles.length > 0;
@@ -3923,16 +4208,28 @@
 
       const parts = [];
       if (pinnedTiles.length) {
-        parts.push(`<div class="home-apps-strip-group" data-apps-group="pinned">${pinnedTiles.join("")}</div>`);
+        parts.push(
+          `<div class="home-apps-strip-group" data-apps-group="pinned">` +
+          pinnedTiles.join("") +
+          (pinnedHasMore ? moreBtnHtml("pinned", morePinnedLabel) : "") +
+          `</div>`
+        );
       }
       if (hasSep) {
         parts.push(`<span class="home-apps-strip-sep" aria-hidden="true"></span>`);
       }
       if (recentTiles.length) {
-        parts.push(`<div class="home-apps-strip-group" data-apps-group="recent">${recentTiles.join("")}</div>`);
+        parts.push(
+          `<div class="home-apps-strip-group" data-apps-group="recent">` +
+          recentTiles.join("") +
+          (recentHasMore ? moreBtnHtml("recent", moreRecentLabel) : "") +
+          `</div>`
+        );
       }
 
       strip.innerHTML = parts.join("");
+      // Ne pas fermer si ouvert : devices-refreshed / métadonnées rebuildent la strip.
+      preserveHomeAppsMoreAfterStripSync();
 
       const pinnedGroup = strip.querySelector('[data-apps-group="pinned"]');
       const recentGroup = strip.querySelector('[data-apps-group="recent"]');
@@ -3948,9 +4245,12 @@
           indexAttr: "data-recent-index"
         });
       }
+      strip.querySelectorAll(".home-apps-more-btn").forEach(bindHomeAppsMoreButton);
     } catch (_err) {
       appsSection?.classList.remove("has-apps-sep");
+      if (!homeAppsMoreOpenKind) closeHomeAppsMorePopup();
     }
+    scheduleHomeModulesSeparation();
   }
 
   async function launchRecentApp(entry) {
@@ -4200,12 +4500,26 @@
     hideWifiReconnectPopup();
   });
 
+  document.addEventListener("pointerdown", (event) => {
+    if (Date.now() < homeAppsMoreIgnoreCloseUntil) return;
+    const popup = document.getElementById("home-apps-more-popup");
+    if (!popup || popup.classList.contains("hidden") || popup.hasAttribute("hidden")) return;
+    if (popup.contains(event.target)) return;
+    if (event.target.closest?.(".home-apps-more-btn")) return;
+    closeHomeAppsMorePopup();
+  });
+
+  document.getElementById("home-apps-more-close")?.addEventListener("click", () => {
+    closeHomeAppsMorePopup();
+  });
+
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && dockMoreOpen) {
       setDockMoreOpen(false);
     }
     if (event.key === "Escape") {
       hideWifiReconnectPopup();
+      closeHomeAppsMorePopup();
       closeAllHomeModuleMenus();
     }
   });
