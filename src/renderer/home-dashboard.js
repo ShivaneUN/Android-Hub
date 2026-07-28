@@ -301,8 +301,36 @@
     container.appendChild(wrap);
   }
 
+  function flattenHomeCenterSplit(container, itemSelector) {
+    if (!container) return;
+    const existing = container.querySelector(":scope > .home-center-split");
+    if (!existing) return;
+    const items = [
+      ...existing.querySelector(".home-center-split-left")?.children || [],
+      ...existing.querySelector(".home-center-split-mid")?.children || [],
+      ...existing.querySelector(".home-center-split-right")?.children || []
+    ];
+    items.forEach((el) => el.remove());
+    existing.remove();
+    items.forEach((el) => {
+      if (!itemSelector || el.matches?.(itemSelector)) container.appendChild(el);
+    });
+  }
+
   function layoutHomeDevicesSplit() {
-    layoutHomeCenterSplit(document.getElementById("home-devices-panel"), ".sidebar-device-card");
+    const panel = document.getElementById("home-devices-panel");
+    if (!panel) return;
+
+    flattenHomeCenterSplit(panel, ".sidebar-device-card");
+
+    const moduleEl = panel.closest(".home-module");
+    const vertical = moduleEl?.dataset?.orientation === "vertical";
+    const count = panel.querySelectorAll(".sidebar-device-card").length;
+    const few = count > 0 && count <= 2;
+    panel.classList.toggle("is-few", few);
+    // Comme sessions : 1–2 centrés ; 3+ grille 3×2 + scroll.
+    const visibleMax = few ? 2 : (vertical ? 2 : 6);
+    panel.classList.toggle("is-scrollable", !few && count > visibleMax);
   }
 
   /** Sessions : 1–2 → placement centré (comme appareils) ; 3+ → grille 3×2 + scroll. */
@@ -310,17 +338,7 @@
     const grid = document.getElementById("home-sessions-grid");
     if (!grid) return;
 
-    const existing = grid.querySelector(":scope > .home-center-split");
-    if (existing) {
-      const items = [
-        ...existing.querySelector(".home-center-split-left")?.children || [],
-        ...existing.querySelector(".home-center-split-mid")?.children || [],
-        ...existing.querySelector(".home-center-split-right")?.children || []
-      ];
-      items.forEach((el) => el.remove());
-      existing.remove();
-      items.forEach((el) => grid.appendChild(el));
-    }
+    flattenHomeCenterSplit(grid, ".home-session-tile");
 
     const moduleEl = grid.closest(".home-module");
     const vertical = moduleEl?.dataset?.orientation === "vertical";
@@ -328,7 +346,6 @@
     const few = count > 0 && count <= 2;
     grid.classList.toggle("is-few", few);
     grid.classList.remove("is-compact");
-    // Preview 3×2 = 6 visibles ; 1–2 : pas de scroll.
     const visibleMax = few ? 2 : (vertical ? 2 : 6);
     grid.classList.toggle("is-scrollable", !few && count > visibleMax);
   }
