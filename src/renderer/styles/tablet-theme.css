@@ -948,7 +948,9 @@ body.theme-tablet .tablet-only {
 }
 
 body.theme-tablet .home-module.tablet-only {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 body.theme-tablet .home-module.tablet-only[hidden] {
@@ -969,7 +971,8 @@ body.theme-tablet .empty-state {
 }
 
 body.theme-tablet .home-devices-section {
-  text-align: center;
+  align-items: flex-start;
+  text-align: left;
 }
 
 body.theme-tablet .home-devices-section[hidden] {
@@ -978,6 +981,11 @@ body.theme-tablet .home-devices-section[hidden] {
 
 body.theme-tablet .home-devices-section .home-dashboard-label {
   text-align: center;
+}
+
+body.theme-tablet .home-devices-section .home-module-chrome {
+  display: flex;
+  justify-content: center;
 }
 
 body.theme-tablet .home-devices-panel {
@@ -1000,41 +1008,93 @@ body.theme-tablet .home-apps-section .home-dashboard-label {
   text-align: center;
 }
 
-body.theme-tablet .home-apps-recent {
+body.theme-tablet .home-apps-section .home-module-chrome {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  justify-content: center;
+}
+
+body.theme-tablet .home-apps-strip {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: center;
   gap: 12px;
-  overflow: visible;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-body.theme-tablet .home-apps-pinned {
+body.theme-tablet .home-apps-strip::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+body.theme-tablet .home-apps-strip-group {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-  overflow: visible;
-}
-
-body.theme-tablet .home-apps-pinned[hidden] {
-  display: none !important;
-}
-
-body.theme-tablet .home-apps-pinned-label {
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.45px;
-  text-transform: uppercase;
-  color: rgba(232, 236, 244, 0.7);
-  text-align: center;
-}
-
-body.theme-tablet .home-apps-pinned-grid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   gap: 12px;
-  overflow: visible;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+body.theme-tablet .home-apps-strip-sep {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  min-height: 48px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Séparateur centré : épinglées à gauche, historique à droite (sous le titre). */
+body.theme-tablet .home-apps-section.has-apps-sep .home-module-body {
+  width: min(480px, calc(100vw - 48px));
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep .home-apps-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  justify-content: stretch;
+  gap: 10px;
+  width: 100%;
+  overflow: hidden;
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep .home-apps-strip-group {
+  flex-shrink: 1;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep .home-apps-strip-group::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep [data-apps-group="pinned"] {
+  justify-content: flex-end;
+  justify-self: stretch;
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep [data-apps-group="recent"] {
+  justify-content: flex-start;
+  justify-self: stretch;
+}
+
+body.theme-tablet .home-apps-section.has-apps-sep .home-apps-strip-sep {
+  justify-self: center;
+  margin: 0;
 }
 
 body.theme-tablet .home-app-pin-badge {
@@ -1086,11 +1146,12 @@ body.theme-tablet .empty-state-mascot {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  justify-content: center;
 }
 
-.home-apps-recent {
+.home-apps-strip {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 12px;
 }
@@ -1510,23 +1571,23 @@ body.theme-tablet .home-module-guide--dock {
   width: 2px;
 }
 
-/* Modules libres : pas de fond — contenu flottant sur le wallpaper.
-   Titre + contenu centrés ensemble ; le JS conserve le centre du titre
-   quand la largeur change (ajout/retrait d’appareils, etc.). */
+/* Modules libres : le titre est l’ancre (left/top).
+   Le contenu est en absolute, centré sous le titre — il grandit
+   à gauche/droite sans déplacer le module. */
 body.theme-tablet .home-module {
   position: absolute;
   z-index: 3;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   width: max-content;
-  max-width: min(520px, calc(100% - 24px));
+  max-width: min(720px, calc(100% - 24px));
   margin: 0;
   padding: 0;
   background: transparent;
   border: none;
   box-shadow: none;
-  text-align: center;
+  text-align: left;
   user-select: none;
   touch-action: none;
   overflow: visible;
@@ -1554,14 +1615,15 @@ body.theme-tablet .home-module-chrome {
 }
 
 body.theme-tablet .home-module-title {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 0;
   width: fit-content;
   max-width: 100%;
   margin: 0;
-  padding: 5px 10px 5px 12px;
+  padding: 5px 12px;
   cursor: grab;
   box-sizing: border-box;
   white-space: nowrap;
@@ -1579,7 +1641,12 @@ body.theme-tablet .home-module:not(.is-locked) .home-module-title:active {
   cursor: grabbing;
 }
 
+/* Hors flux : le centre du titre = centre du libellé (aligné au contenu). */
 body.theme-tablet .home-module-menu-btn {
+  position: absolute;
+  left: calc(100% + 2px);
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1646,7 +1713,52 @@ body.theme-tablet .home-module-menu button.is-active {
 }
 
 body.theme-tablet .home-module-body {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
   display: block;
+  width: max-content;
+  max-width: min(720px, calc(100vw - 24px));
+  box-sizing: border-box;
+}
+
+/* Axe central sous le titre : groupe compact centré (pas de largeur forcée). */
+body.theme-tablet .home-center-split {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+body.theme-tablet .home-center-split-left,
+body.theme-tablet .home-center-split-right,
+body.theme-tablet .home-center-split-mid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+body.theme-tablet .home-center-split-left {
+  justify-content: flex-end;
+}
+
+body.theme-tablet .home-center-split-right {
+  justify-content: flex-start;
+}
+
+body.theme-tablet .home-center-split-mid {
+  justify-content: center;
+}
+
+body.theme-tablet .home-center-split-mid:empty {
+  display: none;
 }
 
 body.theme-tablet .home-module.is-content-hidden .home-module-body {
@@ -1654,24 +1766,10 @@ body.theme-tablet .home-module.is-content-hidden .home-module-body {
 }
 
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-devices-panel,
-body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-recent,
-body.theme-tablet .home-module[data-orientation="horizontal"] .home-apps-pinned-grid {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-}
-
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-sessions-grid {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: stretch;
-  justify-content: center;
-  gap: 10px;
+  display: block;
   width: max-content;
-  max-width: min(480px, calc(100vw - 48px));
+  max-width: 100%;
 }
 
 body.theme-tablet .home-module[data-orientation="horizontal"] .home-sessions-grid .home-session-tile {
@@ -1684,14 +1782,6 @@ body.theme-tablet .home-module[data-orientation="vertical"] .home-devices-panel 
   flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-}
-
-body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-recent,
-body.theme-tablet .home-module[data-orientation="vertical"] .home-apps-pinned-grid {
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
-  justify-content: center;
   gap: 12px;
 }
 
@@ -1713,6 +1803,12 @@ body.theme-tablet .home-devices-section .home-dashboard-label {
   text-align: center;
 }
 
+body.theme-tablet .home-devices-section,
+body.theme-tablet .home-sessions-section {
+  align-items: flex-start;
+  text-align: left;
+}
+
 body.theme-tablet .home-devices-panel {
   justify-content: center;
 }
@@ -1722,7 +1818,12 @@ body.theme-tablet .home-actions-section {
   width: auto;
   max-width: none;
   margin: 0;
-  text-align: center;
+}
+
+body.theme-tablet .home-devices-section .home-module-chrome,
+body.theme-tablet .home-sessions-section .home-module-chrome {
+  display: flex;
+  justify-content: center;
 }
 
 body.theme-tablet .home-sessions-section[hidden],

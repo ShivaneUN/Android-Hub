@@ -695,6 +695,9 @@ function renderDevicePanel(devices) {
         container.innerHTML = html;
         if (connected.length > 0) {
             bindDeviceCards(container, connected);
+            if (container.id === "home-devices-panel" && typeof window.layoutHomeDevicesSplit === "function") {
+                window.layoutHomeDevicesSplit();
+            }
         }
     }
 }

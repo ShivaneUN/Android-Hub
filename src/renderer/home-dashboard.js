@@ -241,6 +241,72 @@
     });
   }
 
+  function partitionAroundCenter(items) {
+    const list = Array.isArray(items) ? items : [];
+    const n = list.length;
+    if (n === 0) return { left: [], mid: [], right: [] };
+    if (n % 2 === 1) {
+      const i = Math.floor(n / 2);
+      return { left: list.slice(0, i), mid: list.slice(i, i + 1), right: list.slice(i + 1) };
+    }
+    const i = n / 2;
+    return { left: list.slice(0, i), mid: [], right: list.slice(i) };
+  }
+
+  /**
+   * Répartit les items autour de l’axe central du titre :
+   * 2 → 1|1, 3 → 1|1|1, 4 → 2|2, 5 → 2|1|2, etc.
+   */
+  function layoutHomeCenterSplit(container, itemSelector) {
+    if (!container || !itemSelector) return;
+    const moduleEl = container.closest(".home-module");
+    const isVertical = moduleEl?.dataset?.orientation === "vertical";
+
+    const existing = container.querySelector(":scope > .home-center-split");
+    let items;
+    if (existing) {
+      items = [
+        ...existing.querySelector(".home-center-split-left")?.children || [],
+        ...existing.querySelector(".home-center-split-mid")?.children || [],
+        ...existing.querySelector(".home-center-split-right")?.children || []
+      ];
+    } else {
+      items = [...container.children].filter((el) => el.matches?.(itemSelector));
+    }
+    if (!items.length) return;
+
+    items.forEach((el) => el.remove());
+    container.replaceChildren();
+
+    if (isVertical) {
+      items.forEach((el) => container.appendChild(el));
+      return;
+    }
+
+    const { left, mid, right } = partitionAroundCenter(items);
+    const wrap = document.createElement("div");
+    wrap.className = "home-center-split";
+    const leftEl = document.createElement("div");
+    leftEl.className = "home-center-split-left";
+    const midEl = document.createElement("div");
+    midEl.className = "home-center-split-mid";
+    const rightEl = document.createElement("div");
+    rightEl.className = "home-center-split-right";
+    left.forEach((el) => leftEl.appendChild(el));
+    mid.forEach((el) => midEl.appendChild(el));
+    right.forEach((el) => rightEl.appendChild(el));
+    wrap.append(leftEl, midEl, rightEl);
+    container.appendChild(wrap);
+  }
+
+  function layoutHomeDevicesSplit() {
+    layoutHomeCenterSplit(document.getElementById("home-devices-panel"), ".sidebar-device-card");
+  }
+
+  function layoutHomeSessionsSplit() {
+    layoutHomeCenterSplit(document.getElementById("home-sessions-grid"), ".home-session-tile");
+  }
+
   function renderHomeSessions(sessions) {
     const grid = document.getElementById("home-sessions-grid");
     const empty = document.getElementById("home-sessions-empty");
@@ -321,6 +387,7 @@
     }).join("");
 
     grid.querySelectorAll(".home-session-tile").forEach(bindHomeSessionTile);
+    layoutHomeSessionsSplit();
     startHomePreviewPolling();
     void refreshHomeSessionPreviews();
   }
@@ -2254,7 +2321,8 @@
   }
 
   /**
-   * Reflow : mémoriser uniquement — ne jamais déplacer.
+   * Ancre titre : avec body en absolute sous le titre, le centre
+   * ne bouge plus au reflow — on mémorise seulement.
    */
   function restoreHomeModuleTitleCenter(moduleId) {
     if (!canMutateHomeModuleLayout()) return;
@@ -2293,21 +2361,51 @@
   }
 
   /**
-   * Boîte de collision visuelle (coords host) — source de vérité pour l’anti-chevauchement.
+   * Boîte de collision visuelle (coords host) — titre + contenu
+   * (le body est en absolute et peut dépasser du module).
    */
   function getHomeModuleCollisionBox(moduleId) {
     const host = document.querySelector(".empty-state");
     const moduleEl = getHomeModuleEl(moduleId);
     if (!host || !moduleEl || moduleEl.hidden) return null;
     const hostRect = host.getBoundingClientRect();
-    const rect = moduleEl.getBoundingClientRect();
-    const w = Math.max(rect.width, moduleEl.offsetWidth, moduleEl.scrollWidth, 1);
-    const h = Math.max(rect.height, moduleEl.offsetHeight, moduleEl.scrollHeight, 1);
-    if (w < 8 || h < 8 || hostRect.width < 80) return null;
+    if (hostRect.width < 80) return null;
+
+    let minL = Infinity;
+    let minT = Infinity;
+    let maxR = -Infinity;
+    let maxB = -Infinity;
+    const addRect = (el) => {
+      if (!el) return;
+      try {
+        if (getComputedStyle(el).display === "none") return;
+      } catch (_err) {
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 && r.height < 1) return;
+      minL = Math.min(minL, r.left);
+      minT = Math.min(minT, r.top);
+      maxR = Math.max(maxR, r.right);
+      maxB = Math.max(maxB, r.bottom);
+    };
+
+    addRect(moduleEl.querySelector(".home-module-chrome") || moduleEl.querySelector(".home-module-title"));
+    if (!moduleEl.classList.contains("is-content-hidden")) {
+      addRect(moduleEl.querySelector(".home-module-body"));
+    }
+    if (!Number.isFinite(minL)) {
+      addRect(moduleEl);
+    }
+    if (!Number.isFinite(minL)) return null;
+
+    const w = Math.max(1, maxR - minL);
+    const h = Math.max(1, maxB - minT);
+    if (w < 8 || h < 8) return null;
     return {
       id: moduleId,
-      x: rect.left - hostRect.left,
-      y: rect.top - hostRect.top,
+      x: minL - hostRect.left,
+      y: minT - hostRect.top,
       w,
       h
     };
@@ -2497,14 +2595,17 @@
     const hostRect = host.getBoundingClientRect();
     const titleRect = titleEl.getBoundingClientRect();
     const moduleRect = moduleEl.getBoundingClientRect();
-    if (titleRect.width < 4 || titleRect.height < 4 || hostRect.width < 80) return null;
+    // Centre sur le libellé (pas le ⋮) pour aligner le contenu sous le texte.
+    const labelEl = titleEl.querySelector("span") || titleEl;
+    const labelRect = labelEl.getBoundingClientRect();
+    if (labelRect.width < 4 || titleRect.height < 4 || hostRect.width < 80) return null;
     return {
-      titleW: Math.max(1, titleRect.width),
+      titleW: Math.max(1, labelRect.width),
       titleH: Math.max(1, titleRect.height),
-      titleCenterX: titleRect.left - hostRect.left + titleRect.width / 2,
+      titleCenterX: labelRect.left - hostRect.left + labelRect.width / 2,
       titleCenterY: titleRect.top - hostRect.top + titleRect.height / 2,
       titleY: titleRect.top - hostRect.top,
-      offsetTitleX: titleRect.left - moduleRect.left,
+      offsetTitleX: labelRect.left - moduleRect.left,
       offsetTitleY: titleRect.top - moduleRect.top
     };
   }
@@ -2888,6 +2989,8 @@
     if (!state) return;
     state.orientation = orientation === "vertical" ? "vertical" : "horizontal";
     applyHomeModuleState(moduleId);
+    if (moduleId === "devices") layoutHomeDevicesSplit();
+    if (moduleId === "sessions") layoutHomeSessionsSplit();
     const fixed = resolveHomeModuleOverlaps(moduleId, state.x, state.y);
     state.x = fixed.x;
     state.y = fixed.y;
@@ -3783,64 +3886,71 @@
     });
   }
 
-  async function syncPinnedApps() {
-    const target = document.getElementById("home-apps-pinned");
-    if (!target) return;
-    loadPinnedApps();
-
-    if (!pinnedEntries.length) {
-      target.innerHTML = "";
-      target.hidden = true;
-      return;
-    }
-
-    target.hidden = false;
-    const tiles = await Promise.all(
-      pinnedEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
-        pinned: true,
-        indexAttr: "data-pinned-index"
-      }))
-    );
-    const label = tHome("homeDashboard.pinnedApps", "Épinglées");
-    target.innerHTML =
-      `<div class="home-apps-pinned-label">${escapeAttr(label)}</div>` +
-      `<div class="home-apps-pinned-grid">${tiles.join("")}</div>`;
-    bindHomeAppTileInteractions(
-      target.querySelector(".home-apps-pinned-grid"),
-      pinnedEntries,
-      { pinned: true, indexAttr: "data-pinned-index" }
-    );
-  }
-
-  async function syncRecentApps() {
-    const target = document.getElementById("home-apps-recent");
-    if (!target || !window.launchHistoryAPI?.list) return;
+  async function syncHomeApps() {
+    const strip = document.getElementById("home-apps-strip");
+    const appsSection = document.querySelector(".home-apps-section");
+    if (!strip) return;
 
     try {
       loadPinnedApps();
       const pinnedKeys = new Set(pinnedEntries.map((entry) => entry.key));
-      const response = await window.launchHistoryAPI.list();
-      const entries = Array.isArray(response?.entries) ? response.entries : [];
-      recentEntries = entries
-        .filter((entry) => !pinnedKeys.has(buildHomeAppKey(entry)))
-        .slice(0, 8);
 
-      if (!recentEntries.length) {
-        target.innerHTML = "";
-        return;
+      if (window.launchHistoryAPI?.list) {
+        const response = await window.launchHistoryAPI.list();
+        const entries = Array.isArray(response?.entries) ? response.entries : [];
+        recentEntries = entries
+          .filter((entry) => !pinnedKeys.has(buildHomeAppKey(entry)))
+          .slice(0, 8);
+      } else {
+        recentEntries = [];
       }
 
-      const tiles = await Promise.all(
-        recentEntries.map((entry, index) => buildHomeAppTileHtml(entry, index))
+      const pinnedTiles = await Promise.all(
+        pinnedEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
+          pinned: true,
+          indexAttr: "data-pinned-index"
+        }))
       );
-      target.innerHTML = tiles.join("");
-      bindHomeAppTileInteractions(target, recentEntries);
-    } catch (_err) {}
-  }
+      const recentTiles = await Promise.all(
+        recentEntries.map((entry, index) => buildHomeAppTileHtml(entry, index, {
+          pinned: false,
+          indexAttr: "data-recent-index"
+        }))
+      );
 
-  async function syncHomeApps() {
-    await Promise.all([syncPinnedApps(), syncRecentApps()]);
-    scheduleHomeModulesSeparation();
+      const hasSep = pinnedTiles.length > 0 && recentTiles.length > 0;
+      appsSection?.classList.toggle("has-apps-sep", hasSep);
+
+      const parts = [];
+      if (pinnedTiles.length) {
+        parts.push(`<div class="home-apps-strip-group" data-apps-group="pinned">${pinnedTiles.join("")}</div>`);
+      }
+      if (hasSep) {
+        parts.push(`<span class="home-apps-strip-sep" aria-hidden="true"></span>`);
+      }
+      if (recentTiles.length) {
+        parts.push(`<div class="home-apps-strip-group" data-apps-group="recent">${recentTiles.join("")}</div>`);
+      }
+
+      strip.innerHTML = parts.join("");
+
+      const pinnedGroup = strip.querySelector('[data-apps-group="pinned"]');
+      const recentGroup = strip.querySelector('[data-apps-group="recent"]');
+      if (pinnedGroup) {
+        bindHomeAppTileInteractions(pinnedGroup, pinnedEntries, {
+          pinned: true,
+          indexAttr: "data-pinned-index"
+        });
+      }
+      if (recentGroup) {
+        bindHomeAppTileInteractions(recentGroup, recentEntries, {
+          pinned: false,
+          indexAttr: "data-recent-index"
+        });
+      }
+    } catch (_err) {
+      appsSection?.classList.remove("has-apps-sep");
+    }
   }
 
   async function launchRecentApp(entry) {
@@ -3902,7 +4012,9 @@
 
   window.syncDockBatteries = syncDockBatteries;
   window.syncHomeSessions = syncHomeSessions;
-  window.syncRecentApps = syncRecentApps;
+  window.layoutHomeDevicesSplit = layoutHomeDevicesSplit;
+  window.layoutHomeSessionsSplit = layoutHomeSessionsSplit;
+  window.syncRecentApps = syncHomeApps;
   window.syncHomeApps = syncHomeApps;
   window.pinHomeApp = pinHomeApp;
   window.unpinHomeApp = unpinHomeApp;
@@ -3958,7 +4070,7 @@
   });
 
   async function refreshHomeAppDevicePills() {
-    const tiles = document.querySelectorAll("#home-apps-recent .home-app-tile[data-device-id], #home-apps-pinned .home-app-tile[data-device-id]");
+    const tiles = document.querySelectorAll("#home-apps-strip .home-app-tile[data-device-id]");
     if (!tiles.length) return;
 
     const ids = [...new Set(Array.from(tiles).map((tile) => tile.dataset.deviceId).filter(Boolean))];
