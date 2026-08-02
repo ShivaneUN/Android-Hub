@@ -160,15 +160,14 @@
     const pageVisible = Boolean(page && !page.classList.contains("hidden"));
     const notSession = !content?.classList.contains("content--session-view");
     const notDeck = !content?.classList.contains("content--stream-deck");
-    // Surface DOM prioritaire : le flag __hubShowingHome peut rester false
-    // alors que page-new est déjà visible → les pastilles centrales disparaissaient.
+    // Lecture seule : ne jamais réécrire __hubShowingHome ici.
+    // Sinon leaveHome (flag=false avant hide page) se fait écraser et le flux reste suppressé.
     if (
       document.body.classList.contains("theme-tablet")
       && pageVisible
       && notSession
       && notDeck
     ) {
-      if (window.__hubShowingHome !== true) window.__hubShowingHome = true;
       return true;
     }
     return Boolean(

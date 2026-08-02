@@ -185,9 +185,28 @@
                 if (window.HubPerformance && !window.HubPerformance.isEnabled("hoverPreview")) {
                     return;
                 }
+                // Accueil a déjà les miniatures sessions : pas d’aperçu onglet en double.
+                if (typeof window.isHomeVisible === "function") {
+                    try {
+                        if (window.isHomeVisible()) return;
+                    } catch (_err) {
+                        /* ignore */
+                    }
+                } else if (window.__hubShowingHome) {
+                    return;
+                }
                 if (hoverTimer !== null) clearTimeout(hoverTimer);
                 hoverTimer = window.setTimeout(() => {
                     hoverTimer = null;
+                    if (typeof window.isHomeVisible === "function") {
+                        try {
+                            if (window.isHomeVisible()) return;
+                        } catch (_err) {
+                            /* ignore */
+                        }
+                    } else if (window.__hubShowingHome) {
+                        return;
+                    }
                     showPreview(element, sessionId);
                 }, HOVER_DELAY_MS);
             };

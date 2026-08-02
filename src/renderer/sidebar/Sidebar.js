@@ -367,15 +367,41 @@ function scheduleSessionOrientationApply() {
     })();
 }
 
-async function activateSessionTab(sessionId) {
-    window.__hubShowingHome = false;
-    window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: false } }));
+function leaveHomeSurfaceForSession() {
+    // Masquer l'Accueil AVANT de baisser le flag / dispatcher, sinon isHomeVisible()
+    // (DOM page-new encore visible) réécrit __hubShowingHome=true et le flux reste suppressé.
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
 
+    const content = document.querySelector(".content");
+    if (content) {
+        content.classList.add("content--session-view");
+        content.classList.remove("content--stream-deck");
+    }
+
+    window.__hubShowingHome = false;
+    window.videoPreviewHook?.hide?.();
+    window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: false } }));
+}
+
+async function restoreSessionViewNow() {
+    if (window.sessionAPI?.restoreView) {
+        try {
+            await window.sessionAPI.restoreView();
+        } catch (_err) {
+            /* ignore */
+        }
+    }
     if (typeof restoreSessionView === "function") {
         restoreSessionView();
+    } else if (typeof reportContentBounds === "function") {
+        reportContentBounds();
     }
+}
+
+async function activateSessionTab(sessionId) {
+    leaveHomeSurfaceForSession();
+    await restoreSessionViewNow();
 
     const switched = window.sessionAPI?.switchTo
         ? await window.sessionAPI.switchTo(sessionId)
@@ -399,6 +425,10 @@ async function activateSessionTab(sessionId) {
         }
         return false;
     }
+
+    // Réaffirmer hors Accueil après switchTo (listeners list-changed peuvent avoir couru).
+    window.__hubShowingHome = false;
+    document.querySelector(".content")?.classList.add("content--session-view");
 
     if (sessionId.startsWith("instance-") && typeof activateInstance === "function") {
         await activateInstance(sessionId);
@@ -506,20 +536,18 @@ async function finalizeSessionUI(sessionId, options = {}) {
         return;
     }
 
-    window.__hubShowingHome = false;
-    window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: false } }));
-    document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
-    document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
-
-    if (typeof restoreSessionView === "function") {
-        restoreSessionView();
-    }
+    leaveHomeSurfaceForSession();
+    await restoreSessionViewNow();
 
     const switched = await window.sessionAPI.switchTo(sessionId);
     if (!switched) {
         console.warn(`[Sidebar] finalizeSessionUI annulé — switchTo échoué ${sessionId}`);
         return;
     }
+
+    // Réaffirmer hors Accueil après switchTo (list-changed / renderSidebar).
+    window.__hubShowingHome = false;
+    document.querySelector(".content")?.classList.add("content--session-view");
 
     window.__sessionAudioHub?.setActiveSession?.(sessionId);
 
@@ -547,6 +575,7 @@ async function finalizeSessionUI(sessionId, options = {}) {
     if (typeof updateScreenToggle === "function") updateScreenToggle();
     if (typeof updateOrientationToggle === "function") updateOrientationToggle();
     if (typeof window.refreshFpsSnapshot === "function") window.refreshFpsSnapshot();
+    await restoreSessionViewNow();
     if (typeof reportContentBounds === "function") reportContentBounds();
 
     refreshSessionTabMetadata(sessionId).catch(() => {});
