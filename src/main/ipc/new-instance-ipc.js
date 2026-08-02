@@ -65,6 +65,9 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                     pending.stableDeviceId,
                     pending.launchDims
                 );
+                if (launchDims?.width > 0 && launchDims?.height > 0) {
+                    pending.launchDims = launchDims;
+                }
                 applyTypeBLaunchOrientation(
                     pending.streamOptions,
                     launchDims?.width,

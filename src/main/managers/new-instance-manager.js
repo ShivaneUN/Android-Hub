@@ -124,6 +124,10 @@ class NewInstanceManager extends EventEmitter {
         this._reassertInflight = new Map();
         /** @type {Map<string, number>} */
         this._reassertDoneUntil = new Map();
+        /** @type {Map<string, Promise<void>>} */
+        this._stayOnInflight = new Map();
+        /** @type {Map<string, number>} */
+        this._stayOnDoneUntil = new Map();
     }
 
     _forceStopDedupeKey({ sessionId = null, serial = null, packageName = null, userId = null } = {}) {
@@ -315,10 +319,29 @@ class NewInstanceManager extends EventEmitter {
 
     async _ensureDeviceStayAwake(serial) {
         if (!serial) return;
+        const key = String(serial);
+        if (this._isDedupeFresh(this._stayOnDoneUntil, key)) {
+            return;
+        }
+        const inflight = this._stayOnInflight.get(key);
+        if (inflight) {
+            await inflight;
+            return;
+        }
+
+        const run = (async () => {
+            try {
+                await execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon true`);
+            } catch (err) {
+                console.warn(`[NewInstanceManager] stayon ${serial}:`, err.message);
+            }
+        })();
+        this._stayOnInflight.set(key, run);
         try {
-            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon true`);
-        } catch (err) {
-            console.warn(`[NewInstanceManager] stayon ${serial}:`, err.message);
+            await run;
+            this._markDedupeDone(this._stayOnDoneUntil, key, 4000);
+        } finally {
+            this._stayOnInflight.delete(key);
         }
     }
 
@@ -698,7 +721,10 @@ class NewInstanceManager extends EventEmitter {
     async _ensureSessionInputController(session, streamWidth, streamHeight) {
         if (!session.inputController) {
             session.inputController = new AdbInputController(this.adbPath, session.serial);
-            await session.inputController.init();
+            const dims = session.launchDims?.width > 0 && session.launchDims?.height > 0
+                ? session.launchDims
+                : null;
+            await session.inputController.init(dims);
         }
 
         this._syncSessionDisplayId(session);
@@ -745,7 +771,10 @@ class NewInstanceManager extends EventEmitter {
             }
             if (!session.inputController) {
                 session.inputController = new AdbInputController(this.adbPath, session.serial);
-                await session.inputController.init();
+                const dims = session.launchDims?.width > 0 && session.launchDims?.height > 0
+                    ? session.launchDims
+                    : null;
+                await session.inputController.init(dims);
                 this._syncSessionDisplayId(session);
                 if (Number.isInteger(session.displayId)) {
                     session.inputController.setDisplayId(session.displayId);
@@ -1377,6 +1406,8 @@ class NewInstanceManager extends EventEmitter {
         }
 
         if (mergedOptions.stayAwake) {
+            // Si desiredOff suit juste après, _applyDesiredPhysicalScreen rappelle déjà stayon
+            // (dedupe manager) — un seul appel ADB effectif.
             await this._ensureDeviceStayAwake(session.serial);
         }
 

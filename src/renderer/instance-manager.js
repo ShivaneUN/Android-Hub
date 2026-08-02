@@ -112,7 +112,20 @@ async function activateInstance(id) {
     document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
 
     if (window.sessionAPI) {
-        await window.sessionAPI.switchTo(id);
+        // finalizeSessionUI / activateSessionTab ont souvent déjà fait switchTo —
+        // éviter un 3e switchTo IPC inutile.
+        let alreadyActive = false;
+        try {
+            const listed = await window.sessionAPI.list?.();
+            alreadyActive = Boolean(
+                Array.isArray(listed) && listed.some((s) => s?.sessionId === id && s.active)
+            );
+        } catch (_err) {
+            alreadyActive = false;
+        }
+        if (!alreadyActive) {
+            await window.sessionAPI.switchTo(id);
+        }
         if (typeof renderSidebar === "function") renderSidebar();
     }
 

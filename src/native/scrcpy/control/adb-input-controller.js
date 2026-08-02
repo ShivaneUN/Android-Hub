@@ -341,7 +341,12 @@ class AdbInputController {
         }
     }
 
-    async init() {
+    async init(preresolvedDims = null) {
+        if (preresolvedDims?.width > 0 && preresolvedDims?.height > 0) {
+            this.deviceWidth = Number(preresolvedDims.width);
+            this.deviceHeight = Number(preresolvedDims.height);
+            return;
+        }
         const { width, height } = await getDeviceSize(this.adbPath, this.serial);
         this.deviceWidth = width;
         this.deviceHeight = height;
