@@ -116,6 +116,43 @@ class NewInstanceManager extends EventEmitter {
         this.launchPackageOnDisplay = launchPackageOnDisplay;
         this.onStreamMeta = typeof onStreamMeta === "function" ? onStreamMeta : null;
         this.sessions = new Map();
+        /** @type {Map<string, Promise<void>>} */
+        this._forceStopInflight = new Map();
+        /** @type {Map<string, number>} */
+        this._forceStopDoneUntil = new Map();
+        /** @type {Map<string, Promise<void>>} */
+        this._reassertInflight = new Map();
+        /** @type {Map<string, number>} */
+        this._reassertDoneUntil = new Map();
+    }
+
+    _forceStopDedupeKey({ sessionId = null, serial = null, packageName = null, userId = null } = {}) {
+        if (sessionId) return `s:${sessionId}`;
+        const pkg = String(packageName || "").trim();
+        const ser = String(serial || "").trim();
+        if (!pkg || !ser) return "";
+        const uid = Number.isInteger(userId) ? userId : 0;
+        return `d:${ser}|${pkg}|${uid}`;
+    }
+
+    _reassertDedupeKey({ sessionId = null, serial = null, stableDeviceId = null } = {}) {
+        if (sessionId) return `s:${sessionId}`;
+        const ser = String(serial || "").trim();
+        if (!ser) return "";
+        return `d:${ser}|${stableDeviceId || ""}`;
+    }
+
+    _markDedupeDone(map, key, ttlMs) {
+        if (!key || !map) return;
+        map.set(key, Date.now() + ttlMs);
+    }
+
+    _isDedupeFresh(map, key) {
+        if (!key || !map) return false;
+        const until = map.get(key) || 0;
+        if (Date.now() < until) return true;
+        map.delete(key);
+        return false;
     }
 
     createNewInstanceSession({
@@ -478,10 +515,46 @@ class NewInstanceManager extends EventEmitter {
         serial,
         stableDeviceId = null,
         sessionId = null,
-        retries = 1
+        retries = 1,
+        force = false
     } = {}) {
         if (!serial) return;
 
+        const dedupeKey = this._reassertDedupeKey({ sessionId, serial, stableDeviceId });
+        if (!force && this._isDedupeFresh(this._reassertDoneUntil, dedupeKey)) {
+            console.log(
+                `[NewInstanceManager] skip re-off ecran — déjà fait`
+                + (sessionId ? ` (${sessionId})` : "")
+            );
+            return;
+        }
+        const inflight = dedupeKey ? this._reassertInflight.get(dedupeKey) : null;
+        if (inflight) {
+            await inflight;
+            if (!force) return;
+        }
+
+        const run = this._reassertPhysicalScreenOffAfterCloseImpl({
+            serial,
+            stableDeviceId,
+            sessionId,
+            retries
+        });
+        if (dedupeKey) this._reassertInflight.set(dedupeKey, run);
+        try {
+            await run;
+            this._markDedupeDone(this._reassertDoneUntil, dedupeKey, 8000);
+        } finally {
+            if (dedupeKey) this._reassertInflight.delete(dedupeKey);
+        }
+    }
+
+    async _reassertPhysicalScreenOffAfterCloseImpl({
+        serial,
+        stableDeviceId = null,
+        sessionId = null,
+        retries = 1
+    } = {}) {
         const desiredOff = typeof global.getDesiredScreenOff === "function"
             ? global.getDesiredScreenOff(serial, stableDeviceId)
             : null;
@@ -1464,6 +1537,37 @@ class NewInstanceManager extends EventEmitter {
     async forceStopAppOnDevice({ serial, packageName, userId = null, sessionId = null, stableDeviceId = null }) {
         if (!packageName) return;
 
+        const dedupeKey = this._forceStopDedupeKey({ sessionId, serial, packageName, userId });
+        if (this._isDedupeFresh(this._forceStopDoneUntil, dedupeKey)) {
+            console.log(
+                `[NewInstanceManager] skip force-stop — déjà fait`
+                + (sessionId ? ` (${sessionId})` : ` ${packageName}`)
+            );
+            return;
+        }
+        const inflight = dedupeKey ? this._forceStopInflight.get(dedupeKey) : null;
+        if (inflight) {
+            await inflight;
+            return;
+        }
+
+        const run = this._forceStopAppOnDeviceImpl({
+            serial,
+            packageName,
+            userId,
+            sessionId,
+            stableDeviceId
+        });
+        if (dedupeKey) this._forceStopInflight.set(dedupeKey, run);
+        try {
+            await run;
+            this._markDedupeDone(this._forceStopDoneUntil, dedupeKey, 8000);
+        } finally {
+            if (dedupeKey) this._forceStopInflight.delete(dedupeKey);
+        }
+    }
+
+    async _forceStopAppOnDeviceImpl({ serial, packageName, userId = null, sessionId = null, stableDeviceId = null }) {
         let adbSerial = serial || null;
         // Évite listUnifiedDevices (lent) si on a déjà un serial transport utilisable.
         const looksLikeTransport = Boolean(adbSerial)
@@ -1495,12 +1599,10 @@ class NewInstanceManager extends EventEmitter {
         // Un seul user : base (0) et clone (10/999) partagent le package — ne pas tuer les deux.
         const targetUserId = Number.isInteger(userId) ? userId : 0;
 
-        let stopped = false;
         try {
             await spawnAdbShell(this.adbPath, adbSerial, [
                 "am", "force-stop", "--user", String(targetUserId), packageName
             ]);
-            stopped = true;
             console.log(`[NewInstanceManager] Application arretee: ${packageName}${label} user=${targetUserId}`);
         } catch (err) {
             console.warn(
@@ -1613,7 +1715,7 @@ class NewInstanceManager extends EventEmitter {
         });
     }
 
-    async ensureAppStoppedForSessionClose(sessionId) {
+    async ensureAppStoppedForSessionClose(sessionId, fallback = null) {
         const session = this.sessions.get(sessionId);
         if (session) {
             await this.stopNewInstanceSession(sessionId);
@@ -1621,33 +1723,36 @@ class NewInstanceManager extends EventEmitter {
         }
 
         const entry = global.browserViewManager?.getSessionEntry(sessionId);
-        if (!entry || entry.type !== "B" || !entry.packageName || !entry.deviceId) {
+        const serial = entry?.deviceId || fallback?.serial || null;
+        const packageName = entry?.packageName || fallback?.packageName || null;
+        const userId = Number.isInteger(entry?.userId)
+            ? entry.userId
+            : (Number.isInteger(fallback?.userId) ? fallback.userId : null);
+        const stableDeviceId = entry?.stableDeviceId || fallback?.stableDeviceId || null;
+
+        if (!packageName || !serial) {
             return;
         }
 
         await this.forceStopAppOnDevice({
-            serial: entry.deviceId,
-            packageName: entry.packageName,
-            userId: entry.userId,
+            serial,
+            packageName,
+            userId,
             sessionId,
-            stableDeviceId: entry.stableDeviceId || null
+            stableDeviceId
         });
 
         if (typeof global.killExternalScrcpyLaunchesForApp === "function") {
             try {
-                await global.killExternalScrcpyLaunchesForApp(
-                    entry.deviceId,
-                    entry.packageName,
-                    entry.userId
-                );
+                await global.killExternalScrcpyLaunchesForApp(serial, packageName, userId);
             } catch (err) {
                 console.warn(`[NewInstanceManager] kill scrcpy externe (fallback):`, err?.message || err);
             }
         }
 
         await this.reassertPhysicalScreenOffAfterClose({
-            serial: entry.deviceId,
-            stableDeviceId: entry.stableDeviceId || null,
+            serial,
+            stableDeviceId,
             sessionId
         });
     }
@@ -1662,6 +1767,7 @@ class NewInstanceManager extends EventEmitter {
 
         session.state = "stopping";
         session._intentionalStop = true;
+        session._appForceStopped = true;
 
         const killPayload = {
             serial: session.serial,
@@ -1700,10 +1806,10 @@ class NewInstanceManager extends EventEmitter {
 
         // Cleanup device + scrcpy externe hors du chemin critique UI.
         // Scrcpy restaure l'écran à l'arrêt : re-éteint après force-stop / kill externe.
+        // Dedupe manager : session:close / renderer ne relanceront pas les mêmes ADB.
         void (async () => {
             try {
-                if (!session._appForceStopped && killPayload.packageName) {
-                    session._appForceStopped = true;
+                if (killPayload.packageName) {
                     await this.forceStopAppOnDevice(killPayload);
                 }
             } catch (err) {

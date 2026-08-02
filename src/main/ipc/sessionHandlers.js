@@ -634,28 +634,21 @@ function registerSessionHandlers(adbPath, deps = {}) {
         }
 
         if (manager && isAppInstance) {
-            // Cleanup device hors chemin critique — l'onglet est déjà retiré.
+            // Un seul owner device-cleanup : ensure (stop session si vivante, sinon fallback
+            // avec métadonnées capturées). force-stop / re-off sont idempotents côté manager.
             void (async () => {
                 try {
-                    await manager.ensureAppStoppedForSessionClose(sessionId);
+                    await manager.ensureAppStoppedForSessionClose(sessionId, {
+                        serial,
+                        packageName,
+                        userId: Number.isInteger(userId) ? userId : null,
+                        stableDeviceId
+                    });
                 } catch (err) {
                     console.warn("[session:close] arret appareil:", err?.message || err);
                 }
-                if (packageName && serial) {
-                    try {
-                        await manager.forceStopAppOnDevice({
-                            serial,
-                            packageName,
-                            userId: Number.isInteger(userId) ? userId : null,
-                            sessionId,
-                            stableDeviceId
-                        });
-                    } catch (_err) {
-                        // noop
-                    }
-                }
 
-                // Orientation paysage peut réveiller l'écran — re-éteint après.
+                // Orientation paysage peut réveiller l'écran — re-éteint après (dedupe sessionId).
                 if (wasPortrait && serial && global.deviceOrientationManager) {
                     try {
                         const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
@@ -664,22 +657,23 @@ function registerSessionHandlers(adbPath, deps = {}) {
                     } catch (err) {
                         console.warn("[session:close] restauration orientation:", err?.message || err);
                     }
-                }
-
-                try {
-                    let adbSerial = serial;
                     try {
-                        adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
-                    } catch (_err) {
-                        // garder serial capturé
+                        let adbSerial = serial;
+                        try {
+                            adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
+                        } catch (_err) {
+                            // garder serial capturé
+                        }
+                        // force: l'orientation paysage peut réveiller l'écran après le 1er re-off.
+                        await manager.reassertPhysicalScreenOffAfterClose({
+                            serial: adbSerial || serial,
+                            stableDeviceId,
+                            sessionId,
+                            force: true
+                        });
+                    } catch (err) {
+                        console.warn("[session:close] re-off ecran:", err?.message || err);
                     }
-                    await manager.reassertPhysicalScreenOffAfterClose({
-                        serial: adbSerial || serial,
-                        stableDeviceId,
-                        sessionId
-                    });
-                } catch (err) {
-                    console.warn("[session:close] re-off ecran:", err?.message || err);
                 }
             })();
         } else if (serial) {

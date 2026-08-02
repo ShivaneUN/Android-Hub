@@ -1415,22 +1415,9 @@ async function closeNewInstanceSession(sessionId, reason = "unspecified") {
     try {
         const entry = newInstanceSessions.get(sessionId);
 
-        // Teardown UI immédiat (même rythme que Type A) — kill device en arrière-plan.
+        // Teardown UI immédiat (même rythme que Type A) — kill device via pipeline/session:close.
+        // Pas de force-stop anticipé ici : sinon am force-stop / dumpsys / re-off ×3–4.
         if (entry) {
-            const cleanup = {
-                serial: entry.serial,
-                packageName: entry.packageName,
-                userId: entry.userId ?? null,
-                stableDeviceId: entry.stableDeviceId || null,
-                sessionId
-            };
-
-            if (cleanup.serial && cleanup.packageName && window.electronAPI?.forceStopAppOnDevice) {
-                void window.electronAPI.forceStopAppOnDevice(cleanup).catch((err) => {
-                    console.error(`[NewSession] force-stop app ${cleanup.packageName}:`, err);
-                });
-            }
-
             try {
                 if (entry.player) {
                     try {
