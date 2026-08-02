@@ -26,6 +26,8 @@ let historyExpanded = false;
 const RECENTS_STRIP_LIMIT = 9;
 
 const newInstanceSessions = new Map();
+/** Clés `device::package::user` des lancements Type B en cours (anti double-clic / double lancement). */
+const typeBLaunchInFlightKeys = new Set();
 let activeNewInstanceSessionId = null;
 let historyAppList = null;
 let launcherIconPrefetchObserver = null;
@@ -139,6 +141,81 @@ function buildAppKey(app = {}) {
     const pkg = String(app.package || app.packageName || "");
     const userId = app.userId === undefined || app.userId === null ? "0" : String(app.userId);
     return `${pkg}@@${userId}`;
+}
+
+function normalizeTypeBLaunchUserId(userId) {
+    return Number.isInteger(userId) ? userId : 0;
+}
+
+function buildTypeBLaunchKey({ serial, stableDeviceId, packageName, userId } = {}) {
+    const deviceKey = String(stableDeviceId || serial || "").trim();
+    const pkg = String(packageName || "").trim();
+    if (!deviceKey || !pkg) return null;
+    return `${deviceKey}::${pkg}::${normalizeTypeBLaunchUserId(userId)}`;
+}
+
+function sameTypeBLaunchDevice(entry, { serial, stableDeviceId } = {}) {
+    if (!entry) return false;
+    const entryStable = entry.stableDeviceId || null;
+    const entrySerial = entry.serial || entry.deviceId || null;
+    if (stableDeviceId && entryStable && entryStable === stableDeviceId) return true;
+    if (serial && entrySerial && entrySerial === serial) return true;
+    if (stableDeviceId && entrySerial && entrySerial === stableDeviceId) return true;
+    return false;
+}
+
+function findOpenTypeBSessionLocal({ serial, stableDeviceId, packageName, userId } = {}) {
+    const pkg = String(packageName || "").trim();
+    if (!pkg) return null;
+    const targetUser = normalizeTypeBLaunchUserId(userId);
+    for (const entry of newInstanceSessions.values()) {
+        if (String(entry.packageName || "").trim() !== pkg) continue;
+        if (normalizeTypeBLaunchUserId(entry.userId) !== targetUser) continue;
+        if (!sameTypeBLaunchDevice(entry, { serial, stableDeviceId })) continue;
+        return entry;
+    }
+    return null;
+}
+
+async function findOpenTypeBSessionFromList({ serial, stableDeviceId, packageName, userId } = {}) {
+    const pkg = String(packageName || "").trim();
+    if (!pkg || !window.sessionAPI?.list) return null;
+    const targetUser = normalizeTypeBLaunchUserId(userId);
+    try {
+        const sessions = await window.sessionAPI.list();
+        if (!Array.isArray(sessions)) return null;
+        for (const session of sessions) {
+            if (session?.type !== "B") continue;
+            if (String(session.packageName || "").trim() !== pkg) continue;
+            if (normalizeTypeBLaunchUserId(session.userId) !== targetUser) continue;
+            if (!sameTypeBLaunchDevice(session, { serial, stableDeviceId })) continue;
+            return session;
+        }
+    } catch (err) {
+        console.warn("[NewSession] session:list indisponible pour garde Type B:", err?.message || err);
+    }
+    return null;
+}
+
+async function focusExistingTypeBSession(sessionId, appLabel = null) {
+    if (!sessionId) return false;
+    let activated = false;
+    try {
+        if (typeof activateSessionTab === "function") {
+            activated = (await activateSessionTab(sessionId)) !== false;
+        } else if (window.sessionAPI?.switchTo) {
+            activated = Boolean(await window.sessionAPI.switchTo(sessionId));
+        }
+    } catch (err) {
+        console.warn("[NewSession] focus session existante échoué:", err?.message || err);
+    }
+    const label = appLabel || sessionId;
+    setStatus(
+        activated
+            ? t("newSession.alreadyOpenFocused", { appLabel: label })
+            : t("newSession.alreadyOpen", { appLabel: label })
+    );
+    return activated;
 }
 
 function escapeHtml(value) {
@@ -1556,136 +1633,177 @@ async function launchTypeBSession({
     const normalizedUserId = Number.isInteger(userId) ? userId : null;
     const resolvedAppLabel = appLabel || window.AppDisplay?.humanizePackageName?.(packageName) || packageName;
     const tabLabel = buildTypeBTabLabel(deviceName, resolvedAppLabel);
-
     const resolvedStableId = stableDeviceId || selectedDevice?.deviceId || null;
-
-    let latencyTraceId = null;
-    if (window.LaunchLatency?.markClick) {
-        const started = await window.LaunchLatency.markClick("B");
-        latencyTraceId = started.traceId;
-    }
-
-    // Lire le preset default AVANT le bootstrap externe pour que --new-display
-    // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
-    const launchParams = await resolveDefaultLaunchStreamParams();
-    const presetScrcpyOpts = (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions)
-        ? StreamParams.toScrcpyOptions(launchParams, "B")
-        : await buildDefaultScrcpyOptions("B");
-    const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
-    setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName, launchParams)}`);
-
-    const scrcpyLaunch = await window.electronAPI.launchNewInstance(
-        serial,
-        packageName,
-        normalizedUserId,
-        latencyTraceId,
-        resolvedStableId,
-        bootstrapNewDisplay
-    );
-    if (!scrcpyLaunch?.success) {
-        throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
-    }
-
-    if (latencyTraceId && window.LaunchLatency?.mark) {
-        await window.LaunchLatency.mark(latencyTraceId, "waitDisplayStart");
-    }
-    const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
-    if (latencyTraceId && window.LaunchLatency?.mark) {
-        await window.LaunchLatency.mark(latencyTraceId, "waitDisplayEnd");
-    }
-    if (!Number.isInteger(presetDisplayId)) {
-        throw new Error(t("newSession.virtualDisplayMissing"));
-    }
-
-    const streamOptions = {
-        ...presetScrcpyOpts,
-        stayAwake: true,
-        turnScreenOff: false,
-        audio: false
-    };
-
-    const payload = {
+    const launchIdentity = {
         serial,
         stableDeviceId: resolvedStableId,
         packageName,
-        userId: normalizedUserId,
-        tabLabel,
-        appLabel: resolvedAppLabel,
-        streamOptions,
-        presetDisplayId,
-        skipPackageLaunch: true,
-        externalLaunchId: scrcpyLaunch.launchId || null
+        userId: normalizedUserId
     };
+    const launchKey = buildTypeBLaunchKey(launchIdentity);
 
-    const created = await window.electronAPI.newInstanceCreate(payload);
-    if (!created?.success || !created?.session?.sessionId) {
-        throw new Error(created?.error || "creation session impossible");
+    const existingLocal = findOpenTypeBSessionLocal(launchIdentity);
+    if (existingLocal?.sessionId) {
+        await focusExistingTypeBSession(existingLocal.sessionId, resolvedAppLabel);
+        return { skipped: true, reason: "already-open", sessionId: existingLocal.sessionId };
     }
 
-    const session = created.session;
-    const sessionId = session.sessionId;
-
-    if (latencyTraceId && window.LaunchLatency?.bindSession) {
-        await window.LaunchLatency.bindSession(latencyTraceId, sessionId);
+    const existingListed = await findOpenTypeBSessionFromList(launchIdentity);
+    if (existingListed?.sessionId) {
+        await focusExistingTypeBSession(existingListed.sessionId, resolvedAppLabel);
+        return { skipped: true, reason: "already-open", sessionId: existingListed.sessionId };
     }
 
-    const stage = document.getElementById("video-stage");
-
-    const canvas = document.createElement("canvas");
-    canvas.id = `canvas-${sessionId}`;
-    canvas.dataset.sessionId = sessionId;
-    canvas.dataset.kind = "new-instance";
-    canvas.style.display = "none";
-
-    if (stage) {
-        stage.appendChild(canvas);
+    if (launchKey && typeBLaunchInFlightKeys.has(launchKey)) {
+        setStatus(t("newSession.launchInProgress", { appLabel: resolvedAppLabel }), true);
+        return { skipped: true, reason: "launch-in-progress" };
     }
-
-    const pipeline = window.createNewInstanceVideoPipeline(sessionId, canvas);
-
-    newInstanceSessions.set(sessionId, {
-        sessionId,
-        label: tabLabel,
-        canvas,
-        pipeline,
-        serial,
-        packageName,
-        userId: normalizedUserId,
-        stableDeviceId: resolvedStableId
-    });
+    if (launchKey) {
+        typeBLaunchInFlightKeys.add(launchKey);
+    }
 
     try {
-        if (window.sessionAPI) {
-            await window.sessionAPI.registerView(sessionId, "B", {
-                label: tabLabel,
-                deviceId: serial,
-                stableDeviceId: resolvedStableId,
-                packageName,
-                userId: normalizedUserId,
-                stayAwakeActive: true
-            });
+        let latencyTraceId = null;
+        if (window.LaunchLatency?.markClick) {
+            const started = await window.LaunchLatency.markClick("B");
+            latencyTraceId = started.traceId;
         }
 
-        const started = await pipeline.start();
-        if (!started?.success) {
-            throw new Error(started?.error || "demarrage session echoue");
+        // Lire le preset default AVANT le bootstrap externe pour que --new-display
+        // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
+        const launchParams = await resolveDefaultLaunchStreamParams();
+        const presetScrcpyOpts = (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions)
+            ? StreamParams.toScrcpyOptions(launchParams, "B")
+            : await buildDefaultScrcpyOptions("B");
+        const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
+        setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName, launchParams)}`);
+
+        const scrcpyLaunch = await window.electronAPI.launchNewInstance(
+            serial,
+            packageName,
+            normalizedUserId,
+            latencyTraceId,
+            resolvedStableId,
+            bootstrapNewDisplay
+        );
+        if (!scrcpyLaunch?.success) {
+            if (scrcpyLaunch?.reason === "already-open" && scrcpyLaunch?.sessionId) {
+                await focusExistingTypeBSession(scrcpyLaunch.sessionId, resolvedAppLabel);
+                return { skipped: true, reason: "already-open", sessionId: scrcpyLaunch.sessionId };
+            }
+            if (scrcpyLaunch?.reason === "launch-in-progress") {
+                setStatus(t("newSession.launchInProgress", { appLabel: resolvedAppLabel }), true);
+                return { skipped: true, reason: "launch-in-progress" };
+            }
+            throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
         }
 
-        if (typeof finalizeSessionUI === "function") {
-            await finalizeSessionUI(sessionId, { label: tabLabel });
-        } else if (typeof onSessionLaunched === "function") {
-            await onSessionLaunched(sessionId, "B", { label: tabLabel });
-        } else {
-            activateNewInstanceSession(sessionId);
+        if (latencyTraceId && window.LaunchLatency?.mark) {
+            await window.LaunchLatency.mark(latencyTraceId, "waitDisplayStart");
+        }
+        const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
+        if (latencyTraceId && window.LaunchLatency?.mark) {
+            await window.LaunchLatency.mark(latencyTraceId, "waitDisplayEnd");
+        }
+        if (!Number.isInteger(presetDisplayId)) {
+            throw new Error(t("newSession.virtualDisplayMissing"));
         }
 
-        launchPipeline = createLaunchPipeline(sessionId);
-        renderLaunchPipelineStatus(`Instance lancee pour ${appLabel || tabLabel}`);
+        const streamOptions = {
+            ...presetScrcpyOpts,
+            stayAwake: true,
+            turnScreenOff: false,
+            audio: false
+        };
 
-        scheduleLaunchHistoryRefresh();
-    } catch (err) {
-        await closeNewInstanceSession(sessionId, "launch-error");
-        throw err;
+        const payload = {
+            serial,
+            stableDeviceId: resolvedStableId,
+            packageName,
+            userId: normalizedUserId,
+            tabLabel,
+            appLabel: resolvedAppLabel,
+            streamOptions,
+            presetDisplayId,
+            skipPackageLaunch: true,
+            externalLaunchId: scrcpyLaunch.launchId || null
+        };
+
+        const created = await window.electronAPI.newInstanceCreate(payload);
+        if (!created?.success || !created?.session?.sessionId) {
+            throw new Error(created?.error || "creation session impossible");
+        }
+
+        const session = created.session;
+        const sessionId = session.sessionId;
+
+        if (latencyTraceId && window.LaunchLatency?.bindSession) {
+            await window.LaunchLatency.bindSession(latencyTraceId, sessionId);
+        }
+
+        const stage = document.getElementById("video-stage");
+
+        const canvas = document.createElement("canvas");
+        canvas.id = `canvas-${sessionId}`;
+        canvas.dataset.sessionId = sessionId;
+        canvas.dataset.kind = "new-instance";
+        canvas.style.display = "none";
+
+        if (stage) {
+            stage.appendChild(canvas);
+        }
+
+        const pipeline = window.createNewInstanceVideoPipeline(sessionId, canvas);
+
+        newInstanceSessions.set(sessionId, {
+            sessionId,
+            label: tabLabel,
+            canvas,
+            pipeline,
+            serial,
+            packageName,
+            userId: normalizedUserId,
+            stableDeviceId: resolvedStableId
+        });
+
+        try {
+            if (window.sessionAPI) {
+                await window.sessionAPI.registerView(sessionId, "B", {
+                    label: tabLabel,
+                    deviceId: serial,
+                    stableDeviceId: resolvedStableId,
+                    packageName,
+                    userId: normalizedUserId,
+                    stayAwakeActive: true
+                });
+            }
+
+            const started = await pipeline.start();
+            if (!started?.success) {
+                throw new Error(started?.error || "demarrage session echoue");
+            }
+
+            if (typeof finalizeSessionUI === "function") {
+                await finalizeSessionUI(sessionId, { label: tabLabel });
+            } else if (typeof onSessionLaunched === "function") {
+                await onSessionLaunched(sessionId, "B", { label: tabLabel });
+            } else {
+                activateNewInstanceSession(sessionId);
+            }
+
+            launchPipeline = createLaunchPipeline(sessionId);
+            renderLaunchPipelineStatus(`Instance lancee pour ${appLabel || tabLabel}`);
+
+            scheduleLaunchHistoryRefresh();
+            return { success: true, sessionId };
+        } catch (err) {
+            await closeNewInstanceSession(sessionId, "launch-error");
+            throw err;
+        }
+    } finally {
+        if (launchKey) {
+            typeBLaunchInFlightKeys.delete(launchKey);
+        }
     }
 }
 

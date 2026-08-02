@@ -996,6 +996,74 @@ async function killExternalScrcpyLaunchesForApp(serial, packageName, userId = nu
 
 global.killExternalScrcpyLaunchesForApp = killExternalScrcpyLaunchesForApp;
 
+function normalizeTypeBLaunchUserId(userId) {
+    return Number.isInteger(userId) ? userId : 0;
+}
+
+function buildTypeBLaunchGateKey({ serial, packageName, userId = null, stableDeviceId = null } = {}) {
+    const deviceKey = String(stableDeviceId || serial || "").trim();
+    const pkg = String(packageName || "").trim();
+    if (!deviceKey || !pkg) return null;
+    return `${deviceKey}::${pkg}::${normalizeTypeBLaunchUserId(userId)}`;
+}
+
+/** Verrou sync avant enregistrement dans externalLaunches (anti double-clic). */
+const typeBLaunchGateKeys = new Set();
+
+function sameTypeBLaunchDevice(entry, { serial, stableDeviceId } = {}) {
+    if (!entry) return false;
+    const entryStable = entry.stableDeviceId || null;
+    const entrySerial = entry.serial || entry.deviceId || null;
+    if (stableDeviceId && entryStable && entryStable === stableDeviceId) return true;
+    if (serial && entrySerial && entrySerial === serial) return true;
+    if (stableDeviceId && entrySerial && entrySerial === stableDeviceId) return true;
+    return false;
+}
+
+/**
+ * Bloque un 2e bootstrap Type B pour la même app (device + package + user)
+ * déjà ouverte ou encore en cours de lancement externe.
+ */
+function findTypeBLaunchConflict({ serial, packageName, userId = null, stableDeviceId = null } = {}) {
+    const pkg = String(packageName || "").trim();
+    if (!pkg || (!serial && !stableDeviceId)) return null;
+    const targetUser = normalizeTypeBLaunchUserId(userId);
+    const gateKey = buildTypeBLaunchGateKey({ serial, packageName, userId, stableDeviceId });
+
+    if (gateKey && typeBLaunchGateKeys.has(gateKey)) {
+        return {
+            reason: "launch-in-progress",
+            error: "Lancement déjà en cours pour cette application"
+        };
+    }
+
+    for (const [launchId, launch] of Object.entries(externalLaunches)) {
+        if (!launch || String(launch.packageName || "").trim() !== pkg) continue;
+        if (normalizeTypeBLaunchUserId(launch.userId) !== targetUser) continue;
+        if (!sameTypeBLaunchDevice(launch, { serial, stableDeviceId })) continue;
+        return {
+            reason: "launch-in-progress",
+            launchId,
+            error: "Lancement déjà en cours pour cette application"
+        };
+    }
+
+    const sessions = newInstanceManager?.listNewInstanceSessions?.() || [];
+    for (const summary of sessions) {
+        if (!summary || String(summary.packageName || "").trim() !== pkg) continue;
+        if (normalizeTypeBLaunchUserId(summary.userId) !== targetUser) continue;
+        if (summary.state === "stopped" || summary.state === "stopping") continue;
+        if (!sameTypeBLaunchDevice(summary, { serial, stableDeviceId })) continue;
+        return {
+            reason: "already-open",
+            sessionId: summary.sessionId,
+            error: "Cette application est déjà ouverte"
+        };
+    }
+
+    return null;
+}
+
 function getExternalLaunchLaunchDims(launchId) {
     const dims = externalLaunches[launchId]?.launchDims;
     if (dims?.width > 0 && dims?.height > 0) {
@@ -2123,6 +2191,36 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             return { success: false, error: `scrcpy introuvable: ${scrcpyBinaryPath}` };
         }
 
+        const conflict = findTypeBLaunchConflict({
+            serial,
+            packageName,
+            userId,
+            stableDeviceId
+        });
+        if (conflict) {
+            console.warn(
+                `[NewInstance] launch bloqué (${conflict.reason}) ${serial} / ${packageName}`
+                + (conflict.sessionId ? ` session=${conflict.sessionId}` : "")
+            );
+            return {
+                success: false,
+                reason: conflict.reason,
+                sessionId: conflict.sessionId || null,
+                error: conflict.error
+            };
+        }
+
+        const gateKey = buildTypeBLaunchGateKey({
+            serial,
+            packageName,
+            userId,
+            stableDeviceId
+        });
+        if (gateKey) {
+            typeBLaunchGateKeys.add(gateKey);
+        }
+
+        try {
         if (latencyTraceId && global.launchLatencyTracker) {
             global.launchLatencyTracker.mark({ traceId: latencyTraceId, stage: "externalLaunchStart" });
         }
@@ -2171,6 +2269,9 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                     ? { width: launchDims.width, height: launchDims.height }
                     : null
             };
+            if (gateKey) {
+                typeBLaunchGateKeys.delete(gateKey);
+            }
 
             let resolved = false;
             let resultPayload = null;
@@ -2274,6 +2375,11 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         } catch (err) {
             console.error("[NewInstance] Erreur lancement scrcpy:", err.message);
             return { success: false, error: err.message };
+        }
+        } finally {
+            if (gateKey) {
+                typeBLaunchGateKeys.delete(gateKey);
+            }
         }
     });
 

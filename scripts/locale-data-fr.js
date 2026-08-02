@@ -412,7 +412,10 @@ module.exports = {
         "actionFailed": "Action impossible",
         "launchFailed": "Échec lancement scrcpy",
         "virtualDisplayMissing": "Display virtuel non détecté après lancement scrcpy",
-        "instanceManagerUnavailable": "Gestionnaire d'instances indisponible"
+        "instanceManagerUnavailable": "Gestionnaire d'instances indisponible",
+        "alreadyOpen": "{appLabel} est déjà ouverte",
+        "alreadyOpenFocused": "{appLabel} est déjà ouverte — affichage de la session existante",
+        "launchInProgress": "Lancement déjà en cours pour {appLabel}"
     },
     "controlPanel": {
         "title": "Contrôle session",

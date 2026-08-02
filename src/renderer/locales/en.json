@@ -416,7 +416,10 @@
     "actionFailed": "Action failed",
     "launchFailed": "Failed to launch scrcpy",
     "virtualDisplayMissing": "Virtual display not detected after scrcpy launch",
-    "instanceManagerUnavailable": "Instance manager unavailable"
+    "instanceManagerUnavailable": "Instance manager unavailable",
+    "alreadyOpen": "{appLabel} is already open",
+    "alreadyOpenFocused": "{appLabel} is already open — showing the existing session",
+    "launchInProgress": "Launch already in progress for {appLabel}"
   },
   "controlPanel": {
     "title": "Session control",
