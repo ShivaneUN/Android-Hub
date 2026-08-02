@@ -121,8 +121,8 @@ async function activateInstance(id) {
 
 /**
  * Ferme une instance : arrête le flux, retire le canvas et l'onglet.
- * Active automatiquement la dernière instance restante, ou revient
- * à la page d'accueil s'il n'y en a plus.
+ * Active automatiquement une session restante (A ou B), ou revient
+ * à l’accueil s’il n’y en a plus.
  */
 async function closeInstance(id) {
     const instance = instances[id];
@@ -141,14 +141,42 @@ async function closeInstance(id) {
         await window.sessionAPI.close(id);
     }
 
-    const remainingIds = Object.keys(instances);
+    // Liste globale (Type A + B) — ne pas se limiter à la map locale Type A.
+    let remaining = [];
+    try {
+        const listed = await window.sessionAPI?.list?.();
+        remaining = (Array.isArray(listed) ? listed : [])
+            .filter((session) => session?.sessionId && session.sessionId !== id);
+    } catch (_err) {
+        remaining = [];
+    }
 
-    if (remainingIds.length === 0) {
-        activeInstanceId = null;
-        showPage("page-new");
-        document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+    if (remaining.length > 0) {
+        const nextId = remaining[remaining.length - 1].sessionId;
+        if (typeof activateSessionTab === "function") {
+            await activateSessionTab(nextId);
+        } else if (nextId.startsWith("instance-") && instances[nextId]) {
+            await activateInstance(nextId);
+        } else if (typeof activateNewInstanceSession === "function" && nextId.startsWith("new-instance-")) {
+            activateNewInstanceSession(nextId);
+        }
     } else {
-        await activateInstance(remainingIds[remainingIds.length - 1]);
+        activeInstanceId = null;
+        // Même chemin que Type B : Accueil propre (flag + chrome + suppressView).
+        if (typeof window.goToLaunchHome === "function") {
+            await window.goToLaunchHome();
+        } else {
+            window.__hubShowingHome = true;
+            showPage("page-new");
+            document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
+            document.querySelector(".content")?.classList.remove(
+                "content--session-view",
+                "content--session-focused"
+            );
+            if (window.sessionAPI?.suppressView) {
+                await window.sessionAPI.suppressView();
+            }
+        }
     }
 
     if (typeof renderSidebar === "function") renderSidebar();

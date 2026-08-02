@@ -1479,10 +1479,29 @@ async function closeNewInstanceSession(sessionId, reason = "unspecified") {
 
         if (remaining.length > 0) {
             const nextId = remaining[remaining.length - 1].sessionId;
+            let activated = false;
             if (typeof activateSessionTab === "function") {
-                await activateSessionTab(nextId);
+                activated = (await activateSessionTab(nextId)) !== false;
             } else if (nextId.startsWith("new-instance-")) {
                 activateNewInstanceSession(nextId);
+                activated = true;
+            }
+            // Filet de sécurité si l’activation a échoué (écran vide évité).
+            if (!activated) {
+                if (typeof window.goToLaunchHome === "function") {
+                    await window.goToLaunchHome();
+                } else {
+                    window.__hubShowingHome = true;
+                    showPage("page-new");
+                    document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
+                    document.querySelector(".content")?.classList.remove(
+                        "content--session-view",
+                        "content--session-focused"
+                    );
+                    if (window.sessionAPI?.suppressView) {
+                        await window.sessionAPI.suppressView();
+                    }
+                }
             }
         } else if (typeof window.goToLaunchHome === "function") {
             await window.goToLaunchHome();

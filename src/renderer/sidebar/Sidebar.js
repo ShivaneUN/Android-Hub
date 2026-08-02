@@ -376,7 +376,28 @@ async function activateSessionTab(sessionId) {
         restoreSessionView();
     }
 
-    await window.sessionAPI.switchTo(sessionId);
+    const switched = window.sessionAPI?.switchTo
+        ? await window.sessionAPI.switchTo(sessionId)
+        : false;
+
+    // switchTo a échoué (session fantôme / déjà fermée) → ne pas rester sur un écran vide.
+    if (!switched) {
+        console.warn(`[Sidebar] activateSessionTab échoué — session introuvable ${sessionId}`);
+        if (typeof window.goToLaunchHome === "function") {
+            await window.goToLaunchHome();
+        } else {
+            window.__hubShowingHome = true;
+            document.getElementById("page-new")?.classList.remove("hidden");
+            document.querySelector(".content")?.classList.remove(
+                "content--session-view",
+                "content--session-focused"
+            );
+            if (window.sessionAPI?.suppressView) {
+                await window.sessionAPI.suppressView();
+            }
+        }
+        return false;
+    }
 
     if (sessionId.startsWith("instance-") && typeof activateInstance === "function") {
         await activateInstance(sessionId);
@@ -392,7 +413,7 @@ async function activateSessionTab(sessionId) {
         if (typeof updateOrientationToggle === "function") updateOrientationToggle();
         if (typeof reportContentBounds === "function") reportContentBounds();
         scheduleSessionOrientationApply();
-        return;
+        return true;
     }
 
     await renderSidebar();
@@ -400,6 +421,7 @@ async function activateSessionTab(sessionId) {
     if (typeof updateOrientationToggle === "function") updateOrientationToggle();
     scheduleSessionOrientationApply();
     if (typeof reportContentBounds === "function") reportContentBounds();
+    return true;
 }
 
 async function cycleSessionTab(direction) {
