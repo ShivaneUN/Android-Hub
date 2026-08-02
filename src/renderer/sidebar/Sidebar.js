@@ -369,6 +369,7 @@ function scheduleSessionOrientationApply() {
 
 async function activateSessionTab(sessionId) {
     window.__hubShowingHome = false;
+    window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: false } }));
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
 
@@ -506,6 +507,7 @@ async function finalizeSessionUI(sessionId, options = {}) {
     }
 
     window.__hubShowingHome = false;
+    window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: false } }));
     document.querySelectorAll(".page").forEach((page) => page.classList.add("hidden"));
     document.querySelectorAll(".sidebar-item").forEach((el) => el.classList.remove("active"));
 

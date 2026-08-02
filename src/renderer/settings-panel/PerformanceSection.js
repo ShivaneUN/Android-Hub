@@ -16,6 +16,10 @@
         return document.getElementById("settings-perf-mode-toggle");
     }
 
+    function getRememberScreenToggle() {
+        return document.getElementById("settings-remember-screen-toggle");
+    }
+
     function getFeatureChips() {
         return document.querySelectorAll("#settings-perf-feature-toggles [data-perf-feature]");
     }
@@ -33,6 +37,17 @@
             if (response?.success && response.result) return response.result;
         }
         return window.HubPerformance?.getPrefs?.() || {};
+    }
+
+    async function readScreenPowerPrefs() {
+        if (window.uiPreferencesAPI?.getDeviceScreenPowerPrefs) {
+            try {
+                return await window.uiPreferencesAPI.getDeviceScreenPowerPrefs();
+            } catch (_err) {
+                /* fall through */
+            }
+        }
+        return { rememberAcrossDisconnect: false };
     }
 
     async function writePrefs(patch) {
@@ -57,11 +72,31 @@
         return null;
     }
 
+    async function writeRememberScreen(enabled) {
+        if (!window.uiPreferencesAPI?.setRememberScreenAcrossDisconnect) {
+            window.showHubToast?.(t("settingsPanel.rememberScreenSaveFailed"), "error");
+            return null;
+        }
+        const result = await window.uiPreferencesAPI.setRememberScreenAcrossDisconnect(enabled);
+        if (!result?.success) {
+            window.showHubToast?.(result?.error || t("settingsPanel.rememberScreenSaveFailed"), "error");
+            return null;
+        }
+        return result.deviceScreenPower || { rememberAcrossDisconnect: enabled };
+    }
+
     function applyLocalDom(prefs = {}) {
         const modeOn = prefs.performanceMode === true;
         document.body?.classList.toggle("perf-reduce-motion", modeOn || prefs.uiAnimations === false);
         document.body?.classList.toggle("perf-hide-fps", modeOn || prefs.fpsMonitor === false);
         document.body?.classList.toggle("perf-no-app-logos", modeOn || prefs.appLogos === false);
+    }
+
+    function applyRememberScreenUi(enabled) {
+        const btn = getRememberScreenToggle();
+        if (!btn) return;
+        btn.classList.toggle("is-on", enabled === true);
+        btn.setAttribute("aria-pressed", enabled === true ? "true" : "false");
     }
 
     function applyPrefsToUi(prefs = {}) {
@@ -85,8 +120,9 @@
     }
 
     async function syncToggleUi() {
-        const prefs = await readPrefs();
+        const [prefs, screenPrefs] = await Promise.all([readPrefs(), readScreenPowerPrefs()]);
         applyPrefsToUi(prefs);
+        applyRememberScreenUi(screenPrefs?.rememberAcrossDisconnect === true);
     }
 
     function bindPerformanceSection() {
@@ -114,6 +150,15 @@
                         applyPrefsToUi(result);
                     })();
                 });
+            });
+
+            getRememberScreenToggle()?.addEventListener("click", () => {
+                const next = !getRememberScreenToggle()?.classList.contains("is-on");
+                void (async () => {
+                    const result = await writeRememberScreen(next);
+                    if (!result) return;
+                    applyRememberScreenUi(result.rememberAcrossDisconnect === true);
+                })();
             });
 
             window.uiPreferencesAPI?.onPerformanceChanged?.((payload) => {

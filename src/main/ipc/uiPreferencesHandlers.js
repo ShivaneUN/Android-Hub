@@ -107,6 +107,22 @@ function registerUiPreferencesHandlers(deps) {
         return result;
     });
 
+    ipcMain.handle("ui:get-device-screen-power-prefs", async () => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager?.getDeviceScreenPowerPrefs) {
+            return { rememberAcrossDisconnect: false, byDeviceId: {} };
+        }
+        return manager.getDeviceScreenPowerPrefs();
+    });
+
+    ipcMain.handle("ui:set-remember-screen-across-disconnect", async (_event, payload = {}) => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager?.setRememberScreenAcrossDisconnect) {
+            return { success: false, error: "manager-unavailable" };
+        }
+        return manager.setRememberScreenAcrossDisconnect(payload?.enabled === true);
+    });
+
     ipcMain.handle("ui:set-sidebar-open", async (_event, payload = {}) => {
         const manager = getUiPreferencesManager?.();
         if (!manager) {

@@ -515,11 +515,23 @@ async function resolveDeviceDimensionsForEntry(entry) {
 
 function syncDevicePowerPolicy(devices) {
     if (!devicePowerManager || !Array.isArray(devices)) return;
-    const serials = devices
-        .filter((device) => device?.serial && device.connected !== false)
-        .map((device) => device.serial);
-    if (!serials.length) return;
+    const connected = devices.filter((device) => device?.serial && device.connected !== false);
+    const serials = connected.map((device) => device.serial);
+    if (!serials.length) {
+        if (typeof global.syncScreenTrackingForConnectedSerials === "function") {
+            global.syncScreenTrackingForConnectedSerials([]);
+        }
+        return;
+    }
     void devicePowerManager.syncConnectedDevices(serials);
+    if (typeof global.syncScreenTrackingForConnectedSerials === "function") {
+        global.syncScreenTrackingForConnectedSerials(
+            connected.map((device) => ({
+                serial: device.serial,
+                deviceId: device.deviceId || null
+            }))
+        );
+    }
 }
 
 function getConnectedDeviceIds() {
@@ -1140,12 +1152,26 @@ function handleExternalLaunchChildExit(launchId, child) {
     }
 
     if (launch.packageName && launch.serial && newInstanceManager) {
-        void newInstanceManager.forceStopAppOnDevice({
-            serial: launch.serial,
-            packageName: launch.packageName,
-            userId: launch.userId,
-            sessionId: launchId
-        });
+        void (async () => {
+            try {
+                await newInstanceManager.forceStopAppOnDevice({
+                    serial: launch.serial,
+                    packageName: launch.packageName,
+                    userId: launch.userId,
+                    sessionId: launchId
+                });
+            } catch (_err) {
+                // noop
+            }
+            try {
+                await newInstanceManager.reassertPhysicalScreenOffAfterClose({
+                    serial: launch.serial,
+                    sessionId: launchId
+                });
+            } catch (_err) {
+                // noop
+            }
+        })();
     }
     delete externalLaunches[launchId];
 }
@@ -2895,12 +2921,26 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                         delete externalScrcpyWindows[tabId];
                     }
                     if (packageName && newInstanceManager) {
-                        void newInstanceManager.forceStopAppOnDevice({
-                            serial,
-                            packageName,
-                            userId: Number.isInteger(options.userId) ? options.userId : null,
-                            sessionId: tabId
-                        });
+                        void (async () => {
+                            try {
+                                await newInstanceManager.forceStopAppOnDevice({
+                                    serial,
+                                    packageName,
+                                    userId: Number.isInteger(options.userId) ? options.userId : null,
+                                    sessionId: tabId
+                                });
+                            } catch (_err) {
+                                // noop
+                            }
+                            try {
+                                await newInstanceManager.reassertPhysicalScreenOffAfterClose({
+                                    serial,
+                                    sessionId: tabId
+                                });
+                            } catch (_err) {
+                                // noop
+                            }
+                        })();
                     }
                 });
             } catch (err) {
@@ -3116,6 +3156,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getNewInstanceManager: () => newInstanceManager,
         stopVideoStream: (sessionId) => stopVideoStreamForTab(sessionId)
     });
+    global.getVideoClientForSession = (sessionId) => videoClients[sessionId] || null;
     registerStreamParamsHandlers(global.streamParamsManager);
     setupBrowserViewVideoForwarding(newInstanceManager, () => win);
     registerVideoPreviewHandlers(() => global.videoPreviewTooltipManager);

@@ -6,6 +6,9 @@ let adbPathRef = null;
 let getVideoClientRef = null;
 let getNewInstanceManagerRef = null;
 
+/** État écran physique suivi hors Type A (ADB / Type B) — clé = serial ADB résolu. */
+const deviceScreenOffBySerial = new Map();
+
 async function resolveEntryAdbSerial(entry, sessionId = null) {
     if (!entry?.deviceId && !entry?.stableDeviceId) {
         const manager = getNewInstanceManagerRef?.();
@@ -29,6 +32,22 @@ async function resolveEntryAdbSerial(entry, sessionId = null) {
     return entry.deviceId || null;
 }
 
+async function resolveHintAdbSerial({ serial = null, stableDeviceId = null } = {}) {
+    if (!serial && !stableDeviceId) return null;
+    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        try {
+            const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                deviceId: stableDeviceId || null,
+                serial: serial || null
+            });
+            if (resolved) return resolved;
+        } catch (_err) {
+            // fallback serial
+        }
+    }
+    return serial || null;
+}
+
 function runAdbShell(serial, shellCommand) {
     return new Promise((resolve, reject) => {
         if (!adbPathRef || !serial) {
@@ -45,6 +64,437 @@ function runAdbShell(serial, shellCommand) {
         );
     });
 }
+
+function runAdbShellStdout(serial, shellCommand) {
+    return new Promise((resolve, reject) => {
+        if (!adbPathRef || !serial) {
+            reject(new Error("ADB ou serial manquant"));
+            return;
+        }
+        exec(
+            `"${adbPathRef}" -s ${adbSerialArg(serial)} shell ${shellCommand}`,
+            { windowsHide: true, maxBuffer: 2 * 1024 * 1024 },
+            (error, stdout) => {
+                if (error) reject(error);
+                else resolve(String(stdout || ""));
+            }
+        );
+    });
+}
+
+function notifyScreenPowerChanged(payload) {
+    const win = global.browserViewManager?.mainWindow;
+    if (win && !win.isDestroyed()) {
+        win.webContents.send("session:screen-power-changed", payload || {});
+    }
+}
+
+function syncScreenOffOnDeviceSessions(adbSerial, screenOff, {
+    stableDeviceId = null,
+    preferSerial = null,
+    persist = true
+} = {}) {
+    if (adbSerial) {
+        deviceScreenOffBySerial.set(adbSerial, Boolean(screenOff));
+    }
+    if (preferSerial && preferSerial !== adbSerial) {
+        deviceScreenOffBySerial.set(preferSerial, Boolean(screenOff));
+    }
+
+    const manager = global.browserViewManager;
+    if (manager?.getAllSessions) {
+        for (const summary of manager.getAllSessions()) {
+            const entry = manager.getSessionEntry(summary.sessionId);
+            if (!entry) continue;
+            const sameStable = Boolean(
+                stableDeviceId && entry.stableDeviceId && entry.stableDeviceId === stableDeviceId
+            );
+            const sameSerial = Boolean(
+                (adbSerial && entry.deviceId === adbSerial)
+                || (preferSerial && entry.deviceId === preferSerial)
+                || (adbSerial && preferSerial && entry.deviceId === preferSerial)
+            );
+            if (!sameStable && !sameSerial) continue;
+            manager.setSessionScreenOff(summary.sessionId, screenOff);
+        }
+    }
+
+    if (persist) {
+        persistDesiredScreenOff({
+            deviceId: stableDeviceId,
+            serial: preferSerial || adbSerial,
+            screenOff: Boolean(screenOff)
+        });
+    }
+}
+
+async function probePhysicalScreenOff(serial) {
+    if (!serial) return null;
+    try {
+        const out = await runAdbShellStdout(serial, "dumpsys power");
+        if (/Display Power:\s*state\s*=\s*OFF/i.test(out)) return true;
+        if (/Display Power:\s*state\s*=\s*ON/i.test(out)) return false;
+        if (/\bmScreenOn\s*=\s*false\b/i.test(out)) return true;
+        if (/\bmScreenOn\s*=\s*true\b/i.test(out)) return false;
+        if (/\bmWakefulness\s*=\s*Asleep\b/i.test(out)) return true;
+        if (/\bmWakefulness\s*=\s*Awake\b/i.test(out)) return false;
+    } catch (_err) {
+        // ignore — fallback état suivi
+    }
+    return null;
+}
+
+function sameDeviceAs(entry, adbSerial, stableDeviceId, preferSerial = null) {
+    if (!entry) return false;
+    if (stableDeviceId && entry.stableDeviceId && entry.stableDeviceId === stableDeviceId) {
+        return true;
+    }
+    const id = entry.deviceId || null;
+    if (!id) return false;
+    if (
+        (adbSerial && id === adbSerial)
+        || (preferSerial && id === preferSerial)
+    ) {
+        return true;
+    }
+    // Même appareil USB/Wi‑Fi : deviceId Type A peut différer du serial Type B.
+    if (stableDeviceId && id === stableDeviceId) return true;
+    return false;
+}
+
+/**
+ * Préfère un client scrcpy Type A (miroir) puis Type B : setDisplayPower éteint le
+ * panneau physique sans mettre le device en sommeil (évite flux Type A noir).
+ */
+function findDisplayPowerClient(adbSerial, stableDeviceId = null, preferSerial = null) {
+    const manager = global.browserViewManager;
+    if (!manager?.getAllSessions) return null;
+
+    const matches = [];
+    for (const summary of manager.getAllSessions()) {
+        const entry = manager.getSessionEntry(summary.sessionId);
+        if (!entry) continue;
+        if (!sameDeviceAs(entry, adbSerial, stableDeviceId, preferSerial)) {
+            // Filet : un seul Type A connecté + serial fourni → le prendre
+            // (évite faux négatif USB vs Wi‑Fi sans stableDeviceId).
+            continue;
+        }
+        matches.push({ summary, entry, sessionId: summary.sessionId });
+    }
+
+    if (!matches.length) {
+        const typeAOnly = [];
+        for (const summary of manager.getAllSessions()) {
+            const entry = manager.getSessionEntry(summary.sessionId);
+            if (entry?.type === "A" && entry.deviceId) {
+                typeAOnly.push({ summary, entry, sessionId: summary.sessionId });
+            }
+        }
+        // Si un seul miroir Type A existe, l'utiliser pour setDisplayPower
+        // (fermeture Type B avec serial résolu différemment).
+        if (typeAOnly.length === 1 && (adbSerial || stableDeviceId || preferSerial)) {
+            matches.push(typeAOnly[0]);
+        }
+    }
+
+    const ordered = [
+        ...matches.filter((m) => m.entry.type === "A"),
+        ...matches.filter((m) => m.entry.type === "B")
+    ];
+
+    for (const m of ordered) {
+        let client = null;
+        if (m.entry.type === "A" && typeof getVideoClientRef === "function") {
+            client = getVideoClientRef(m.sessionId);
+        } else if (m.entry.type === "B") {
+            const ni = getNewInstanceManagerRef?.()?.getNewInstanceSession?.(m.sessionId);
+            client = ni?.client || null;
+        }
+        if (client?.controlSocket && typeof client.setDisplayPower === "function") {
+            return { client, sessionId: m.sessionId, type: m.entry.type };
+        }
+    }
+    return null;
+}
+
+/**
+ * Éteint/allume l'écran physique. setDisplayPower si un flux scrcpy existe ;
+ * sinon ADB (keyevent) en dernier recours — interdit si allowAdbSleep=false
+ * (évite de noircir un miroir Type A encore actif).
+ */
+async function setPhysicalScreenPower(serial, turnOff, {
+    stableDeviceId = null,
+    preferSerial = null,
+    allowAdbSleep = true
+} = {}) {
+    if (!serial) throw new Error("Serial manquant pour toggle ecran");
+
+    if (turnOff) {
+        try {
+            await runAdbShell(serial, "svc power stayon true");
+        } catch (_err) {
+            // best-effort
+        }
+    }
+
+    const powerClient = findDisplayPowerClient(serial, stableDeviceId, preferSerial);
+    if (powerClient?.client) {
+        await powerClient.client.setDisplayPower(!turnOff);
+        return { mode: "scrcpy", sessionId: powerClient.sessionId, type: powerClient.type };
+    }
+
+    if (turnOff) {
+        if (!allowAdbSleep) {
+            console.warn(
+                `[ScreenPower] skip keyevent 223 — aucun setDisplayPower et ADB sleep interdit (${serial})`
+            );
+            return { mode: "skipped-adb-sleep", sessionId: null, type: null };
+        }
+        // KEYCODE_SLEEP — peut noircir un miroir Type A : réservé à l'absence de Type A.
+        await runAdbShell(serial, "input keyevent 223");
+    } else {
+        try {
+            await runAdbShell(serial, "svc power stayon true");
+        } catch (_err) {
+            // noop
+        }
+        // WAKEUP puis POWER si besoin (certains OEM ignorent 224 seul).
+        await runAdbShell(serial, "input keyevent 224");
+        const stillOff = await probePhysicalScreenOff(serial);
+        if (stillOff === true) {
+            try {
+                await runAdbShell(serial, "input keyevent 26");
+            } catch (_err) {
+                // noop
+            }
+        }
+    }
+    return { mode: "adb", sessionId: null, type: null };
+}
+
+global.applyPhysicalScreenPower = setPhysicalScreenPower;
+
+/** Serials déjà vus connectés cette session Hub (pour resync badge à la connexion). */
+const screenTrackingSeenSerials = new Set();
+/** serial → { deviceId, serial } pour persistance à la déconnexion. */
+const screenTrackingDeviceMeta = new Map();
+
+function screenPowerDeviceKey({ deviceId = null, serial = null } = {}) {
+    return String(deviceId || serial || "").trim() || null;
+}
+
+function getUiScreenPowerManager() {
+    return global.uiPreferencesManager || null;
+}
+
+/** Persiste toujours l'intention ON/OFF (partagée Type A/B). */
+function persistDesiredScreenOff({ deviceId = null, serial = null, screenOff }) {
+    const manager = getUiScreenPowerManager();
+    if (!manager?.saveDeviceScreenPowerState) return;
+    if (typeof screenOff !== "boolean") return;
+    const key = screenPowerDeviceKey({ deviceId, serial });
+    if (!key) return;
+    try {
+        manager.saveDeviceScreenPowerState(key, screenOff);
+        if (serial && key !== serial) {
+            manager.saveDeviceScreenPowerState(serial, screenOff);
+        }
+    } catch (err) {
+        console.warn("[ScreenPower] persist desired:", err?.message || err);
+    }
+}
+
+/** @deprecated alias — intention device toujours persistée. */
+function persistScreenPowerIfEnabled(args) {
+    persistDesiredScreenOff(args);
+}
+
+/**
+ * Intention écran par device (pas par session).
+ * Source : map runtime + prefs persistées (toggle bouton).
+ * @returns {boolean|null} null = jamais choisi explicitement
+ */
+function resolveDesiredScreenOff({ serial = null, stableDeviceId = null } = {}) {
+    if (serial && deviceScreenOffBySerial.has(serial)) {
+        return Boolean(deviceScreenOffBySerial.get(serial));
+    }
+
+    const prefs = getUiScreenPowerManager();
+    if (prefs?.getSavedDeviceScreenPowerState) {
+        const saved = (stableDeviceId && prefs.getSavedDeviceScreenPowerState(stableDeviceId))
+            || (serial && prefs.getSavedDeviceScreenPowerState(serial));
+        if (saved && typeof saved.screenOff === "boolean") {
+            if (serial) {
+                deviceScreenOffBySerial.set(serial, saved.screenOff);
+            }
+            return saved.screenOff;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param {boolean} typeBDefault - si aucune intention : Type B historique = OFF
+ */
+function shouldPhysicalScreenBeOff(serial, stableDeviceId = null, { typeBDefault = true } = {}) {
+    const desired = resolveDesiredScreenOff({ serial, stableDeviceId });
+    if (desired === null) return typeBDefault;
+    return desired === true;
+}
+
+global.getDesiredScreenOff = (serial, stableDeviceId = null) => (
+    resolveDesiredScreenOff({ serial, stableDeviceId })
+);
+
+global.shouldPhysicalScreenBeOff = shouldPhysicalScreenBeOff;
+
+global.setDesiredScreenOff = (serial, screenOff, meta = {}) => {
+    if (!serial && !meta.stableDeviceId) return;
+    const adbSerial = serial || meta.preferSerial || null;
+    if (!adbSerial) return;
+    syncScreenOffOnDeviceSessions(adbSerial, Boolean(screenOff), {
+        stableDeviceId: meta.stableDeviceId || null,
+        preferSerial: meta.preferSerial || serial
+    });
+    if (meta.notify !== false) {
+        notifyScreenPowerChanged({
+            deviceId: adbSerial,
+            stableDeviceId: meta.stableDeviceId || null,
+            screenOff: Boolean(screenOff),
+            mode: meta.mode || "desired"
+        });
+    }
+};
+
+function rememberDeviceScreenOff(serial, screenOff) {
+    if (!serial) return;
+    deviceScreenOffBySerial.set(serial, Boolean(screenOff));
+}
+
+function clearDeviceScreenOffState(serial) {
+    if (!serial) return;
+    deviceScreenOffBySerial.delete(serial);
+}
+
+global.syncDeviceScreenOffState = (serial, screenOff, meta = {}) => {
+    if (!serial) return;
+    syncScreenOffOnDeviceSessions(serial, Boolean(screenOff), {
+        stableDeviceId: meta.stableDeviceId || null,
+        preferSerial: meta.preferSerial || null
+    });
+    notifyScreenPowerChanged({
+        deviceId: serial,
+        stableDeviceId: meta.stableDeviceId || null,
+        screenOff: Boolean(screenOff),
+        mode: meta.mode || "adb"
+    });
+};
+
+/**
+ * Nouveau serial : recharge l'intention device ; réapplique le physique si option « mémoriser ».
+ * @param {Array<{ serial: string, deviceId?: string|null }>} devices
+ */
+global.resetDeviceScreenOffTracking = async (devices = []) => {
+    const list = (Array.isArray(devices) ? devices : [])
+        .map((item) => (typeof item === "string"
+            ? { serial: item, deviceId: null }
+            : { serial: item?.serial, deviceId: item?.deviceId || null }))
+        .filter((item) => item.serial);
+
+    const prefs = getUiScreenPowerManager();
+    const remember = Boolean(prefs?.isRememberScreenAcrossDisconnectEnabled?.());
+
+    for (const item of list) {
+        const serial = item.serial;
+        const deviceId = item.deviceId || null;
+        clearDeviceScreenOffState(serial);
+
+        const saved = prefs?.getSavedDeviceScreenPowerState?.(deviceId)
+            || prefs?.getSavedDeviceScreenPowerState?.(serial);
+        const hasSaved = Boolean(saved && typeof saved.screenOff === "boolean");
+
+        let screenOff = hasSaved ? saved.screenOff : null;
+        let mode = hasSaved ? "desired" : "probe";
+
+        if (remember && hasSaved) {
+            mode = "restored";
+            try {
+                await setPhysicalScreenPower(serial, screenOff, {
+                    stableDeviceId: deviceId,
+                    preferSerial: serial
+                });
+            } catch (err) {
+                console.warn(`[ScreenPower] restore ${serial}:`, err?.message || err);
+            }
+        }
+
+        if (screenOff === null) {
+            const probed = await probePhysicalScreenOff(serial);
+            screenOff = probed !== null ? probed : false;
+            mode = "probe";
+        }
+
+        rememberDeviceScreenOff(serial, screenOff);
+        syncScreenOffOnDeviceSessions(serial, screenOff, {
+            stableDeviceId: deviceId,
+            preferSerial: serial,
+            // Ne pas écraser l'intention utilisateur avec un simple probe.
+            persist: mode === "restored"
+        });
+        notifyScreenPowerChanged({
+            deviceId: serial,
+            stableDeviceId: deviceId,
+            screenOff,
+            mode
+        });
+    }
+};
+
+/**
+ * Appelé à chaque refresh devices : prime le tracking écran pour les nouveaux serials
+ * et mémorise/oublie ceux déconnectés.
+ * @param {Array<{ serial: string, deviceId?: string|null }|string>} devicesOrSerials
+ */
+global.syncScreenTrackingForConnectedSerials = (devicesOrSerials = []) => {
+    const devices = (Array.isArray(devicesOrSerials) ? devicesOrSerials : [])
+        .map((item) => (typeof item === "string"
+            ? { serial: item, deviceId: null }
+            : { serial: item?.serial || null, deviceId: item?.deviceId || null }))
+        .filter((item) => item.serial);
+
+    const current = new Set(devices.map((d) => d.serial));
+    for (const device of devices) {
+        screenTrackingDeviceMeta.set(device.serial, {
+            serial: device.serial,
+            deviceId: device.deviceId || null
+        });
+    }
+
+    for (const serial of [...screenTrackingSeenSerials]) {
+        if (!current.has(serial)) {
+            const meta = screenTrackingDeviceMeta.get(serial) || { serial, deviceId: null };
+            if (deviceScreenOffBySerial.has(serial)) {
+                persistScreenPowerIfEnabled({
+                    deviceId: meta.deviceId,
+                    serial,
+                    screenOff: deviceScreenOffBySerial.get(serial)
+                });
+            }
+            screenTrackingSeenSerials.delete(serial);
+            screenTrackingDeviceMeta.delete(serial);
+            clearDeviceScreenOffState(serial);
+        }
+    }
+
+    const newly = devices.filter((d) => !screenTrackingSeenSerials.has(d.serial));
+    for (const device of newly) {
+        screenTrackingSeenSerials.add(device.serial);
+    }
+    if (newly.length) {
+        void global.resetDeviceScreenOffTracking(newly);
+    }
+};
 
 function cycleSessionTab(direction = "next") {
     const manager = global.browserViewManager;
@@ -189,10 +639,35 @@ function registerSessionHandlers(adbPath, deps = {}) {
                         // noop
                     }
                 }
-            })();
-        }
 
-        if (wasPortrait && serial && global.deviceOrientationManager) {
+                // Orientation paysage peut réveiller l'écran — re-éteint après.
+                if (wasPortrait && serial && global.deviceOrientationManager) {
+                    try {
+                        const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
+                        await global.deviceOrientationManager.applyOrientation(adbSerial, "landscape");
+                        global.deviceOrientationManager.clearSavedState(adbSerial);
+                    } catch (err) {
+                        console.warn("[session:close] restauration orientation:", err?.message || err);
+                    }
+                }
+
+                try {
+                    let adbSerial = serial;
+                    try {
+                        adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
+                    } catch (_err) {
+                        // garder serial capturé
+                    }
+                    await manager.reassertPhysicalScreenOffAfterClose({
+                        serial: adbSerial || serial,
+                        stableDeviceId,
+                        sessionId
+                    });
+                } catch (err) {
+                    console.warn("[session:close] re-off ecran:", err?.message || err);
+                }
+            })();
+        } else if (wasPortrait && serial && global.deviceOrientationManager) {
             void (async () => {
                 try {
                     const adbSerial = await resolveEntryAdbSerial(entry, sessionId) || serial;
@@ -334,46 +809,196 @@ function registerSessionHandlers(adbPath, deps = {}) {
         return { success: true, session };
     });
 
-    ipcMain.handle("session:toggleScreen", async (_event, sessionId) => {
+    ipcMain.handle("session:getScreenToggleState", async (_event, hint = {}) => {
+        const manager = global.browserViewManager;
+        if (!manager) {
+            return { success: false, enabled: false, error: "BrowserViewManager indisponible" };
+        }
+
+        const home = Boolean(hint?.home);
+        const activeId = manager.getActiveSessionId();
+        const activeEntry = (!home && activeId) ? manager.getSessionEntry(activeId) : null;
+
+        const buildState = async ({ mode, sessionId, deviceId, stableDeviceId, entryScreenOff = null, preferProbe = false }) => {
+            const adbSerial = deviceId || stableDeviceId
+                ? await resolveHintAdbSerial({ serial: deviceId, stableDeviceId })
+                : null;
+            let screenOff = resolveDesiredScreenOff({
+                serial: adbSerial || deviceId,
+                stableDeviceId
+            });
+            if (screenOff === null && preferProbe && adbSerial) {
+                const probed = await probePhysicalScreenOff(adbSerial);
+                screenOff = probed !== null ? probed : false;
+                // Probe Accueil seulement — ne grave pas une intention utilisateur.
+                if (adbSerial) rememberDeviceScreenOff(adbSerial, screenOff);
+            }
+            if (screenOff === null && typeof entryScreenOff === "boolean") {
+                screenOff = entryScreenOff;
+            }
+            if (screenOff === null) screenOff = false;
+            return {
+                success: true,
+                enabled: true,
+                mode,
+                sessionId,
+                deviceId: deviceId || adbSerial,
+                stableDeviceId: stableDeviceId || null,
+                screenOff: Boolean(screenOff)
+            };
+        };
+
+        // Type A / Type B actifs : même intention device.
+        if (activeEntry?.deviceId && (activeEntry.type === "A" || activeEntry.type === "B")) {
+            return buildState({
+                mode: activeEntry.type === "A" ? "typeA" : "adb",
+                sessionId: activeId,
+                deviceId: activeEntry.deviceId,
+                stableDeviceId: activeEntry.stableDeviceId || null,
+                entryScreenOff: typeof activeEntry.screenOff === "boolean" ? activeEntry.screenOff : null,
+                preferProbe: false
+            });
+        }
+
+        // Accueil / rien lancé : device sélectionné (hint).
+        const adbSerial = await resolveHintAdbSerial({
+            serial: hint?.serial || null,
+            stableDeviceId: hint?.stableDeviceId || null
+        });
+        if (!adbSerial) {
+            return { success: true, enabled: false, screenOff: false };
+        }
+
+        return buildState({
+            mode: "adb",
+            sessionId: null,
+            deviceId: hint?.serial || adbSerial,
+            stableDeviceId: hint?.stableDeviceId || null,
+            preferProbe: true
+        });
+    });
+
+    ipcMain.handle("session:toggleScreen", async (_event, payload) => {
         const manager = global.browserViewManager;
         if (!manager) {
             return { success: false, error: "BrowserViewManager indisponible" };
         }
 
-        const targetId = sessionId || manager.getActiveSessionId();
-        const entry = manager.getSessionEntry(targetId);
-        if (!entry) {
-            return { success: false, error: "Session introuvable" };
-        }
-        if (entry.type !== "A") {
-            return { success: false, error: "Disponible uniquement pour les sessions Type A" };
-        }
-        if (!entry.deviceId) {
-            return { success: false, error: "Aucun appareil associe a cette session" };
+        const opts = (typeof payload === "string" || payload == null)
+            ? { sessionId: payload || null }
+            : (payload || {});
+        const home = Boolean(opts.home);
+        const targetId = opts.sessionId || (!home ? manager.getActiveSessionId() : null);
+        const entry = targetId ? manager.getSessionEntry(targetId) : null;
+
+        // —— Type A : setDisplayPower (comportement historique) ——
+        if (entry?.type === "A") {
+            if (!entry.deviceId) {
+                return { success: false, error: "Aucun appareil associe a cette session" };
+            }
+
+            const adbSerial = await resolveEntryAdbSerial(entry, targetId);
+            let currentOff = resolveDesiredScreenOff({
+                serial: adbSerial || entry.deviceId,
+                stableDeviceId: entry.stableDeviceId || null
+            });
+            if (currentOff === null) currentOff = Boolean(entry.screenOff);
+            const turningOff = !currentOff;
+
+            try {
+                if (turningOff && !entry.stayAwakeActive && adbSerial) {
+                    await runAdbShell(adbSerial, "svc power stayon true");
+                    manager.setSessionStayAwake(targetId, true);
+                }
+
+                const client = getVideoClientRef ? getVideoClientRef(targetId) : null;
+                if (!client || typeof client.setDisplayPower !== "function") {
+                    return { success: false, error: "Flux scrcpy introuvable pour cette session" };
+                }
+
+                await client.setDisplayPower(!turningOff);
+                if (adbSerial) {
+                    syncScreenOffOnDeviceSessions(adbSerial, turningOff, {
+                        stableDeviceId: entry.stableDeviceId || null,
+                        preferSerial: entry.deviceId
+                    });
+                } else {
+                    manager.setSessionScreenOff(targetId, turningOff);
+                }
+                notifyScreenPowerChanged({
+                    sessionId: targetId,
+                    deviceId: entry.deviceId,
+                    stableDeviceId: entry.stableDeviceId || null,
+                    screenOff: turningOff,
+                    mode: "typeA"
+                });
+
+                return {
+                    success: true,
+                    sessionId: targetId,
+                    screenOff: turningOff,
+                    deviceId: entry.deviceId,
+                    mode: "typeA"
+                };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
         }
 
-        const turningOff = !entry.screenOff;
-        const adbSerial = await resolveEntryAdbSerial(entry, targetId);
+        // —— Type B ou Accueil ——
+        let adbSerial = null;
+        let stableDeviceId = opts.stableDeviceId || entry?.stableDeviceId || null;
+        let deviceId = opts.serial || entry?.deviceId || null;
+
+        if (entry?.type === "B") {
+            adbSerial = await resolveEntryAdbSerial(entry, targetId);
+            deviceId = entry.deviceId || deviceId;
+            stableDeviceId = entry.stableDeviceId || stableDeviceId;
+        } else {
+            adbSerial = await resolveHintAdbSerial({
+                serial: opts.serial || null,
+                stableDeviceId: opts.stableDeviceId || null
+            });
+        }
+
+        if (!adbSerial) {
+            return { success: false, error: "Aucun appareil pour basculer l'ecran" };
+        }
+
+        let currentOff = resolveDesiredScreenOff({
+            serial: adbSerial,
+            stableDeviceId
+        });
+        if (currentOff === null) {
+            const probed = await probePhysicalScreenOff(adbSerial);
+            currentOff = probed !== null ? probed : false;
+        }
+
+        const turningOff = !currentOff;
 
         try {
-            if (turningOff && !entry.stayAwakeActive && adbSerial) {
-                await runAdbShell(adbSerial, "svc power stayon true");
-                manager.setSessionStayAwake(targetId, true);
-            }
-
-            const client = getVideoClientRef ? getVideoClientRef(targetId) : null;
-            if (!client || typeof client.setDisplayPower !== "function") {
-                return { success: false, error: "Flux scrcpy introuvable pour cette session" };
-            }
-
-            await client.setDisplayPower(!turningOff);
-            manager.setSessionScreenOff(targetId, turningOff);
+            const applied = await setPhysicalScreenPower(adbSerial, turningOff, {
+                stableDeviceId,
+                preferSerial: deviceId
+            });
+            syncScreenOffOnDeviceSessions(adbSerial, turningOff, {
+                stableDeviceId,
+                preferSerial: deviceId
+            });
+            notifyScreenPowerChanged({
+                sessionId: targetId || applied?.sessionId || null,
+                deviceId: deviceId || adbSerial,
+                stableDeviceId,
+                screenOff: turningOff,
+                mode: applied?.mode || "adb"
+            });
 
             return {
                 success: true,
-                sessionId: targetId,
+                sessionId: targetId || null,
                 screenOff: turningOff,
-                deviceId: entry.deviceId
+                deviceId: deviceId || adbSerial,
+                mode: applied?.mode || "adb"
             };
         } catch (err) {
             return { success: false, error: err.message };

@@ -5050,6 +5050,7 @@
         clearHomeModuleTitleCenters();
         stopHomePreviewPolling();
       } else {
+        window.videoPreviewHook?.hide?.();
         // Recharger les positions sauvegardées — décolle seulement si collision
         restoreHomeModulesFromStorage();
         clearHomeModuleTitleCenters();
@@ -5083,6 +5084,7 @@
 
   window.syncDockBatteries = syncDockBatteries;
   window.syncHomeSessions = syncHomeSessions;
+  window.isHomeVisible = isHomeVisible;
   window.layoutHomeDevicesSplit = layoutHomeDevicesSplit;
   window.layoutHomeSessionsSplit = layoutHomeSessionsSplit;
   window.layoutHomeAppsStrip = layoutHomeAppsStrip;

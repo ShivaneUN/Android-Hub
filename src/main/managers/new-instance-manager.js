@@ -51,7 +51,11 @@ function mergeTypeBScrcpyOptions(scrcpyOptions = {}, session = null) {
             || toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
     }
     merged.stayAwake = true;
-    merged.turnScreenOff = true;
+    // Intention device : OFF par défaut Type B seulement si jamais choisi ; sinon respecte ON/OFF.
+    const desiredOff = typeof global.getDesiredScreenOff === "function"
+        ? global.getDesiredScreenOff(session?.serial, session?.stableDeviceId)
+        : null;
+    merged.turnScreenOff = desiredOff !== false;
     merged.audio = scrcpyOptions.audio === true;
     // Garde l'app vivante quand le display virtuel est détruit (reattach USB↔WiFi).
     merged.vdDestroyContent = scrcpyOptions.vdDestroyContent !== true
@@ -284,32 +288,305 @@ class NewInstanceManager extends EventEmitter {
         }
     }
 
-    async _turnOffPhysicalScreen(session) {
+    async _applyDesiredPhysicalScreen(session) {
         if (!session?.serial) return;
 
         await this._ensureDeviceStayAwake(session.serial);
 
-        const isVirtualDisplay = Number.isInteger(session.presetDisplayId)
-            || (Number.isInteger(session.displayId) && session.displayId !== 0);
+        const turnOff = typeof global.shouldPhysicalScreenBeOff === "function"
+            ? global.shouldPhysicalScreenBeOff(session.serial, session.stableDeviceId, { typeBDefault: true })
+            : true;
 
         const client = session.client;
-        if (!isVirtualDisplay && client?.controlSocket && typeof client.setDisplayPower === "function") {
+        if (client?.controlSocket && typeof client.setDisplayPower === "function") {
             try {
-                await client.setDisplayPower(false);
-                session.physicalScreenOff = true;
-                console.log(`[NewInstanceManager] Ecran physique eteint (${session.sessionId})`);
+                await client.setDisplayPower(!turnOff);
+                session.physicalScreenOff = turnOff;
+                console.log(
+                    `[NewInstanceManager] Ecran physique ${turnOff ? "eteint" : "allume"}`
+                    + ` (${session.sessionId})`
+                );
+                if (typeof global.syncDeviceScreenOffState === "function") {
+                    global.syncDeviceScreenOffState(session.serial, turnOff, {
+                        stableDeviceId: session.stableDeviceId || null,
+                        mode: "scrcpy"
+                    });
+                }
                 return;
             } catch (err) {
-                console.warn(`[NewInstanceManager] setDisplayPower(false):`, err.message);
+                console.warn(`[NewInstanceManager] setDisplayPower(${!turnOff}):`, err.message);
             }
         }
 
+        if (turnOff) {
+            // Jamais de KEYCODE_SLEEP si un miroir Type A est actif (flux noir).
+            if (this._hasTypeAOnDevice(session.serial, session.stableDeviceId, session.sessionId)) {
+                console.warn(
+                    `[NewInstanceManager] skip keyevent 223 — Type A actif (${session.sessionId})`
+                );
+                try {
+                    await this._reassertScreenOffViaTypeA(
+                        session.serial,
+                        session.stableDeviceId,
+                        session.sessionId
+                    );
+                } catch (_err) {
+                    // noop
+                }
+                return;
+            }
+            try {
+                await execPromise(`"${this.adbPath}" -s ${adbSerialArg(session.serial)} shell input keyevent 223`);
+                session.physicalScreenOff = true;
+                console.log(`[NewInstanceManager] Ecran physique eteint via keyevent (${session.sessionId})`);
+                if (typeof global.syncDeviceScreenOffState === "function") {
+                    global.syncDeviceScreenOffState(session.serial, true, {
+                        stableDeviceId: session.stableDeviceId || null,
+                        mode: "adb"
+                    });
+                }
+            } catch (err) {
+                console.warn(`[NewInstanceManager] fallback keyevent sleep:`, err.message);
+            }
+            return;
+        }
+
         try {
-            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(session.serial)} shell input keyevent 223`);
-            session.physicalScreenOff = true;
-            console.log(`[NewInstanceManager] Ecran physique eteint via keyevent (${session.sessionId})`);
+            await execPromise(`"${this.adbPath}" -s ${adbSerialArg(session.serial)} shell input keyevent 224`);
+            session.physicalScreenOff = false;
+            console.log(`[NewInstanceManager] Ecran physique allume via keyevent (${session.sessionId})`);
+            if (typeof global.syncDeviceScreenOffState === "function") {
+                global.syncDeviceScreenOffState(session.serial, false, {
+                    stableDeviceId: session.stableDeviceId || null,
+                    mode: "adb"
+                });
+            }
         } catch (err) {
-            console.warn(`[NewInstanceManager] fallback keyevent sleep:`, err.message);
+            console.warn(`[NewInstanceManager] fallback keyevent wake:`, err.message);
+        }
+    }
+
+    /** @deprecated — utiliser _applyDesiredPhysicalScreen */
+    async _turnOffPhysicalScreen(session) {
+        return this._applyDesiredPhysicalScreen(session);
+    }
+
+    /**
+     * Scrcpy restaure souvent l'écran à la coupure du contrôle.
+     * Re-applique KEYCODE_SLEEP (223) via ADB pour garder l'écran éteint après une session Type B.
+     */
+    async _sleepPhysicalScreenViaAdb(serial) {
+        if (!serial || !this.adbPath) return;
+        try {
+            await spawnAdbShell(this.adbPath, serial, ["input", "keyevent", "223"]);
+            console.log(`[NewInstanceManager] Ecran re-eteint via keyevent (${serial})`);
+        } catch (err) {
+            console.warn(`[NewInstanceManager] re-eteindre ecran:`, err?.message || err);
+        }
+    }
+
+    _sameDeviceSession(entryOrSummary, serial, stableDeviceId) {
+        if (!entryOrSummary) return false;
+        if (stableDeviceId && entryOrSummary.stableDeviceId && entryOrSummary.stableDeviceId === stableDeviceId) {
+            return true;
+        }
+        const otherSerial = entryOrSummary.deviceId || entryOrSummary.serial || null;
+        if (serial && otherSerial && otherSerial === serial) return true;
+        if (stableDeviceId && otherSerial && otherSerial === stableDeviceId) return true;
+        return false;
+    }
+
+    /** Liste les sessions Type A encore ouvertes sur ce device. */
+    _listTypeAOnDevice(serial, stableDeviceId = null, excludeSessionId = null) {
+        const bvm = global.browserViewManager;
+        if (!bvm?.getAllSessions) return [];
+
+        const matched = [];
+        const allTypeA = [];
+        for (const summary of bvm.getAllSessions()) {
+            if (!summary || summary.type !== "A") continue;
+            if (excludeSessionId && summary.sessionId === excludeSessionId) continue;
+            allTypeA.push(summary);
+            if (this._sameDeviceSession(summary, serial, stableDeviceId)) {
+                matched.push(summary);
+            }
+        }
+        if (matched.length) return matched;
+        // Filet USB/Wi‑Fi : un seul Type A ouvert → considérer le même device.
+        if (allTypeA.length === 1 && (serial || stableDeviceId)) {
+            return allTypeA;
+        }
+        return [];
+    }
+
+    /** True si une session Type A existe encore sur ce device (quel que soit screenOff). */
+    _hasTypeAOnDevice(serial, stableDeviceId = null, excludeSessionId = null) {
+        return this._listTypeAOnDevice(serial, stableDeviceId, excludeSessionId).length > 0;
+    }
+
+    /** True si une session Type A sur le même device veut encore l'écran allumé. */
+    _hasTypeAWantingScreenOn(serial, stableDeviceId = null, excludeSessionId = null) {
+        for (const summary of this._listTypeAOnDevice(serial, stableDeviceId, excludeSessionId)) {
+            const entry = global.browserViewManager?.getSessionEntry?.(summary.sessionId);
+            if (entry && entry.screenOff === true) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Re-off panneau via le client Type A uniquement (jamais KEYCODE_SLEEP).
+     * Le sleep ADB noircit le flux miroir — interdit dès qu'un Type A vit.
+     */
+    async _reassertScreenOffViaTypeA(serial, stableDeviceId = null, excludeSessionId = null) {
+        const typeAList = this._listTypeAOnDevice(serial, stableDeviceId, excludeSessionId);
+        if (!typeAList.length) return { mode: "no-type-a", count: 0 };
+
+        let applied = 0;
+        for (const summary of typeAList) {
+            const client = typeof global.getVideoClientForSession === "function"
+                ? global.getVideoClientForSession(summary.sessionId)
+                : null;
+            if (!client?.controlSocket || typeof client.setDisplayPower !== "function") {
+                continue;
+            }
+            try {
+                // stayon pour éviter le doze (flux noir) tout en gardant le panneau off.
+                try {
+                    await spawnAdbShell(this.adbPath, serial, ["svc", "power", "stayon", "true"]);
+                } catch (_err) {
+                    // noop
+                }
+                await client.setDisplayPower(false);
+                applied += 1;
+                console.log(
+                    `[NewInstanceManager] re-off panneau via Type A setDisplayPower`
+                    + ` (${summary.sessionId})`
+                );
+            } catch (err) {
+                console.warn(
+                    `[NewInstanceManager] setDisplayPower Type A (${summary.sessionId}):`,
+                    err?.message || err
+                );
+            }
+        }
+        return { mode: "typeA-scrcpy", count: applied };
+    }
+
+    /**
+     * Après stop scrcpy Type B : garder l'écran device OFF sans impacter le flux Type A.
+     * Règle stricte : Type A présent → uniquement setDisplayPower, jamais keyevent 223.
+     */
+    async reassertPhysicalScreenOffAfterClose({
+        serial,
+        stableDeviceId = null,
+        sessionId = null,
+        retries = 1
+    } = {}) {
+        if (!serial) return;
+
+        const desiredOff = typeof global.getDesiredScreenOff === "function"
+            ? global.getDesiredScreenOff(serial, stableDeviceId)
+            : null;
+        if (desiredOff === false) {
+            console.log(
+                `[NewInstanceManager] skip re-off ecran — intention ON`
+                + (sessionId ? ` (apres ${sessionId})` : "")
+            );
+            return;
+        }
+        if (desiredOff === null && this._hasTypeAWantingScreenOn(serial, stableDeviceId, sessionId)) {
+            console.log(
+                `[NewInstanceManager] skip re-off ecran — Type A ecran allume`
+                + (sessionId ? ` (apres ${sessionId})` : "")
+            );
+            return;
+        }
+
+        const hasTypeA = this._hasTypeAOnDevice(serial, stableDeviceId, sessionId);
+
+        // ——— Type A vivant : panneau off via scrcpy A seulement (protège le flux) ———
+        if (hasTypeA) {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            if (typeof global.getDesiredScreenOff === "function"
+                && global.getDesiredScreenOff(serial, stableDeviceId) === false) {
+                return;
+            }
+            try {
+                const result = await this._reassertScreenOffViaTypeA(serial, stableDeviceId, sessionId);
+                console.log(
+                    `[NewInstanceManager] re-off apres Type B mode=${result.mode} applied=${result.count}`
+                );
+            } catch (err) {
+                console.warn(`[NewInstanceManager] re-off Type A:`, err?.message || err);
+            }
+            if (typeof global.syncDeviceScreenOffState === "function") {
+                global.syncDeviceScreenOffState(serial, true, {
+                    stableDeviceId,
+                    mode: "scrcpy"
+                });
+            }
+            // Un second passage après la restauration scrcpy B — toujours sans ADB sleep.
+            for (let i = 0; i < retries; i += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                if (typeof global.getDesiredScreenOff === "function"
+                    && global.getDesiredScreenOff(serial, stableDeviceId) === false) {
+                    return;
+                }
+                try {
+                    await this._reassertScreenOffViaTypeA(serial, stableDeviceId, sessionId);
+                } catch (_err) {
+                    // noop
+                }
+            }
+            return;
+        }
+
+        // ——— Pas de Type A : setDisplayPower / ADB sleep autorisé ———
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        if (typeof global.getDesiredScreenOff === "function"
+            && global.getDesiredScreenOff(serial, stableDeviceId) === false) {
+            return;
+        }
+
+        try {
+            if (typeof global.applyPhysicalScreenPower === "function") {
+                const result = await global.applyPhysicalScreenPower(serial, true, {
+                    stableDeviceId,
+                    preferSerial: serial,
+                    allowAdbSleep: true
+                });
+                console.log(`[NewInstanceManager] re-off apres Type B mode=${result?.mode || "?"}`);
+            } else {
+                await this._sleepPhysicalScreenViaAdb(serial);
+            }
+        } catch (err) {
+            console.warn(`[NewInstanceManager] re-off ecran:`, err?.message || err);
+        }
+
+        if (typeof global.syncDeviceScreenOffState === "function") {
+            global.syncDeviceScreenOffState(serial, true, { stableDeviceId, mode: "adb" });
+        }
+
+        for (let i = 0; i < retries; i += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 450));
+            if (typeof global.getDesiredScreenOff === "function"
+                && global.getDesiredScreenOff(serial, stableDeviceId) === false) {
+                return;
+            }
+            try {
+                if (typeof global.applyPhysicalScreenPower === "function") {
+                    await global.applyPhysicalScreenPower(serial, true, {
+                        stableDeviceId,
+                        preferSerial: serial,
+                        allowAdbSleep: true
+                    });
+                } else {
+                    await this._sleepPhysicalScreenViaAdb(serial);
+                }
+            } catch (_err) {
+                // noop
+            }
         }
     }
 
@@ -596,11 +873,16 @@ class NewInstanceManager extends EventEmitter {
             session.state = "stopped";
             session.client = null;
 
+            const closedSerial = session.serial;
+            const closedStableId = session.stableDeviceId || null;
+            const closedSessionId = session.sessionId;
+
             await this.forceStopAppOnDevice({
                 serial: session.serial,
                 packageName: session.packageName,
                 userId: session.userId,
-                sessionId: session.sessionId
+                sessionId: session.sessionId,
+                stableDeviceId: closedStableId
             });
 
             if (session.inputController) {
@@ -613,6 +895,13 @@ class NewInstanceManager extends EventEmitter {
             this.sessions.delete(session.sessionId);
             this.emit("state", { sessionId: session.sessionId, state: session.state });
             this.emit("scrcpy-closed", { sessionId: session.sessionId });
+
+            // Scrcpy rallume souvent l'écran à la déconnexion — re-éteint pour Type B.
+            void this.reassertPhysicalScreenOffAfterClose({
+                serial: closedSerial,
+                stableDeviceId: closedStableId,
+                sessionId: closedSessionId
+            }).catch(() => {});
         } finally {
             if (this.sessions.has(session.sessionId)) {
                 session._scrcpyCloseHandling = false;
@@ -1023,14 +1312,14 @@ class NewInstanceManager extends EventEmitter {
             await this._ensureDeviceStayAwake(session.serial);
         }
 
-        if (mergedOptions.turnScreenOff && !session.externalLaunchId) {
-            // Rebind transport : pas d'attente 500ms (soft-cut déjà en place).
+        // Applique l'intention ON/OFF device (ne force plus toujours OFF).
+        if (!session.externalLaunchId) {
             const settleMs = session._transportRebindActive ? 0 : 500;
             if (settleMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, settleMs));
             }
-            await this._turnOffPhysicalScreen(session);
         }
+        await this._applyDesiredPhysicalScreen(session);
 
         session.state = "started";
         this.emit("state", {
@@ -1224,15 +1513,23 @@ class NewInstanceManager extends EventEmitter {
 
         await this._removeAppTasksFromRecents(adbSerial, packageName, targetUserId);
 
-        // Ne coupe pas stayon si une autre session Type B tourne encore sur ce device.
-        const otherSessionAlive = Array.from(this.sessions.values()).some((s) => (
+        // Ne coupe pas stayon si une autre session (Type B ou Type A) tourne encore sur ce device.
+        const otherTypeBAlive = Array.from(this.sessions.values()).some((s) => (
             s.sessionId !== sessionId
-            && s.serial === serial
             && s.state !== "stopped"
             && s.state !== "stopping"
+            && (
+                (serial && s.serial === serial)
+                || (adbSerial && s.serial === adbSerial)
+                || (stableDeviceId && s.stableDeviceId && s.stableDeviceId === stableDeviceId)
+            )
         ));
-        if (!otherSessionAlive) {
+        const typeAAlive = this._hasTypeAOnDevice(adbSerial || serial, stableDeviceId, sessionId);
+        if (!otherTypeBAlive && !typeAAlive) {
             void spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "false"]).catch(() => {});
+        } else if (typeAAlive) {
+            // Garde le device eveille pour le miroir Type A (évite flux noir).
+            void spawnAdbShell(this.adbPath, adbSerial, ["svc", "power", "stayon", "true"]).catch(() => {});
         }
     }
 
@@ -1349,6 +1646,12 @@ class NewInstanceManager extends EventEmitter {
                 console.warn(`[NewInstanceManager] kill scrcpy externe (fallback):`, err?.message || err);
             }
         }
+
+        await this.reassertPhysicalScreenOffAfterClose({
+            serial: entry.deviceId,
+            stableDeviceId: entry.stableDeviceId || null,
+            sessionId
+        });
     }
 
     async stopNewInstanceSession(sessionId) {
@@ -1398,18 +1701,35 @@ class NewInstanceManager extends EventEmitter {
         this.sessions.delete(sessionId);
 
         // Cleanup device + scrcpy externe hors du chemin critique UI.
-        if (!session._appForceStopped && killPayload.packageName) {
-            session._appForceStopped = true;
-            void this.forceStopAppOnDevice(killPayload).catch((err) => {
+        // Scrcpy restaure l'écran à l'arrêt : re-éteint après force-stop / kill externe.
+        void (async () => {
+            try {
+                if (!session._appForceStopped && killPayload.packageName) {
+                    session._appForceStopped = true;
+                    await this.forceStopAppOnDevice(killPayload);
+                }
+            } catch (err) {
                 console.warn(`[NewInstanceManager] force-stop background:`, err?.message || err);
-            });
-        }
+            }
 
-        if (externalLaunchId && typeof global.killExternalScrcpyLaunch === "function") {
-            void global.killExternalScrcpyLaunch(externalLaunchId).catch((err) => {
-                console.warn(`[NewInstanceManager] kill scrcpy externe:`, err?.message || err);
-            });
-        }
+            if (externalLaunchId && typeof global.killExternalScrcpyLaunch === "function") {
+                try {
+                    await global.killExternalScrcpyLaunch(externalLaunchId);
+                } catch (err) {
+                    console.warn(`[NewInstanceManager] kill scrcpy externe:`, err?.message || err);
+                }
+            }
+
+            try {
+                await this.reassertPhysicalScreenOffAfterClose({
+                    serial: killPayload.serial,
+                    stableDeviceId: killPayload.stableDeviceId,
+                    sessionId: killPayload.sessionId
+                });
+            } catch (err) {
+                console.warn(`[NewInstanceManager] re-off ecran:`, err?.message || err);
+            }
+        })();
     }
 
     async routeInputToSession(sessionId, payload = {}) {

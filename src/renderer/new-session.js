@@ -1338,6 +1338,13 @@ async function selectDevice(serial, name, deviceId) {
     selectedDevice = { serial, name, deviceId: deviceId || serial };
     selectedApp = null;
 
+    window.dispatchEvent(new CustomEvent("launcher-device-selected", {
+        detail: { ...selectedDevice }
+    }));
+    if (typeof window.updateScreenToggle === "function") {
+        void window.updateScreenToggle();
+    }
+
     const devices = await fetchConnectedDevices();
     renderDeviceList(devices);
     updateLaunchState();
@@ -1718,6 +1725,13 @@ async function selectFromHistory(entry) {
         iconUrl: iconUrl || null
     };
 
+    window.dispatchEvent(new CustomEvent("launcher-device-selected", {
+        detail: { ...selectedDevice }
+    }));
+    if (typeof window.updateScreenToggle === "function") {
+        void window.updateScreenToggle();
+    }
+
     renderDeviceList(devices);
     updateLaunchState();
 
@@ -1799,6 +1813,12 @@ function onMirrorButtonClick() {
 
 function setSelectedDeviceForMirror(serial, name, deviceId) {
     selectedDevice = { serial, name, deviceId: deviceId || serial };
+    window.dispatchEvent(new CustomEvent("launcher-device-selected", {
+        detail: { ...selectedDevice }
+    }));
+    if (typeof window.updateScreenToggle === "function") {
+        void window.updateScreenToggle();
+    }
 }
 
 async function launchMirrorSession(options = {}) {
@@ -2143,6 +2163,7 @@ function getAllNewInstanceSessions() {
 }
 
 window.getAllNewInstanceSessions = getAllNewInstanceSessions;
+window.getSelectedLauncherDevice = () => (selectedDevice ? { ...selectedDevice } : null);
 
 if (!isHubModalChildWindow()) {
     window.__hubModalMainActions = {

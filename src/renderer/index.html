@@ -453,6 +453,10 @@
       if (typeof window.syncHomeSessions === "function") {
         void window.syncHomeSessions();
       }
+      window.dispatchEvent(new CustomEvent("hub-home-visibility", { detail: { home: true } }));
+      if (typeof window.updateScreenToggle === "function") {
+        void window.updateScreenToggle();
+      }
     } catch (err) {
       console.error("[goToLaunchHome]", err);
     }

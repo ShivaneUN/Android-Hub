@@ -23,6 +23,11 @@ const PERFORMANCE_FEATURE_KEYS = [
     "sessionTransportSwitch"
 ];
 
+const DEFAULT_DEVICE_SCREEN_POWER = {
+    rememberAcrossDisconnect: false,
+    byDeviceId: {}
+};
+
 const DEFAULT_PREFERENCES = {
     locale: "fr",
     sidebarOpen: true,
@@ -30,8 +35,30 @@ const DEFAULT_PREFERENCES = {
     displayLayout: "grid",
     focusedDeviceId: null,
     duoDeviceIds: [null, null],
-    performance: structuredClone(DEFAULT_PERFORMANCE_PREFS)
+    performance: structuredClone(DEFAULT_PERFORMANCE_PREFS),
+    deviceScreenPower: structuredClone(DEFAULT_DEVICE_SCREEN_POWER)
 };
+
+function normalizeDeviceScreenPower(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const byDeviceId = {};
+    const map = source.byDeviceId && typeof source.byDeviceId === "object"
+        ? source.byDeviceId
+        : {};
+    for (const [key, value] of Object.entries(map)) {
+        if (!key || typeof key !== "string") continue;
+        if (!value || typeof value !== "object") continue;
+        if (typeof value.screenOff !== "boolean") continue;
+        byDeviceId[key] = {
+            screenOff: value.screenOff,
+            updatedAt: Number.isFinite(Number(value.updatedAt)) ? Number(value.updatedAt) : Date.now()
+        };
+    }
+    return {
+        rememberAcrossDisconnect: source.rememberAcrossDisconnect === true,
+        byDeviceId
+    };
+}
 
 function normalizePerformancePrefs(raw) {
     const source = raw && typeof raw === "object" ? raw : {};
@@ -71,6 +98,7 @@ class UiPreferencesManager {
                 typeof duoRaw[1] === "string" ? duoRaw[1] : null
             ];
             const performance = normalizePerformancePrefs(parsed?.performance);
+            const deviceScreenPower = normalizeDeviceScreenPower(parsed?.deviceScreenPower);
             return {
                 locale,
                 sidebarOpen,
@@ -78,7 +106,8 @@ class UiPreferencesManager {
                 displayLayout,
                 focusedDeviceId,
                 duoDeviceIds,
-                performance
+                performance,
+                deviceScreenPower
             };
         } catch {
             return structuredClone(DEFAULT_PREFERENCES);
@@ -118,12 +147,56 @@ class UiPreferencesManager {
             displayLayout: this.getDisplayLayout(),
             focusedDeviceId: this.getFocusedDeviceId(),
             duoDeviceIds: this.getDuoDeviceIds(),
-            performance: this.getPerformancePrefs()
+            performance: this.getPerformancePrefs(),
+            deviceScreenPower: this.getDeviceScreenPowerPrefs()
         };
     }
 
     getPerformancePrefs() {
         return normalizePerformancePrefs(this.preferences.performance);
+    }
+
+    getDeviceScreenPowerPrefs() {
+        return normalizeDeviceScreenPower(this.preferences.deviceScreenPower);
+    }
+
+    setRememberScreenAcrossDisconnect(enabled) {
+        const current = this.getDeviceScreenPowerPrefs();
+        this.preferences.deviceScreenPower = {
+            ...current,
+            rememberAcrossDisconnect: enabled === true
+        };
+        this.savePreferences();
+        return { success: true, deviceScreenPower: this.getDeviceScreenPowerPrefs() };
+    }
+
+    isRememberScreenAcrossDisconnectEnabled() {
+        return this.getDeviceScreenPowerPrefs().rememberAcrossDisconnect === true;
+    }
+
+    saveDeviceScreenPowerState(deviceKey, screenOff) {
+        const key = String(deviceKey || "").trim();
+        if (!key) return { success: false, error: "device-key-missing" };
+        const current = this.getDeviceScreenPowerPrefs();
+        const byDeviceId = { ...current.byDeviceId };
+        byDeviceId[key] = {
+            screenOff: Boolean(screenOff),
+            updatedAt: Date.now()
+        };
+        this.preferences.deviceScreenPower = {
+            ...current,
+            byDeviceId
+        };
+        this.savePreferences();
+        return { success: true, deviceScreenPower: this.getDeviceScreenPowerPrefs() };
+    }
+
+    getSavedDeviceScreenPowerState(deviceKey) {
+        const key = String(deviceKey || "").trim();
+        if (!key) return null;
+        const entry = this.getDeviceScreenPowerPrefs().byDeviceId?.[key];
+        if (!entry || typeof entry.screenOff !== "boolean") return null;
+        return { screenOff: entry.screenOff, updatedAt: entry.updatedAt || null };
     }
 
     /**

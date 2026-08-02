@@ -117,7 +117,10 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     restoreView: () => ipcRenderer.invoke("session:restoreView"),
     setUiBrightness: (brightness) => ipcRenderer.invoke("session:setUiBrightness", { brightness }),
     getActiveTypeA: () => ipcRenderer.invoke("session:getActiveTypeA"),
-    toggleScreen: (sessionId) => ipcRenderer.invoke("session:toggleScreen", sessionId),
+    getScreenToggleState: (hint = {}) => ipcRenderer.invoke("session:getScreenToggleState", hint),
+    toggleScreen: (sessionIdOrPayload) => ipcRenderer.invoke("session:toggleScreen", sessionIdOrPayload),
+    onScreenPowerChanged: (callback) =>
+        ipcRenderer.on("session:screen-power-changed", (_event, data) => callback(data)),
     getActiveOrientation: () => ipcRenderer.invoke("session:getActiveOrientation"),
     toggleOrientation: (sessionId) => ipcRenderer.invoke("session:toggleOrientation", sessionId),
     getStreamParams: (sessionId) => ipcRenderer.invoke("session:getStreamParams", sessionId),
@@ -258,6 +261,9 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     getPreferences: () => ipcRenderer.invoke("ui:get-preferences"),
     getPerformancePrefs: () => ipcRenderer.invoke("ui:get-performance-prefs"),
     setPerformancePrefs: (payload) => ipcRenderer.invoke("ui:set-performance-prefs", payload),
+    getDeviceScreenPowerPrefs: () => ipcRenderer.invoke("ui:get-device-screen-power-prefs"),
+    setRememberScreenAcrossDisconnect: (enabled) =>
+        ipcRenderer.invoke("ui:set-remember-screen-across-disconnect", { enabled: Boolean(enabled) }),
     setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
     setDisplayPreferences: (payload) => ipcRenderer.invoke("ui:set-display-preferences", payload),
     getHubWallpaper: () => ipcRenderer.invoke("ui:get-hub-wallpaper"),

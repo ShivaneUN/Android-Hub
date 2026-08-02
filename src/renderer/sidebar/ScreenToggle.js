@@ -1,7 +1,8 @@
 (function initScreenToggle() {
     const t = (key, vars) => globalThis.HubI18n?.t(key, vars) ?? key;
 
-    let activeTypeASessionId = null;
+    let activeTarget = null;
+    let updateSeq = 0;
 
     function getScreenToggleElements() {
         return {
@@ -10,23 +11,81 @@
         };
     }
 
+    function isHomeVisible() {
+        if (typeof window.isHomeVisible === "function") {
+            try {
+                return Boolean(window.isHomeVisible());
+            } catch (_err) {
+                // fallback
+            }
+        }
+        const pageNew = document.getElementById("page-new");
+        if (pageNew && !pageNew.classList.contains("hidden")) {
+            const sessionView = document.getElementById("content")?.classList.contains("content--session-view");
+            if (!sessionView) return true;
+        }
+        return Boolean(window.__hubShowingHome);
+    }
+
+    async function resolveDeviceHint() {
+        const selected = typeof window.getSelectedLauncherDevice === "function"
+            ? window.getSelectedLauncherDevice()
+            : null;
+        if (selected?.serial) {
+            return {
+                serial: selected.serial,
+                stableDeviceId: selected.deviceId || null
+            };
+        }
+
+        const devices = typeof window.getConnectedDevices === "function"
+            ? window.getConnectedDevices()
+            : [];
+        const connected = (devices || []).filter((d) => d && d.connected !== false);
+        if (connected.length === 1) {
+            return {
+                serial: connected[0].serial,
+                stableDeviceId: connected[0].deviceId || null
+            };
+        }
+
+        // Accueil avec sessions : reprendre le device de la session active / première.
+        if (window.sessionAPI?.list) {
+            try {
+                const sessions = await window.sessionAPI.list();
+                const pick = (sessions || []).find((s) => s?.active && s.deviceId)
+                    || (sessions || []).find((s) => s?.deviceId);
+                if (pick?.deviceId) {
+                    return {
+                        serial: pick.deviceId,
+                        stableDeviceId: pick.stableDeviceId || null
+                    };
+                }
+            } catch (_err) {
+                // ignore
+            }
+        }
+
+        return { serial: null, stableDeviceId: null };
+    }
+
     function setScreenToggleDisabled() {
         const { button, badge } = getScreenToggleElements();
         if (!button || !badge) return;
 
         button.classList.add("disabled");
-        button.classList.remove("screen-on", "screen-off");
+        button.classList.remove("screen-on", "screen-off", "pending");
         badge.textContent = "—";
         badge.classList.remove("on", "off");
         button.removeAttribute("title");
-        activeTypeASessionId = null;
+        activeTarget = null;
     }
 
-    function setScreenToggleState(screenOff, sessionId) {
+    function setScreenToggleState(screenOff, target) {
         const { button, badge } = getScreenToggleElements();
         if (!button || !badge) return;
 
-        activeTypeASessionId = sessionId;
+        activeTarget = target || null;
         button.classList.remove("disabled", "screen-on", "screen-off");
         button.classList.add(screenOff ? "screen-off" : "screen-on");
 
@@ -38,20 +97,56 @@
     }
 
     async function updateScreenToggle() {
-        if (!window.sessionAPI?.getActiveTypeA) {
+        if (!window.sessionAPI?.getScreenToggleState && !window.sessionAPI?.getActiveTypeA) {
             setScreenToggleDisabled();
             return;
         }
 
+        const seq = ++updateSeq;
+        const home = isHomeVisible();
+        const deviceHint = await resolveDeviceHint();
+
         try {
-            const { session } = await window.sessionAPI.getActiveTypeA();
-            if (!session?.sessionId || !session.deviceId) {
+            let state = null;
+            if (window.sessionAPI.getScreenToggleState) {
+                state = await window.sessionAPI.getScreenToggleState({
+                    home,
+                    serial: deviceHint.serial,
+                    stableDeviceId: deviceHint.stableDeviceId
+                });
+            } else {
+                // Fallback legacy Type A only
+                const { session } = await window.sessionAPI.getActiveTypeA();
+                if (session?.sessionId && session.deviceId) {
+                    state = {
+                        success: true,
+                        enabled: true,
+                        mode: "typeA",
+                        sessionId: session.sessionId,
+                        deviceId: session.deviceId,
+                        screenOff: Boolean(session.screenOff)
+                    };
+                } else {
+                    state = { success: true, enabled: false };
+                }
+            }
+
+            if (seq !== updateSeq) return;
+
+            if (!state?.success || !state.enabled) {
                 setScreenToggleDisabled();
                 return;
             }
 
-            setScreenToggleState(Boolean(session.screenOff), session.sessionId);
+            setScreenToggleState(Boolean(state.screenOff), {
+                mode: state.mode || "adb",
+                sessionId: state.sessionId || null,
+                deviceId: state.deviceId || deviceHint.serial || null,
+                stableDeviceId: state.stableDeviceId || deviceHint.stableDeviceId || null,
+                home
+            });
         } catch (err) {
+            if (seq !== updateSeq) return;
             console.error("[ScreenToggle] Erreur mise a jour:", err);
             setScreenToggleDisabled();
         }
@@ -63,9 +158,9 @@
             return;
         }
 
-        if (!activeTypeASessionId) {
+        if (!activeTarget) {
             await updateScreenToggle();
-            if (!activeTypeASessionId || button.classList.contains("disabled")) {
+            if (!activeTarget || button.classList.contains("disabled")) {
                 return;
             }
         }
@@ -73,17 +168,39 @@
         button.classList.add("pending");
 
         try {
-            const result = await window.sessionAPI.toggleScreen(activeTypeASessionId);
+            const home = isHomeVisible();
+            const payload = activeTarget.mode === "typeA" && activeTarget.sessionId
+                ? activeTarget.sessionId
+                : {
+                    sessionId: activeTarget.sessionId || null,
+                    serial: activeTarget.deviceId || null,
+                    stableDeviceId: activeTarget.stableDeviceId || null,
+                    home
+                };
+
+            const result = await window.sessionAPI.toggleScreen(payload);
             if (!result?.success) {
                 console.error("[ScreenToggle] Echec toggle:", result?.error);
+                await updateScreenToggle();
                 return;
             }
-            setScreenToggleState(Boolean(result.screenOff), result.sessionId);
+            setScreenToggleState(Boolean(result.screenOff), {
+                mode: result.mode || activeTarget.mode || "adb",
+                sessionId: result.sessionId || activeTarget.sessionId || null,
+                deviceId: result.deviceId || activeTarget.deviceId || null,
+                stableDeviceId: activeTarget.stableDeviceId || null,
+                home
+            });
         } catch (err) {
             console.error("[ScreenToggle] Erreur toggle:", err);
+            await updateScreenToggle();
         } finally {
             button.classList.remove("pending");
         }
+    }
+
+    function scheduleUpdateScreenToggle() {
+        void updateScreenToggle();
     }
 
     function init() {
@@ -93,6 +210,43 @@
         button.addEventListener("click", () => {
             onScreenToggleClick();
         });
+
+        if (window.sessionAPI?.onSessionActivated) {
+            window.sessionAPI.onSessionActivated(() => scheduleUpdateScreenToggle());
+        }
+        if (window.sessionAPI?.onSessionListChanged) {
+            window.sessionAPI.onSessionListChanged(() => scheduleUpdateScreenToggle());
+        }
+        if (window.sessionAPI?.onScreenPowerChanged) {
+            window.sessionAPI.onScreenPowerChanged((data) => {
+                if (!data || typeof data.screenOff !== "boolean") {
+                    scheduleUpdateScreenToggle();
+                    return;
+                }
+                if (!activeTarget) {
+                    scheduleUpdateScreenToggle();
+                    return;
+                }
+                const sameSession = data.sessionId && activeTarget.sessionId === data.sessionId;
+                const sameDevice = data.deviceId && (
+                    activeTarget.deviceId === data.deviceId
+                    || activeTarget.stableDeviceId === data.deviceId
+                );
+                const sameStable = data.stableDeviceId && activeTarget.stableDeviceId === data.stableDeviceId;
+                if (sameSession || sameDevice || sameStable) {
+                    setScreenToggleState(Boolean(data.screenOff), {
+                        ...activeTarget,
+                        mode: data.mode || activeTarget.mode
+                    });
+                } else {
+                    scheduleUpdateScreenToggle();
+                }
+            });
+        }
+
+        window.addEventListener("devices-refreshed", scheduleUpdateScreenToggle);
+        window.addEventListener("launcher-device-selected", scheduleUpdateScreenToggle);
+        window.addEventListener("hub-home-visibility", scheduleUpdateScreenToggle);
 
         updateScreenToggle();
     }
