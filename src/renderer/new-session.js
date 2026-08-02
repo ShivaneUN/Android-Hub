@@ -1163,7 +1163,7 @@ function formatTypeBLaunchCommand(packageName, params) {
     if (p.videoCodec === "h265") {
         parts.push("--video-codec=h265");
     }
-    parts.push("--stay-awake", "--turn-screen-off", `--start-app=${pkg}`);
+    parts.push("--stay-awake", `--start-app=${pkg}`);
     return parts.join(" ");
 }
 
@@ -1613,7 +1613,7 @@ async function launchTypeBSession({
     const streamOptions = {
         ...presetScrcpyOpts,
         stayAwake: true,
-        turnScreenOff: true,
+        turnScreenOff: false,
         audio: false
     };
 

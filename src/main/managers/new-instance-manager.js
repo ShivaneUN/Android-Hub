@@ -51,11 +51,8 @@ function mergeTypeBScrcpyOptions(scrcpyOptions = {}, session = null) {
             || toScrcpyOptions(DEFAULT_STREAM_PARAMS, "B").newDisplay;
     }
     merged.stayAwake = true;
-    // Intention device : OFF par défaut Type B seulement si jamais choisi ; sinon respecte ON/OFF.
-    const desiredOff = typeof global.getDesiredScreenOff === "function"
-        ? global.getDesiredScreenOff(session?.serial, session?.stableDeviceId)
-        : null;
-    merged.turnScreenOff = desiredOff !== false;
+    // Écran device : uniquement le bouton dock ON/OFF (pas d'extinction auto au lancement).
+    merged.turnScreenOff = false;
     merged.audio = scrcpyOptions.audio === true;
     // Garde l'app vivante quand le display virtuel est détruit (reattach USB↔WiFi).
     merged.vdDestroyContent = scrcpyOptions.vdDestroyContent !== true
@@ -474,8 +471,8 @@ class NewInstanceManager extends EventEmitter {
     }
 
     /**
-     * Après stop scrcpy Type B : garder l'écran device OFF sans impacter le flux Type A.
-     * Règle stricte : Type A présent → uniquement setDisplayPower, jamais keyevent 223.
+     * Après stop scrcpy (Type A ou B) : garder l'écran device OFF si le bouton dock est OFF.
+     * Règle stricte : autre Type A encore présent → uniquement setDisplayPower, jamais keyevent 223.
      */
     async reassertPhysicalScreenOffAfterClose({
         serial,
@@ -488,16 +485,10 @@ class NewInstanceManager extends EventEmitter {
         const desiredOff = typeof global.getDesiredScreenOff === "function"
             ? global.getDesiredScreenOff(serial, stableDeviceId)
             : null;
-        if (desiredOff === false) {
+        // Uniquement si l'utilisateur a explicitement mis OFF via le bouton dock.
+        if (desiredOff !== true) {
             console.log(
-                `[NewInstanceManager] skip re-off ecran — intention ON`
-                + (sessionId ? ` (apres ${sessionId})` : "")
-            );
-            return;
-        }
-        if (desiredOff === null && this._hasTypeAWantingScreenOn(serial, stableDeviceId, sessionId)) {
-            console.log(
-                `[NewInstanceManager] skip re-off ecran — Type A ecran allume`
+                `[NewInstanceManager] skip re-off ecran — intention pas OFF`
                 + (sessionId ? ` (apres ${sessionId})` : "")
             );
             return;
@@ -505,7 +496,7 @@ class NewInstanceManager extends EventEmitter {
 
         const hasTypeA = this._hasTypeAOnDevice(serial, stableDeviceId, sessionId);
 
-        // ——— Type A vivant : panneau off via scrcpy A seulement (protège le flux) ———
+        // ——— Autre Type A vivant : panneau off via scrcpy A seulement (protège le flux) ———
         if (hasTypeA) {
             await new Promise((resolve) => setTimeout(resolve, 150));
             if (typeof global.getDesiredScreenOff === "function"
@@ -515,7 +506,8 @@ class NewInstanceManager extends EventEmitter {
             try {
                 const result = await this._reassertScreenOffViaTypeA(serial, stableDeviceId, sessionId);
                 console.log(
-                    `[NewInstanceManager] re-off apres Type B mode=${result.mode} applied=${result.count}`
+                    `[NewInstanceManager] re-off apres close mode=${result.mode} applied=${result.count}`
+                    + (sessionId ? ` (${sessionId})` : "")
                 );
             } catch (err) {
                 console.warn(`[NewInstanceManager] re-off Type A:`, err?.message || err);
@@ -526,7 +518,7 @@ class NewInstanceManager extends EventEmitter {
                     mode: "scrcpy"
                 });
             }
-            // Un second passage après la restauration scrcpy B — toujours sans ADB sleep.
+            // Un second passage après la restauration scrcpy — toujours sans ADB sleep.
             for (let i = 0; i < retries; i += 1) {
                 await new Promise((resolve) => setTimeout(resolve, 500));
                 if (typeof global.getDesiredScreenOff === "function"
@@ -542,7 +534,7 @@ class NewInstanceManager extends EventEmitter {
             return;
         }
 
-        // ——— Pas de Type A : setDisplayPower / ADB sleep autorisé ———
+        // ——— Plus de Type A : setDisplayPower (Type B restant) / ADB sleep autorisé ———
         await new Promise((resolve) => setTimeout(resolve, 120));
         if (typeof global.getDesiredScreenOff === "function"
             && global.getDesiredScreenOff(serial, stableDeviceId) === false) {
@@ -556,7 +548,10 @@ class NewInstanceManager extends EventEmitter {
                     preferSerial: serial,
                     allowAdbSleep: true
                 });
-                console.log(`[NewInstanceManager] re-off apres Type B mode=${result?.mode || "?"}`);
+                console.log(
+                    `[NewInstanceManager] re-off apres close mode=${result?.mode || "?"}`
+                    + (sessionId ? ` (${sessionId})` : "")
+                );
             } else {
                 await this._sleepPhysicalScreenViaAdb(serial);
             }
@@ -1312,14 +1307,17 @@ class NewInstanceManager extends EventEmitter {
             await this._ensureDeviceStayAwake(session.serial);
         }
 
-        // Applique l'intention ON/OFF device (ne force plus toujours OFF).
-        if (!session.externalLaunchId) {
-            const settleMs = session._transportRebindActive ? 0 : 500;
+        // Scrcpy peut rallumer le panneau au start — réappliquer OFF si le bouton est OFF.
+        const desiredOff = typeof global.getDesiredScreenOff === "function"
+            ? global.getDesiredScreenOff(session.serial, session.stableDeviceId)
+            : null;
+        if (desiredOff === true) {
+            const settleMs = session._transportRebindActive ? 0 : 120;
             if (settleMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, settleMs));
             }
+            await this._applyDesiredPhysicalScreen(session);
         }
-        await this._applyDesiredPhysicalScreen(session);
 
         session.state = "started";
         this.emit("state", {

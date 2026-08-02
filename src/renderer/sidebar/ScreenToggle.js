@@ -169,14 +169,12 @@
 
         try {
             const home = isHomeVisible();
-            const payload = activeTarget.mode === "typeA" && activeTarget.sessionId
-                ? activeTarget.sessionId
-                : {
-                    sessionId: activeTarget.sessionId || null,
-                    serial: activeTarget.deviceId || null,
-                    stableDeviceId: activeTarget.stableDeviceId || null,
-                    home
-                };
+            const payload = {
+                sessionId: activeTarget.sessionId || null,
+                serial: activeTarget.deviceId || null,
+                stableDeviceId: activeTarget.stableDeviceId || null,
+                home
+            };
 
             const result = await window.sessionAPI.toggleScreen(payload);
             if (!result?.success) {
@@ -219,11 +217,8 @@
         }
         if (window.sessionAPI?.onScreenPowerChanged) {
             window.sessionAPI.onScreenPowerChanged((data) => {
-                if (!data || typeof data.screenOff !== "boolean") {
-                    scheduleUpdateScreenToggle();
-                    return;
-                }
-                if (!activeTarget) {
+                // Détection device / apply : toujours resync le badge.
+                if (!data || typeof data.screenOff !== "boolean" || !activeTarget) {
                     scheduleUpdateScreenToggle();
                     return;
                 }
@@ -233,9 +228,11 @@
                     || activeTarget.stableDeviceId === data.deviceId
                 );
                 const sameStable = data.stableDeviceId && activeTarget.stableDeviceId === data.stableDeviceId;
-                if (sameSession || sameDevice || sameStable) {
+                if (sameSession || sameDevice || sameStable || data.mode?.startsWith?.("applied")) {
                     setScreenToggleState(Boolean(data.screenOff), {
                         ...activeTarget,
+                        deviceId: data.deviceId || activeTarget.deviceId,
+                        stableDeviceId: data.stableDeviceId || activeTarget.stableDeviceId,
                         mode: data.mode || activeTarget.mode
                     });
                 } else {

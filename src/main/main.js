@@ -1058,7 +1058,6 @@ function buildNewInstanceExternalBaseArgs(serial, packageName, userId, { capture
     const args = [
         "--serial", serial,
         `--new-display=${bootstrapNewDisplay}`,
-        "--turn-screen-off",
         "--stay-awake",
         "--no-window",
         "--record=NUL",
@@ -1102,7 +1101,6 @@ function buildExternalScrcpyBaseArgsForDisplayId(serial, displayId) {
     return [
         "--serial", serial,
         `--display-id=${displayId}`,
-        "--turn-screen-off",
         "--stay-awake",
         "--no-window",
         "--record=NUL",
@@ -2688,10 +2686,73 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 }
             }
 
+            // Scrcpy Type A réveille souvent le panneau — réappliquer OFF si le bouton est OFF.
+            await reassertDesiredScreenOffAfterStreamStart(tabId, serial);
+
             return { success: true };
         } catch (err) {
             delete videoClients[tabId];
             return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Après démarrage flux Type A : si l'intention device est OFF, re-éteint le panneau
+     * via setDisplayPower (sans KEYCODE_SLEEP) pour ne pas laisser l'écran rallumé.
+     */
+    async function reassertDesiredScreenOffAfterStreamStart(tabId, serial) {
+        const entry = global.browserViewManager?.getSessionEntry?.(tabId);
+        const stableDeviceId = entry?.stableDeviceId || null;
+        const desiredOff = typeof global.getDesiredScreenOff === "function"
+            ? global.getDesiredScreenOff(serial, stableDeviceId)
+            : null;
+        if (desiredOff !== true) return;
+
+        const liveClient = videoClients[tabId];
+        try {
+            // Court settle : laisser le contrôle scrcpy stable après le 1er paquet.
+            await new Promise((resolve) => setTimeout(resolve, 120));
+
+            if (liveClient?.controlSocket && typeof liveClient.setDisplayPower === "function") {
+                try {
+                    await execPromise(
+                        `"${adbPath}" -s ${adbSerialArg(serial)} shell svc power stayon true`
+                    );
+                } catch (_err) {
+                    // best-effort
+                }
+                await liveClient.setDisplayPower(false);
+                if (typeof global.syncDeviceScreenOffState === "function") {
+                    global.syncDeviceScreenOffState(serial, true, {
+                        stableDeviceId,
+                        preferSerial: entry?.deviceId || serial,
+                        mode: "scrcpy"
+                    });
+                }
+                console.log(`[Video] Ecran re-OFF apres start Type A (${tabId})`);
+                return;
+            }
+
+            if (typeof global.applyPhysicalScreenPower === "function") {
+                await global.applyPhysicalScreenPower(serial, true, {
+                    stableDeviceId,
+                    preferSerial: entry?.deviceId || serial,
+                    allowAdbSleep: false
+                });
+                if (typeof global.syncDeviceScreenOffState === "function") {
+                    global.syncDeviceScreenOffState(serial, true, {
+                        stableDeviceId,
+                        preferSerial: entry?.deviceId || serial,
+                        mode: "scrcpy"
+                    });
+                }
+                console.log(`[Video] Ecran re-OFF apres start Type A via apply (${tabId})`);
+            }
+        } catch (err) {
+            console.warn(
+                `[Video] Impossible de re-appliquer ecran OFF apres start Type A (${tabId}):`,
+                err?.message || err
+            );
         }
     }
 
