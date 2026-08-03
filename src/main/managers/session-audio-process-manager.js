@@ -3,8 +3,17 @@ const { spawn, execFile } = require("child_process");
 const CREATE_NO_WINDOW = 0x08000000;
 
 /**
- * Lecture audio PC via scrcpy.exe (--no-video).
- * Un processus par session ; le socket Hub reste vidéo seule (audio:false).
+ * Capture audio device → PC via scrcpy.exe dédié.
+ * Args : --no-video --no-window --no-control --audio-buffer=100
+ * (source = output / REMOTE_SUBMIX → HP device coupé tant que la capture vit).
+ *
+ * ON/OFF PC : ne redémarre JAMAIS ce processus.
+ * OFF = volume remote_submix à 0 (overlay / volume manager) → PC muet,
+ *        capture gardée → HP device reste silencieux.
+ * ON  = restore volume remote → son PC.
+ *
+ * Ne pas utiliser --no-audio ni --no-audio-playback ici :
+ * un restart / hot-swap lâche REMOTE_SUBMIX et le HP device revient.
  *
  * Windows : kill arbre (taskkill /T /F) + balayage des orphelins --no-video.
  */
@@ -89,8 +98,9 @@ class SessionAudioProcessManager {
             || null;
     }
 
-    _buildArgs({ serial, displayId, deviceKey }) {
-        const manager = global.globalAudioOutputManager;
+    _buildArgs({ serial, displayId }) {
+        // audio-source=output (défaut) : REMOTE_SUBMIX → pas de son sur le HP device.
+        // Pas de --no-audio / --no-audio-playback : mute PC = volume remote 0, même process.
         const args = [
             "--serial", serial,
             "--no-video",
@@ -101,10 +111,6 @@ class SessionAudioProcessManager {
 
         if (Number.isInteger(displayId)) {
             args.push(`--display-id=${displayId}`);
-        }
-
-        if (!manager?.isDeviceAudioEnabled?.(deviceKey)) {
-            args.push("--no-audio");
         }
 
         return args;
@@ -186,11 +192,6 @@ class SessionAudioProcessManager {
         }
 
         const key = deviceKey || serial;
-        if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) {
-            await this.stop(sessionId);
-            return { success: true, skipped: true, reason: "device-or-global-muted" };
-        }
-
         const normalizedDisplayId = Number.isInteger(displayId) ? displayId : null;
         const existing = this.processes.get(sessionId);
         if (
@@ -203,14 +204,13 @@ class SessionAudioProcessManager {
             return { success: true, reused: true };
         }
 
-        await this.stop(sessionId);
-
-        if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) {
-            return { success: true, skipped: true, reason: "device-or-global-muted" };
-        }
-
-        const args = this._buildArgs({ serial, displayId: normalizedDisplayId, deviceKey: key });
+        const args = this._buildArgs({
+            serial,
+            displayId: normalizedDisplayId
+        });
         console.log(`[SessionAudio ${sessionId}] demarrage scrcpy audio (${args.join(" ")})`);
+
+        await this.stop(sessionId);
 
         try {
             const child = this._spawnHidden(this.scrcpyBinaryPath, args);
@@ -225,6 +225,7 @@ class SessionAudioProcessManager {
                 deviceKey: key
             });
             this._attachLogging(sessionId, child);
+
             return { success: true };
         } catch (err) {
             return { success: false, error: err.message || "echec spawn scrcpy audio" };
@@ -290,17 +291,17 @@ class SessionAudioProcessManager {
             || target.niSession?.serial === deviceKey;
     }
 
+    /**
+     * Garde une capture audio pour chaque session active.
+     * Mute PC ne change rien ici (volume remote 0 côté overlay).
+     */
     async syncAllActiveSessions() {
-        if (global.globalAudioOutputManager?.isGlobalMuted?.()) {
-            await this.stopAll();
-            return;
-        }
-
         const targets = this._listActiveSessionTargets();
         const activeIds = new Set();
 
         for (const target of targets) {
             const serial = await this._resolveSerial(target);
+            if (!serial) continue;
             activeIds.add(target.sessionId);
             await this.start(target.sessionId, {
                 serial,
@@ -316,28 +317,17 @@ class SessionAudioProcessManager {
         }
     }
 
-    async syncDeviceSessions(deviceKey, muted) {
+    /**
+     * ON/OFF device : s'assure que la capture tourne (ne redémarre pas pour mute).
+     */
+    async syncDeviceSessions(deviceKey, _muted) {
         const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
         if (!key) return;
-
-        if (muted || global.globalAudioOutputManager?.isGlobalMuted?.()) {
-            const running = [...this.processes.entries()].filter(([, entry]) => (
-                entry?.deviceKey === key || entry?.serial === key
-            ));
-            await Promise.allSettled(running.map(([sessionId]) => this.stop(sessionId)));
-
-            // Aussi stopper via listing sessions (deviceKey peut différer du serial stocké).
-            for (const target of this._listActiveSessionTargets()) {
-                if (this._matchesDeviceKey(target, key) && this.isRunning(target.sessionId)) {
-                    await this.stop(target.sessionId);
-                }
-            }
-            return;
-        }
 
         for (const target of this._listActiveSessionTargets()) {
             if (!this._matchesDeviceKey(target, key)) continue;
             const serial = await this._resolveSerial(target);
+            if (!serial) continue;
             await this.start(target.sessionId, {
                 serial,
                 displayId: target.displayId,

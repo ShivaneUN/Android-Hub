@@ -11,6 +11,9 @@ class DockChipFlyoutOverlayManager {
         this.bounds = { x: 0, y: 0, width: 260, height: 56 };
         this.anchor = null;
         this.readyPromise = null;
+        this._kind = "flyout";
+        this._activeDeviceId = "";
+        this._activeSerial = "";
 
         this._onMainMove = () => this._syncBounds();
         this._onMainResize = () => this.hide();
@@ -45,7 +48,11 @@ class DockChipFlyoutOverlayManager {
             }
             this.bounds.width = nextW;
             this.bounds.height = nextH;
-            this._placeAboveAnchor(contentHeight);
+            if (this._kind === "more") {
+                this._placeMoreAboveAnchor(contentHeight);
+            } else {
+                this._placeAboveAnchor(contentHeight);
+            }
             this._syncBounds();
             return true;
         });
@@ -61,6 +68,11 @@ class DockChipFlyoutOverlayManager {
         ipcMain.removeHandler("dock-chip-flyout:toggle-wifi");
         ipcMain.handle("dock-chip-flyout:toggle-wifi", async (_event, payload = {}) => {
             return this._invokeMain("toggleWifi", payload);
+        });
+
+        ipcMain.removeHandler("dock-chip-flyout:show-color-menu");
+        ipcMain.handle("dock-chip-flyout:show-color-menu", async (_event, payload = {}) => {
+            return this._invokeMain("showColorMenu", payload);
         });
 
         ipcMain.removeHandler("dock-chip-flyout:request-refresh");
@@ -110,6 +122,36 @@ class DockChipFlyoutOverlayManager {
         this.bounds.height = h;
         this.bounds.x = Math.max(8, Math.min(x, cw - this.bounds.width - 8));
         this.bounds.y = Math.max(8, Math.min(y, ch - this.bounds.height - 8));
+    }
+
+    _placeMoreAboveAnchor(contentHeight) {
+        if (!this.anchor) return;
+        const { width: cw, height: ch } = this._contentSize();
+        const ax = Number(this.anchor.x) || 0;
+        const ay = Number(this.anchor.y) || 0;
+        const aw = Number(this.anchor.width) || 0;
+        const gap = 8;
+        const h = contentHeight + 12;
+        this.bounds.width = Math.max(220, this.bounds.width);
+        this.bounds.height = h;
+        // Aligné à droite du bouton +N, au-dessus.
+        let x = ax + aw - this.bounds.width;
+        let y = ay - contentHeight - gap;
+        this.bounds.x = Math.max(8, Math.min(x, cw - this.bounds.width - 8));
+        this.bounds.y = Math.max(8, Math.min(y, ch - this.bounds.height - 8));
+    }
+
+    _raiseAboveStreams(win) {
+        if (!win || win.isDestroyed()) return;
+        try {
+            if (!win.isVisible()) win.showInactive();
+            // Remonte au-dessus des BrowserView du parent (Windows).
+            if (typeof win.moveTop === "function") win.moveTop();
+        } catch (_err) {
+            try {
+                if (!win.isVisible()) win.showInactive();
+            } catch (__err) {}
+        }
     }
 
     async _ensureWindow() {
@@ -165,6 +207,7 @@ class DockChipFlyoutOverlayManager {
                     html: result.html,
                     deviceId: String(result.deviceId || payload.deviceId || ""),
                     serial: String(result.serial || payload.serial || ""),
+                    kind: this._kind || "flyout",
                     visible: true
                 });
             }
@@ -191,12 +234,15 @@ class DockChipFlyoutOverlayManager {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return false;
 
         const { x, y, width, height, html, deviceId, serial } = payload;
+        const kind = payload.kind === "more" ? "more" : "flyout";
         const sameAnchor =
             this.visible
+            && this._kind === kind
             && this.anchor
             && String(this._activeDeviceId || "") === String(deviceId || "")
             && String(this._activeSerial || "") === String(serial || "");
 
+        this._kind = kind;
         this.anchor = {
             x: Number(x) || 0,
             y: Number(y) || 0,
@@ -210,9 +256,15 @@ class DockChipFlyoutOverlayManager {
         const win = await this._ensureWindow();
 
         if (!sameAnchor) {
-            this.bounds.width = 168;
-            this.bounds.height = 140 + BRIDGE;
-            this._placeAboveAnchor(140);
+            if (kind === "more") {
+                this.bounds.width = 240;
+                this.bounds.height = 200;
+                this._placeMoreAboveAnchor(188);
+            } else {
+                this.bounds.width = 168;
+                this.bounds.height = 140 + BRIDGE;
+                this._placeAboveAnchor(140);
+            }
             this._syncBounds();
         }
 
@@ -220,10 +272,11 @@ class DockChipFlyoutOverlayManager {
             html: String(html || ""),
             deviceId: String(deviceId || ""),
             serial: String(serial || ""),
+            kind,
             visible: true
         });
 
-        if (!win.isVisible()) win.showInactive();
+        this._raiseAboveStreams(win);
         return true;
     }
 
@@ -231,21 +284,28 @@ class DockChipFlyoutOverlayManager {
         if (!this.visible || !this.overlayWindow || this.overlayWindow.isDestroyed()) {
             return false;
         }
+        if (payload.kind === "more" || payload.kind === "flyout") {
+            this._kind = payload.kind;
+        }
         this._activeDeviceId = String(payload.deviceId || this._activeDeviceId || "");
         this._activeSerial = String(payload.serial || this._activeSerial || "");
         this.overlayWindow.webContents.send("dock-chip-flyout:render", {
             html: String(payload.html || ""),
             deviceId: this._activeDeviceId,
             serial: this._activeSerial,
+            kind: this._kind || "flyout",
             visible: true
         });
+        this._raiseAboveStreams(this.overlayWindow);
         return true;
     }
 
     hide() {
         if (!this.visible) return;
+        const wasMore = this._kind === "more";
         this.visible = false;
         this.anchor = null;
+        this._kind = "flyout";
         this._activeDeviceId = "";
         this._activeSerial = "";
         const win = this.overlayWindow;
@@ -255,7 +315,7 @@ class DockChipFlyoutOverlayManager {
         }
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             void this.mainWindow.webContents.executeJavaScript(
-                `window.__dockChipFlyoutHost?.onOverlayHidden?.()`
+                `window.__dockChipFlyoutHost?.onOverlayHidden?.(${wasMore ? "{ more: true }" : "{}"})`
             );
         }
     }
@@ -274,6 +334,7 @@ class DockChipFlyoutOverlayManager {
             "dock-chip-flyout:report-size",
             "dock-chip-flyout:toggle-audio",
             "dock-chip-flyout:toggle-wifi",
+            "dock-chip-flyout:show-color-menu",
             "dock-chip-flyout:request-refresh",
             "dock-chip-flyout:keep-open",
             "dock-chip-flyout:update"

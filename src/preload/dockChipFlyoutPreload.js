@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld("dockChipFlyoutOverlayAPI", {
     hide: () => ipcRenderer.invoke("dock-chip-flyout:hide"),
     toggleAudio: (payload) => ipcRenderer.invoke("dock-chip-flyout:toggle-audio", payload),
     toggleWifi: (payload) => ipcRenderer.invoke("dock-chip-flyout:toggle-wifi", payload),
+    showColorMenu: (payload) => ipcRenderer.invoke("dock-chip-flyout:show-color-menu", payload),
     keepOpen: () => ipcRenderer.invoke("dock-chip-flyout:keep-open")
 });

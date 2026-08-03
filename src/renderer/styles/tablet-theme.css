@@ -641,7 +641,7 @@ body.theme-tablet .dock-device-chip.has-device-color {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--device-chip-color) 35%, transparent);
 }
 
-/* Compact : pastille batterie ; détail via overlay always-on-top. */
+/* Compact : pastille batterie ; détail via overlay child window (au-dessus des flux). */
 body.theme-tablet .dock-device-chip--compact {
   padding: 4px 7px;
   gap: 0;
@@ -781,29 +781,6 @@ body.theme-tablet .dock-battery-strip.is-more-open .dock-battery-more {
   border-color: rgba(79, 140, 255, 0.45);
   background: rgba(79, 140, 255, 0.14);
   color: #8eb6ff;
-}
-
-body.theme-tablet .dock-battery-more-panel {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  min-width: 220px;
-  max-width: 280px;
-  max-height: 280px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 12px;
-  background: #1e2430;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  z-index: 90;
-}
-
-body.theme-tablet .dock-battery-more-panel[hidden] {
-  display: none !important;
 }
 
 body.theme-tablet .quick-actions-dock .sidebar-item {

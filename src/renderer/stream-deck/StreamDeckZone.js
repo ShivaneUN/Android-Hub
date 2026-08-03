@@ -403,6 +403,7 @@
         });
 
         if (typeof updateScreenToggle === "function") updateScreenToggle();
+        if (typeof updateDeviceSpeakerToggle === "function") updateDeviceSpeakerToggle();
         if (typeof updateOrientationToggle === "function") updateOrientationToggle();
         scheduleLayoutSync();
     }

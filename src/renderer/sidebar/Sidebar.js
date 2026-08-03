@@ -442,6 +442,7 @@ async function activateSessionTab(sessionId) {
         setActiveSessionTab(sessionId);
         if (typeof updateScreenToggle === "function") updateScreenToggle();
         if (typeof updateOrientationToggle === "function") updateOrientationToggle();
+        if (typeof updateDeviceSpeakerToggle === "function") updateDeviceSpeakerToggle();
         if (typeof reportContentBounds === "function") reportContentBounds();
         scheduleSessionOrientationApply();
         return true;
@@ -450,6 +451,7 @@ async function activateSessionTab(sessionId) {
     await renderSidebar();
     if (typeof updateScreenToggle === "function") updateScreenToggle();
     if (typeof updateOrientationToggle === "function") updateOrientationToggle();
+    if (typeof updateDeviceSpeakerToggle === "function") updateDeviceSpeakerToggle();
     scheduleSessionOrientationApply();
     if (typeof reportContentBounds === "function") reportContentBounds();
     return true;
@@ -505,6 +507,7 @@ async function renderSidebar() {
 
     if (typeof updateScreenToggle === "function") updateScreenToggle();
     if (typeof updateOrientationToggle === "function") updateOrientationToggle();
+    if (typeof updateDeviceSpeakerToggle === "function") updateDeviceSpeakerToggle();
     if (typeof window.refreshFpsSnapshot === "function") window.refreshFpsSnapshot();
 
     const content = document.querySelector(".content");
@@ -574,6 +577,7 @@ async function finalizeSessionUI(sessionId, options = {}) {
 
     if (typeof updateScreenToggle === "function") updateScreenToggle();
     if (typeof updateOrientationToggle === "function") updateOrientationToggle();
+    if (typeof updateDeviceSpeakerToggle === "function") updateDeviceSpeakerToggle();
     if (typeof window.refreshFpsSnapshot === "function") window.refreshFpsSnapshot();
     await restoreSessionViewNow();
     if (typeof reportContentBounds === "function") reportContentBounds();

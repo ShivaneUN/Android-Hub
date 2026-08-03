@@ -90,6 +90,20 @@ contextBridge.exposeInMainWorld("audioAPI", {
         ipcRenderer.on("audio:global-state-changed", (_event, data) => callback(data))
 });
 
+/** Haut-parleur appareil (ADB) — ne contrôle pas l'audio PC Hub. */
+contextBridge.exposeInMainWorld("deviceSpeakerAPI", {
+    getState: (hint = {}) => ipcRenderer.invoke("deviceSpeaker:getState", hint),
+    setVolume: (payload = {}) => ipcRenderer.invoke("deviceSpeaker:setVolume", payload),
+    onStateChanged: (callback) =>
+        ipcRenderer.on("deviceSpeaker:state-changed", (_event, data) => callback(data))
+});
+
+contextBridge.exposeInMainWorld("deviceSpeakerOverlayAPI", {
+    show: (payload = {}) => ipcRenderer.invoke("deviceSpeakerOverlay:show", payload),
+    hide: () => ipcRenderer.invoke("deviceSpeakerOverlay:hide"),
+    toggleGlobalAudio: () => ipcRenderer.invoke("deviceSpeakerOverlay:toggleGlobalAudio")
+});
+
 contextBridge.exposeInMainWorld("sessionAPI", {
     switchTo: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId),
     cycleTab: (direction) => ipcRenderer.invoke("session:cycleTab", { direction }),

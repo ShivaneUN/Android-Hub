@@ -52,6 +52,7 @@ const { VideoPreviewTooltipManager } = require("./managers/video-preview-tooltip
 const { DockHoverOverlayManager } = require("./managers/dock-hover-overlay-manager");
 const { HubBubbleOverlayManager } = require("./managers/hub-bubble-overlay-manager");
 const { DockChipFlyoutOverlayManager } = require("./managers/dock-chip-flyout-overlay-manager");
+const { DeviceSpeakerOverlayManager } = require("./managers/device-speaker-overlay-manager");
 const { registerVideoPreviewHandlers } = require("./ipc/videoPreviewHandlers");
 const { CustomNamesManager } = require("./managers/custom-names-manager");
 const { registerNamesHandlers } = require("./ipc/namesHandlers");
@@ -76,6 +77,8 @@ const { registerDisplayPresetsHandlers } = require("./ipc/display-presets-handle
 const { registerUiPreferencesHandlers } = require("./ipc/uiPreferencesHandlers");
 const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
+const { DeviceAudioVolumeManager } = require("./managers/device-audio-volume-manager");
+const { registerDeviceSpeakerHandlers } = require("./ipc/deviceSpeakerHandlers");
 const { SessionAudioProcessManager } = require("./managers/session-audio-process-manager");
 const { registerAudioHandlers } = require("./ipc/audioHandlers");
 const { adbSerialArg } = require("../shared/adb-serial-arg");
@@ -1322,8 +1325,7 @@ async function startSessionAudioPlayback(sessionId, { serial, displayId = null, 
         key = entry?.stableDeviceId || niSession?.stableDeviceId || entry?.deviceId || serial;
     }
 
-    if (!global.globalAudioOutputManager?.isDeviceAudioEnabled?.(key)) return;
-
+    // Toujours démarrer la capture (même si PC muet) pour garder le HP device silencieux.
     try {
         await global.sessionAudioProcessManager.start(sessionId, {
             serial,
@@ -1347,23 +1349,17 @@ async function stopSessionAudioPlayback(sessionId) {
 global.startSessionAudioPlayback = startSessionAudioPlayback;
 global.stopSessionAudioPlayback = stopSessionAudioPlayback;
 
-async function applyGlobalAudioMuteSideEffects(globalMuted) {
+async function applyGlobalAudioMuteSideEffects(globalMuted, options = {}) {
     const audioState = globalMuted ? "off" : "on";
     console.log(`[GlobalAudio] Toggle → audio=${audioState}`);
 
-    if (globalMuted) {
-        // 1) Coupe tous les scrcpy --no-video (Type A/B session audio).
-        if (global.sessionAudioProcessManager) {
-            await global.sessionAudioProcessManager.stopAll();
-        }
-        // 2) Relance les scrcpy externes Type B en bootstrap sans audio
-        //    (corrige les launches déjà démarrés avec audio via applyScrcpyCliArgs).
-        await restartAllExternalScrcpyLaunchesForAudio();
-        return;
-    }
-
+    // Capture scrcpy toujours active (REMOTE_SUBMIX). Mute PC = volume remote 0 côté overlay.
     if (global.sessionAudioProcessManager) {
         await global.sessionAudioProcessManager.syncAllActiveSessions();
+    }
+
+    if (!options.skipSpeakerRestore) {
+        void global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.().catch(() => {});
     }
 }
 
@@ -1602,8 +1598,8 @@ app.whenReady().then(() => {
         getBrowserViewManager: () => global.browserViewManager,
         getNewInstanceManager: () => newInstanceManager
     });
-    global.globalAudioOutputManager.setOnMuteStateChanged(async (globalMuted) => {
-        await applyGlobalAudioMuteSideEffects(globalMuted);
+    global.globalAudioOutputManager.setOnMuteStateChanged(async (globalMuted, options = {}) => {
+        await applyGlobalAudioMuteSideEffects(globalMuted, options);
     });
     global.globalAudioOutputManager.setOnDeviceMuteChanged(async (deviceKey, muted) => {
         console.log(`[DeviceAudio] ${deviceKey} → ${muted ? "off" : "on"}`);
@@ -1612,6 +1608,10 @@ app.whenReady().then(() => {
         }
     });
     registerAudioHandlers(() => win, global.globalAudioOutputManager);
+
+    // Haut-parleur device (ADB) — séparé de l'audio PC Hub.
+    global.deviceAudioVolumeManager = new DeviceAudioVolumeManager(adbPath);
+    registerDeviceSpeakerHandlers(() => win, global.deviceAudioVolumeManager);
 
     global.launchLatencyTracker = new LaunchLatencyTracker(app.getPath("userData"));
     global.scrcpyStartProfiler = installScrcpyStartProfiler(ScrcpySocketClient, global.launchLatencyTracker);
@@ -3268,6 +3268,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     global.hubBubbleOverlayManager = new HubBubbleOverlayManager(win);
     global.dockHoverOverlayManager = new DockHoverOverlayManager(win);
     global.dockChipFlyoutOverlayManager = new DockChipFlyoutOverlayManager(win);
+    global.deviceSpeakerOverlayManager = new DeviceSpeakerOverlayManager(win);
     global.renameDialogManager = new RenameDialogManager(win);
     global.streamDeckDuoPopupManager = new StreamDeckDuoPopupManager(win);
     global.hubModalOverlayManager = new HubModalOverlayManager(win);

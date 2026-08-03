@@ -1421,6 +1421,9 @@ async function selectDevice(serial, name, deviceId) {
     if (typeof window.updateScreenToggle === "function") {
         void window.updateScreenToggle();
     }
+    if (typeof window.updateDeviceSpeakerToggle === "function") {
+        void window.updateDeviceSpeakerToggle();
+    }
 
     const devices = await fetchConnectedDevices();
     renderDeviceList(devices);
@@ -1836,6 +1839,9 @@ async function selectFromHistory(entry) {
     if (typeof window.updateScreenToggle === "function") {
         void window.updateScreenToggle();
     }
+    if (typeof window.updateDeviceSpeakerToggle === "function") {
+        void window.updateDeviceSpeakerToggle();
+    }
 
     renderDeviceList(devices);
     updateLaunchState();
@@ -1923,6 +1929,9 @@ function setSelectedDeviceForMirror(serial, name, deviceId) {
     }));
     if (typeof window.updateScreenToggle === "function") {
         void window.updateScreenToggle();
+    }
+    if (typeof window.updateDeviceSpeakerToggle === "function") {
+        void window.updateDeviceSpeakerToggle();
     }
 }
 

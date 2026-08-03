@@ -190,9 +190,35 @@
           window.dockOverlayAPI?.hideTip?.();
           window.dockOverlayAPI?.invokeClick?.(el.id);
         });
+        el.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (el.id !== "nav-toggle-global-audio") return;
+          if (el.classList.contains("disabled")) return;
+          window.dockOverlayAPI?.hideTip?.();
+          window.dockOverlayAPI?.invokeContextMenu?.(el.id);
+        });
         el.addEventListener("pointerenter", () => showItemTip(el));
         el.addEventListener("pointerleave", () => scheduleHideTip());
       });
+    }
+
+    function applyAudioState(payload = {}) {
+      const audioOn = payload.audioOn === true || payload.globalMuted === false;
+      const btn = document.getElementById("nav-toggle-global-audio");
+      if (!btn) return;
+      btn.classList.remove("pending", "audio-on", "audio-off");
+      btn.classList.add(audioOn ? "audio-on" : "audio-off");
+      const iconOn = document.getElementById("sidebar-global-audio-icon-on");
+      const iconOff = document.getElementById("sidebar-global-audio-icon-off");
+      if (iconOn) iconOn.classList.toggle("hidden", !audioOn);
+      if (iconOff) iconOff.classList.toggle("hidden", audioOn);
+      const badge = document.getElementById("sidebar-global-audio-badge");
+      if (badge) {
+        badge.textContent = audioOn ? "ON" : "OFF";
+        badge.classList.toggle("on", audioOn);
+        badge.classList.toggle("off", !audioOn);
+      }
     }
 
     window.dockOverlayAPI?.onRender?.((payload) => {
@@ -202,6 +228,10 @@
         dock.querySelectorAll("[title]").forEach((el) => el.removeAttribute("title"));
         bindInteractions(dock);
       }
+    });
+
+    window.dockOverlayAPI?.onAudioState?.((payload) => {
+      applyAudioState(payload);
     });
 
     document.addEventListener("mouseleave", () => {

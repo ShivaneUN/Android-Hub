@@ -106,7 +106,7 @@
         <div class="label" data-i18n="sidebar.portrait">Portrait</div>
       </div>
 
-      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-dock-tip="sidebar.audio">
+      <div class="sidebar-item sidebar-global-audio-toggle audio-off" id="nav-toggle-global-audio" data-i18n-dock-tip="toggles.audioTitle">
         <div class="icon">
           <svg id="sidebar-global-audio-icon-on" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M11 5 6 9H2v6h4l5 4V5z"/>
@@ -457,6 +457,9 @@
       if (typeof window.updateScreenToggle === "function") {
         void window.updateScreenToggle();
       }
+      if (typeof window.updateDeviceSpeakerToggle === "function") {
+        void window.updateDeviceSpeakerToggle();
+      }
     } catch (err) {
       console.error("[goToLaunchHome]", err);
     }
@@ -484,6 +487,7 @@
 <script src="sidebar/Sidebar.js"></script>
 <script src="sidebar/ScreenToggle.js"></script>
 <script src="sidebar/OrientationToggle.js"></script>
+<script src="sidebar/DeviceSpeakerToggle.js"></script>
 <script src="sidebar/GlobalAudioToggle.js"></script>
 <script src="sidebar/StreamDeckToggle.js"></script>
 <script src="sidebar/LanguageToggle.js"></script>
@@ -586,6 +590,8 @@
       dock.addEventListener("mouseenter", () => {
         if (!body.classList.contains("theme-tablet")) return;
         if (!window.dockHoverAPI?.show) return;
+        // Panneau volume ouvert : ne pas recouvrir le slider avec l'overlay dock.
+        if (window.__deviceSpeakerPopoverOpen) return;
 
         const rect = dock.getBoundingClientRect();
         const height = Math.round(BASE_H * SCALE) + TIP_SPACE;
@@ -597,6 +603,7 @@
         const clone = dock.cloneNode(true);
         clone.classList.remove("dock-covered");
         clone.querySelectorAll("[title]").forEach((el) => el.removeAttribute("title"));
+        clone.querySelectorAll(".device-speaker-popover").forEach((el) => el.remove());
         void window.dockHoverAPI.show({
           x,
           y,

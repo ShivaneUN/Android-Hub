@@ -40,7 +40,7 @@ html, body {
   overflow: hidden;
 }
 
-/* Voile sombre pour la luminositÈ UI du Hub (ne touche pas les BrowserViews). */
+/* Voile sombre pour la luminosit? UI du Hub (ne touche pas les BrowserViews). */
 body.hub-brightness-dim::before {
   content: "";
   position: fixed;
@@ -286,7 +286,7 @@ html[data-hub-wallpaper="1"] .empty-state-mascot {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
-/* Infobulle apps rùcentes / historique : pastille + ù Appareil ù App ù. */
+/* Infobulle apps r?centes / historique : pastille + ? Appareil ? App ?. */
 .app-launch-tip {
   position: absolute;
   left: 50%;
@@ -629,7 +629,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   padding-right: 2px;
 }
 
-/* 4c ù choix USB dùbranchù : overlay plein ùcran au-dessus du flux (views suppress). */
+/* 4c ? choix USB d?branch? : overlay plein ?cran au-dessus du flux (views suppress). */
 .usb-unplug-prompt-host {
   position: fixed;
   inset: 0;
@@ -904,6 +904,96 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   color: #5b6373;
 }
 
+.sidebar-global-audio-toggle.speaker-volume-open {
+  background: rgba(79, 140, 255, 0.14);
+}
+
+.device-speaker-popover {
+  position: fixed;
+  z-index: 12000;
+  min-width: 220px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(22, 27, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+  color: #e8edf5;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.device-speaker-popover.hidden {
+  display: none !important;
+}
+
+.device-speaker-popover.pending {
+  opacity: 0.75;
+}
+
+.device-speaker-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #aeb8c9;
+  margin-bottom: 10px;
+}
+
+.device-speaker-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.device-speaker-popover-min {
+  font-size: 10px;
+  color: #7f8aa0;
+  min-width: 10px;
+}
+
+.device-speaker-popover-value {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 1.6em;
+  text-align: right;
+  color: #e8edf5;
+}
+
+.device-speaker-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+
+.device-speaker-slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.device-speaker-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6b9fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.device-speaker-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6b9fff;
+  border: 0;
+  cursor: pointer;
+}
+
 .sidebar-global-audio-toggle .icon svg.hidden {
   display: none;
 }
@@ -1106,7 +1196,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   display: none !important;
 }
 
-/* --- Panneau latùral (legacy ù modales dùportùes via hub-panel.css) --- */
+/* --- Panneau lat?ral (legacy ? modales d?port?es via hub-panel.css) --- */
 
 .side-panel-empty {
   font-size: 13px;
@@ -1317,7 +1407,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .btn-app-launch:hover {
   background: #6a9dff;
 }
-/* --- Labels partagùs panneaux latùraux --- */
+/* --- Labels partag?s panneaux lat?raux --- */
 .settings-section-label {
   font-size: 11px;
   font-weight: 600;
@@ -1833,7 +1923,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   background: #0a0e14;
 }
 
-/* Historique ù mùme gabarit visuel que Recherche d'apps (.new-instance-app-*) */
+/* Historique ? m?me gabarit visuel que Recherche d'apps (.new-instance-app-*) */
 .new-instance-history-list .app-list-item-icon {
   flex-shrink: 0;
   width: 32px;
@@ -2230,7 +2320,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .sidebar-device-stat.transport-wifi-connected { color: #4f8cff; font-size: 11px; font-weight: 600; }
 .sidebar-device-stat.transport-unknown { color: #5b6373; font-size: 11px; }
 
-/* --- Overlay chargement centrù ù bloque les clics (ùvite de fermer un onglet pendant le switch) --- */
+/* --- Overlay chargement centr? ? bloque les clics (?vite de fermer un onglet pendant le switch) --- */
 .hub-loading-overlay {
   position: fixed;
   inset: 0;
@@ -2557,7 +2647,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   color: var(--text-muted);
 }
 
-/* --- Sùlecteur de thùme d'interface (ùcran d'accueil) --- */
+/* --- S?lecteur de th?me d'interface (?cran d'accueil) --- */
 .ui-theme-switch {
   display: flex;
   gap: 12px;
@@ -2617,7 +2707,7 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
   padding: 2px 6px;
   border-radius: 5px;
 }
-/* Mode performance ù animations / FPS */
+/* Mode performance ? animations / FPS */
 body.perf-reduce-motion *,
 body.perf-reduce-motion *::before,
 body.perf-reduce-motion *::after {

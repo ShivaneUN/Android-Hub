@@ -4189,6 +4189,7 @@
 
   let flyoutHideTimer = null;
   let flyoutActiveKey = "";
+  let dockMoreDevices = [];
 
   function clearFlyoutHideTimer() {
     if (flyoutHideTimer) {
@@ -4197,9 +4198,28 @@
     }
   }
 
+  function buildDockMorePanelHtml(devices) {
+    return (devices || []).map((device) => buildDockDeviceChip(device, { variant: "menu" })).join("");
+  }
+
   function hideChipFlyout() {
     clearFlyoutHideTimer();
     flyoutActiveKey = "";
+    if (!dockMoreOpen) {
+      window.dockChipFlyoutAPI?.hide?.();
+    }
+  }
+
+  function hideDockMoreOverlay() {
+    if (!dockMoreOpen) return;
+    dockMoreOpen = false;
+    dockMoreDevices = [];
+    const strip = document.getElementById("dock-battery-strip");
+    if (strip) {
+      strip.classList.remove("is-more-open");
+      const btn = strip.querySelector(".dock-battery-more");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+    }
     window.dockChipFlyoutAPI?.hide?.();
   }
 
@@ -4210,6 +4230,10 @@
     const device = findDockDevice(deviceId, serial);
     if (!device) return;
 
+    if (dockMoreOpen) {
+      hideDockMoreOverlay();
+    }
+
     const key = deviceId || serial;
     clearFlyoutHideTimer();
     const alreadyOpen = flyoutActiveKey === key;
@@ -4217,7 +4241,7 @@
     const html = buildDockFlyoutInnerHtml(device);
 
     if (alreadyOpen && window.dockChipFlyoutAPI.update) {
-      void window.dockChipFlyoutAPI.update({ deviceId, serial, html });
+      void window.dockChipFlyoutAPI.update({ deviceId, serial, html, kind: "flyout" });
       return;
     }
 
@@ -4229,7 +4253,8 @@
       height: rect.height,
       deviceId,
       serial,
-      html
+      html,
+      kind: "flyout"
     });
   }
 
@@ -4253,6 +4278,10 @@
   }
 
   function refreshOpenFlyoutContent() {
+    if (dockMoreOpen) {
+      refreshOpenMorePanelContent();
+      return;
+    }
     if (!flyoutActiveKey || !window.dockChipFlyoutAPI?.update) return;
     const device = findDockDevice(flyoutActiveKey, flyoutActiveKey);
     if (!device) {
@@ -4263,16 +4292,42 @@
     void window.dockChipFlyoutAPI.update({
       deviceId: device.deviceId || "",
       serial: device.serial || "",
-      html: buildDockFlyoutInnerHtml(device)
+      html: buildDockFlyoutInnerHtml(device),
+      kind: "flyout"
+    });
+  }
+
+  function refreshOpenMorePanelContent() {
+    if (!dockMoreOpen || !window.dockChipFlyoutAPI?.update) return;
+    const keys = new Set(
+      dockMoreDevices.map((d) => d.deviceId || d.serial).filter(Boolean)
+    );
+    const devices = (typeof window.getCurrentDevices === "function" ? window.getCurrentDevices() : [])
+      .filter((d) => d?.connected !== false)
+      .filter((d) => keys.has(d.deviceId) || keys.has(d.serial));
+    dockMoreDevices = devices.length ? devices : dockMoreDevices;
+    void window.dockChipFlyoutAPI.update({
+      html: buildDockMorePanelHtml(dockMoreDevices),
+      kind: "more"
     });
   }
 
   window.refreshOpenDockFlyout = refreshOpenFlyoutContent;
 
   window.__dockChipFlyoutHost = {
-    onOverlayHidden() {
+    onOverlayHidden(payload = {}) {
       flyoutActiveKey = "";
       clearFlyoutHideTimer();
+      if (payload?.more || dockMoreOpen) {
+        dockMoreOpen = false;
+        dockMoreDevices = [];
+        const strip = document.getElementById("dock-battery-strip");
+        if (strip) {
+          strip.classList.remove("is-more-open");
+          const btn = strip.querySelector(".dock-battery-more");
+          if (btn) btn.setAttribute("aria-expanded", "false");
+        }
+      }
     },
     keepOpen() {
       clearFlyoutHideTimer();
@@ -4287,6 +4342,15 @@
         await window.__deviceAudioUi.refreshState();
       }
       const updated = findDockDevice(payload.deviceId, payload.serial) || device;
+      if (dockMoreOpen) {
+        refreshOpenMorePanelContent();
+        return {
+          ok: true,
+          deviceId: payload.deviceId || "",
+          serial: payload.serial || "",
+          html: buildDockMorePanelHtml(dockMoreDevices)
+        };
+      }
       return {
         ok: true,
         deviceId: payload.deviceId || "",
@@ -4301,6 +4365,15 @@
       flyoutActiveKey = payload.deviceId || payload.serial || flyoutActiveKey;
       await window.__deviceWifiUi.toggle(device, Boolean(payload.checked));
       const updated = findDockDevice(payload.deviceId, payload.serial) || device;
+      if (dockMoreOpen) {
+        refreshOpenMorePanelContent();
+        return {
+          ok: true,
+          deviceId: payload.deviceId || "",
+          serial: payload.serial || "",
+          html: buildDockMorePanelHtml(dockMoreDevices)
+        };
+      }
       return {
         ok: true,
         deviceId: payload.deviceId || "",
@@ -4308,7 +4381,33 @@
         html: buildDockFlyoutInnerHtml(updated)
       };
     },
+    async showColorMenu(payload = {}) {
+      const colorKey = payload.deviceId || payload.serial || "";
+      if (!colorKey || !window.namesAPI?.showContextMenu) return { ok: false };
+      const screenX = Number(payload.x) || 0;
+      const screenY = Number(payload.y) || 0;
+      const x = Math.round(screenX - (window.screenX || 0));
+      const y = Math.round(screenY - (window.screenY || 0));
+      void window.namesAPI.showContextMenu({
+        x: Math.max(8, Math.min(x, Math.round(window.innerWidth - 8))),
+        y: Math.max(8, Math.min(y, Math.round(window.innerHeight - 8))),
+        target: {
+          kind: "device",
+          serial: colorKey,
+          connected: true,
+          colorsOnly: true
+        }
+      });
+      return { ok: true };
+    },
     async refreshFlyout(payload = {}) {
+      if (dockMoreOpen) {
+        refreshOpenMorePanelContent();
+        return {
+          ok: true,
+          html: buildDockMorePanelHtml(dockMoreDevices)
+        };
+      }
       const device = findDockDevice(payload.deviceId, payload.serial);
       if (!device) return { ok: false };
       return {
@@ -4381,12 +4480,35 @@
   function setDockMoreOpen(open) {
     const strip = document.getElementById("dock-battery-strip");
     if (!strip) return;
-    dockMoreOpen = Boolean(open);
-    strip.classList.toggle("is-more-open", dockMoreOpen);
     const btn = strip.querySelector(".dock-battery-more");
-    const panel = strip.querySelector(".dock-battery-more-panel");
-    if (btn) btn.setAttribute("aria-expanded", dockMoreOpen ? "true" : "false");
-    if (panel) panel.hidden = !dockMoreOpen;
+    const wantOpen = Boolean(open);
+
+    if (!wantOpen) {
+      hideDockMoreOverlay();
+      return;
+    }
+
+    if (!btn || !dockMoreDevices.length || !window.dockChipFlyoutAPI?.show) {
+      dockMoreOpen = false;
+      return;
+    }
+
+    hideChipFlyout();
+    clearFlyoutHideTimer();
+    flyoutActiveKey = "";
+    dockMoreOpen = true;
+    strip.classList.toggle("is-more-open", true);
+    btn.setAttribute("aria-expanded", "true");
+
+    const rect = btn.getBoundingClientRect();
+    void window.dockChipFlyoutAPI.show({
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+      html: buildDockMorePanelHtml(dockMoreDevices),
+      kind: "more"
+    });
   }
 
   async function syncDockBatteries() {
@@ -4396,7 +4518,7 @@
     if (!document.body.classList.contains("theme-tablet") || !hasActiveStream()) {
       strip.innerHTML = "";
       strip.hidden = true;
-      dockMoreOpen = false;
+      hideDockMoreOverlay();
       hideChipFlyout();
       return;
     }
@@ -4414,7 +4536,7 @@
     if (!devices.length) {
       strip.innerHTML = "";
       strip.hidden = true;
-      dockMoreOpen = false;
+      hideDockMoreOverlay();
       hideChipFlyout();
       return;
     }
@@ -4426,6 +4548,7 @@
     const visible = devices.slice(0, DOCK_BATTERY_VISIBLE_MAX);
     const overflow = devices.slice(DOCK_BATTERY_VISIBLE_MAX);
     const keepMoreOpen = dockMoreOpen && overflow.length > 0;
+    dockMoreDevices = overflow;
 
     strip.hidden = false;
     let html = visible.map((device) => buildDockDeviceChip(device, { variant: "compact" })).join("");
@@ -4435,9 +4558,6 @@
       html +=
         `<div class="dock-battery-more-wrap">` +
         `<button type="button" class="dock-battery-more" aria-expanded="${keepMoreOpen ? "true" : "false"}" aria-haspopup="true" data-dock-tip="${escapeAttr(moreLabel)}">${moreLabel}</button>` +
-        `<div class="dock-battery-more-panel" ${keepMoreOpen ? "" : "hidden"}>` +
-        overflow.map((device) => buildDockDeviceChip(device, { variant: "menu" })).join("") +
-        `</div>` +
         `</div>`;
     }
 
@@ -4448,7 +4568,9 @@
     bindDockChipInteractions(strip);
     bindCompactFlyouts(strip);
 
-    if (flyoutActiveKey) {
+    if (keepMoreOpen) {
+      refreshOpenMorePanelContent();
+    } else if (flyoutActiveKey) {
       refreshOpenFlyoutContent();
     }
 
@@ -4457,8 +4579,12 @@
       moreBtn.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        hideChipFlyout();
-        setDockMoreOpen(!dockMoreOpen);
+        if (dockMoreOpen) {
+          setDockMoreOpen(false);
+        } else {
+          dockMoreDevices = overflow;
+          setDockMoreOpen(true);
+        }
       });
     }
   }
@@ -5349,7 +5475,7 @@
   document.addEventListener("pointerdown", (event) => {
     if (!dockMoreOpen) return;
     const strip = document.getElementById("dock-battery-strip");
-    if (!strip || strip.contains(event.target)) return;
+    if (strip?.contains(event.target)) return;
     setDockMoreOpen(false);
   });
 

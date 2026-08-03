@@ -80,13 +80,13 @@ class GlobalAudioOutputManager {
         return next;
     }
 
-    async setGlobalMuted(muted) {
+    async setGlobalMuted(muted, options = {}) {
         const nextMuted = Boolean(muted);
         const changed = nextMuted !== this.globalMuted;
         this.globalMuted = nextMuted;
 
         if (changed && this._onMuteStateChanged) {
-            await this._onMuteStateChanged(this.globalMuted);
+            await this._onMuteStateChanged(this.globalMuted, options);
         }
 
         return this.getState();
@@ -100,22 +100,34 @@ class GlobalAudioOutputManager {
      * Mute/unmute PC audio pour un appareil physique.
      * Si on active un device alors que le maître est OFF → le maître passe ON
      * (sync global qui respecte déjà le mute par device).
+     * @param {string} deviceKey
+     * @param {boolean} muted
+     * @param {{ aliasKeys?: string[] }} [options]
      */
-    async setDeviceMuted(deviceKey, muted) {
+    async setDeviceMuted(deviceKey, muted, options = {}) {
         const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
         if (!key) {
             return { ...this.getState(), success: false, error: "deviceKey manquant" };
         }
 
         const nextMuted = Boolean(muted);
-        this.deviceMuted.set(key, nextMuted);
+        const aliases = [
+            key,
+            ...((Array.isArray(options.aliasKeys) ? options.aliasKeys : [])
+                .map((k) => String(k || "").trim())
+                .filter(Boolean))
+        ];
+        for (const alias of [...new Set(aliases)]) {
+            this.deviceMuted.set(alias, nextMuted);
+        }
 
+        // Unmute device alors que le maître est OFF → maître ON (PC),
+        // sans restore HP de tous les devices (seul ce device sera rétabli par l'appelant).
         if (!nextMuted && this.globalMuted) {
             this.globalMuted = false;
             if (this._onMuteStateChanged) {
-                await this._onMuteStateChanged(false);
+                await this._onMuteStateChanged(false, { skipSpeakerRestore: true });
             }
-            return { ...this.getState(), success: true, deviceKey: key };
         }
 
         if (this._onDeviceMuteChanged) {

@@ -35,24 +35,38 @@ class DockHoverOverlayManager {
                             ? el
                             : el.closest(".sidebar-item");
                         if (!item || item.classList.contains("disabled")) return { ok: false };
-                        item.click();
+
+                        // Audio dock : appel direct (item.click() était souvent no-op / pending coincé).
+                        if (item.id === "nav-toggle-global-audio" && typeof window.toggleGlobalAudio === "function") {
+                            await window.toggleGlobalAudio();
+                        } else {
+                            item.click();
+                        }
+
                         const start = Date.now();
-                        while (item.classList.contains("pending") && Date.now() - start < 3500) {
+                        while (item.classList.contains("pending") && Date.now() - start < 8000) {
                             await new Promise((r) => setTimeout(r, 40));
                         }
                         await new Promise((r) => setTimeout(r, 20));
+
+                        // Volume appareil : le panneau slider est sur la fenêtre principale —
+                        // ne pas re-afficher l'overlay dock par-dessus.
+                        if (window.__deviceSpeakerPopoverOpen) {
+                            return { ok: true, html: "", dismissOverlay: true };
+                        }
+
                         const dock = document.getElementById("quick-actions-dock");
                         if (!dock) return { ok: true, html: "" };
                         const clone = dock.cloneNode(true);
                         clone.classList.remove("dock-covered");
                         clone.querySelectorAll("[title]").forEach((node) => node.removeAttribute("title"));
+                        clone.querySelectorAll(".device-speaker-popover").forEach((node) => node.remove());
                         return { ok: true, html: clone.outerHTML };
                     })()
                 `);
 
-                // Un clic (ex. Accueil) peut avoir fermé l'overlay : ne pas re-couvrir le dock.
-                if (!this.visible) {
-                    this._uncoverMainDock();
+                if (result?.dismissOverlay || !this.visible) {
+                    this.hide();
                     return result || { ok: false };
                 }
 
@@ -65,6 +79,30 @@ class DockHoverOverlayManager {
                 return result || { ok: false };
             } catch (_err) {
                 this._uncoverMainDock();
+                return { ok: false };
+            }
+        });
+
+        ipcMain.removeHandler("dock-hover:invoke-context");
+        ipcMain.handle("dock-hover:invoke-context", async (_event, buttonId) => {
+            if (!buttonId || !this.mainWindow || this.mainWindow.isDestroyed()) {
+                return { ok: false };
+            }
+            const id = String(buttonId).replace(/[^a-zA-Z0-9_-]/g, "");
+            if (id !== "nav-toggle-global-audio") return { ok: false };
+            try {
+                const result = await this.mainWindow.webContents.executeJavaScript(`
+                    (async () => {
+                        if (typeof window.openDeviceSpeakerVolumePopover === "function") {
+                            return await window.openDeviceSpeakerVolumePopover();
+                        }
+                        return { ok: false };
+                    })()
+                `);
+                this.hide();
+                return result || { ok: false };
+            } catch (_err) {
+                this.hide();
                 return { ok: false };
             }
         });
@@ -179,6 +217,17 @@ class DockHoverOverlayManager {
         if (wasVisible && win && !win.isDestroyed()) win.hide();
     }
 
+    /**
+     * Aligne l'icône audio du clone dock avec l'état global (popup ON/OFF, etc.).
+     */
+    syncGlobalAudioState(state = {}) {
+        const win = this.overlayWindow;
+        if (!this.visible || !win || win.isDestroyed()) return false;
+        const audioOn = !state.globalMuted;
+        win.webContents.send("dock-hover:audio-state", { audioOn, globalMuted: Boolean(state.globalMuted) });
+        return true;
+    }
+
     async showTip(payload = {}) {
         const bubble = global.hubBubbleOverlayManager;
         if (!bubble || !this.visible || !this.overlayWindow || this.overlayWindow.isDestroyed()) {
@@ -218,6 +267,7 @@ class DockHoverOverlayManager {
         }
         ipcMain.removeHandler("dock-hover:show");
         ipcMain.removeHandler("dock-hover:invoke-click");
+        ipcMain.removeHandler("dock-hover:invoke-context");
         ipcMain.removeHandler("dock-hover:hide");
         ipcMain.removeHandler("dock-hover:show-tip");
         ipcMain.removeHandler("dock-hover:hide-tip");

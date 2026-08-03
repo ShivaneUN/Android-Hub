@@ -1,9 +1,22 @@
 const { ipcMain } = require("electron");
 
+function restoreActiveSessionInputFocus() {
+    try {
+        const bvm = global.browserViewManager;
+        const sessionId = bvm?.getActiveSessionId?.();
+        if (!sessionId || typeof bvm._focusSessionInput !== "function") return;
+        // Remet le focus canvas session — l'audio ne doit jamais laisser le focus sur le main.
+        bvm._focusSessionInput(sessionId);
+    } catch (_err) {
+        // ignore
+    }
+}
+
 function broadcastGlobalAudioState(manager, getMainWindow) {
     const payload = manager.getState();
     const win = getMainWindow?.();
     if (win && !win.isDestroyed()) {
+        // IPC seulement — pas d'executeJavaScript (volait le focus des BrowserViews).
         win.webContents.send("audio:global-state-changed", payload);
     }
 
@@ -13,6 +26,15 @@ function broadcastGlobalAudioState(manager, getMainWindow) {
             browserViewManager.sendToSessionView(sessionId, "audio:global-state-changed", payload);
         }
     }
+
+    // Clone dock hover : mettre à jour l'icône audio si l'overlay est visible.
+    try {
+        global.dockHoverOverlayManager?.syncGlobalAudioState?.(payload);
+    } catch (_err) {
+        // ignore
+    }
+
+    restoreActiveSessionInputFocus();
 }
 
 function registerAudioHandlers(getMainWindow, manager) {
@@ -43,4 +65,4 @@ function registerAudioHandlers(getMainWindow, manager) {
     });
 }
 
-module.exports = { registerAudioHandlers };
+module.exports = { registerAudioHandlers, broadcastGlobalAudioState };

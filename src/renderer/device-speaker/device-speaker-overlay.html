@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #panel {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 12px 12px 10px;
+    border-radius: 14px;
+    background: rgba(22, 27, 36, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    color: #e8edf5;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #aeb8c9;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(72px, 1.1fr) 32px minmax(80px, 1.2fr) 32px;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+  }
+  .row.global {
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .mute-spacer {
+    width: 32px;
+    height: 26px;
+  }
+  .name {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #e8edf5;
+  }
+  .name.global-label {
+    color: #aeb8c9;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .mute-btn {
+    width: 32px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8edf5;
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mute-btn svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+  .mute-btn .icon-on,
+  .mute-btn .icon-off {
+    display: none;
+  }
+  .mute-btn.on {
+    background: rgba(62, 207, 111, 0.16);
+    border-color: rgba(62, 207, 111, 0.35);
+    color: #3ecf6f;
+  }
+  .mute-btn.on .icon-on {
+    display: block;
+  }
+  .mute-btn.off {
+    background: rgba(229, 72, 77, 0.16);
+    border-color: rgba(229, 72, 77, 0.35);
+    color: #e5484d;
+  }
+  .mute-btn.off .icon-off {
+    display: block;
+  }
+  .mute-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .slider {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #6b9fff;
+    border: 0;
+    cursor: pointer;
+  }
+  .value {
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+    color: #e8edf5;
+  }
+  #list {
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+    flex: 1;
+  }
+  .empty {
+    font-size: 11px;
+    color: #7f8aa0;
+    padding: 8px 0;
+  }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <div id="title">Audio</div>
+    <div class="row global" id="global-row">
+      <div class="name global-label">Volume global</div>
+      <button type="button" class="mute-btn off" id="global-mute" data-action="global-mute" title="Audio OFF" aria-label="Audio OFF">
+        <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H2v6h4l5 4V5z"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H2v6h4l5 4V5z"/>
+          <path d="m23 9-6 6"/>
+          <path d="m17 9 6 6"/>
+        </svg>
+      </button>
+      <input class="slider" id="global-slider" type="range" min="0" max="100" step="1" value="0">
+      <div class="value" id="global-value">0</div>
+    </div>
+    <div id="list"></div>
+  </div>
+  <script>
+    const titleEl = document.getElementById("title");
+    const listEl = document.getElementById("list");
+    const globalSlider = document.getElementById("global-slider");
+    const globalValue = document.getElementById("global-value");
+    const globalMuteBtn = document.getElementById("global-mute");
+    const timers = new Map();
+    let panelState = { devices: [], globalVolume: 0, globalMax: 15, globalMuted: true };
+    let savedGlobalPercent = 50;
+    let rendering = false;
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    const AUDIO_ICON_ON =
+      `<svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+      `<path d="M11 5 6 9H2v6h4l5 4V5z"/>` +
+      `<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>` +
+      `<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>` +
+      `</svg>`;
+    const AUDIO_ICON_OFF =
+      `<svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+      `<path d="M11 5 6 9H2v6h4l5 4V5z"/>` +
+      `<path d="m23 9-6 6"/>` +
+      `<path d="m17 9 6 6"/>` +
+      `</svg>`;
+
+    function muteButtonHtml(on, deviceKey) {
+      const state = on ? "on" : "off";
+      const label = on ? "Audio ON" : "Audio OFF";
+      return (
+        `<button type="button" class="mute-btn ${state}" data-action="mute" data-key="${deviceKey}" title="${label}" aria-label="${label}">` +
+        AUDIO_ICON_ON +
+        AUDIO_ICON_OFF +
+        `</button>`
+      );
+    }
+
+    function setMuteButtonState(muteBtn, wantOn) {
+      if (!muteBtn) return;
+      muteBtn.classList.toggle("on", wantOn);
+      muteBtn.classList.toggle("off", !wantOn);
+      const label = wantOn ? "Audio ON" : "Audio OFF";
+      muteBtn.title = label;
+      muteBtn.setAttribute("aria-label", label);
+    }
+
+    function applyDevicePercents(percent) {
+      const p = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+      const wantOn = p > 0;
+      if (wantOn) savedGlobalPercent = p;
+      setMuteButtonState(globalMuteBtn, wantOn);
+      listEl.querySelectorAll(".row").forEach((row) => {
+        const slider = row.querySelector("input[data-action='volume']");
+        if (!slider) return;
+        slider.value = String(p);
+        const valueEl = row.querySelector(".value");
+        if (valueEl) valueEl.textContent = String(p);
+        setMuteButtonState(row.querySelector("[data-action='mute']"), wantOn);
+      });
+      if (panelState?.devices) {
+        panelState.devices = panelState.devices.map((d) => ({
+          ...d,
+          percent: p,
+          audioOn: wantOn
+        }));
+      }
+      panelState.globalVolume = p;
+      panelState.globalMuted = !wantOn;
+    }
+
+    function applyPanel(panel, { preserveDeviceFocus = false } = {}) {
+      if (!panel) return;
+      const active = document.activeElement;
+      const editingDevice = preserveDeviceFocus
+        && active?.getAttribute?.("data-action") === "volume"
+        && active.getAttribute("data-key");
+      const editingGlobal = active === globalSlider;
+      const keepDeviceValue = editingDevice ? active.value : null;
+      const keepGlobalValue = editingGlobal ? active.value : null;
+
+      panelState = panel;
+      const gVol = Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0;
+      const globalOn = !panel.globalMuted && gVol > 0;
+      if (gVol > 0) savedGlobalPercent = gVol;
+      globalSlider.max = "100";
+      if (!editingGlobal) {
+        globalSlider.value = String(gVol);
+        globalValue.textContent = String(gVol);
+      }
+      setMuteButtonState(globalMuteBtn, globalOn);
+      globalMuteBtn.disabled = !(panel.devices || []).length;
+      globalSlider.disabled = !(panel.devices || []).length;
+
+      const devices = Array.isArray(panel.devices) ? panel.devices : [];
+      if (!devices.length) {
+        listEl.innerHTML = `<div class="empty">Aucun appareil connecté</div>`;
+        return;
+      }
+
+      listEl.innerHTML = devices.map((d) => {
+        const key = escapeHtml(d.deviceKey || d.serial || "");
+        const name = escapeHtml(d.name || d.serial || "Device");
+        let percent = Number.isInteger(d.percent) ? d.percent : 0;
+        if (editingDevice && d.deviceKey === editingDevice && keepDeviceValue != null) {
+          percent = Number(keepDeviceValue);
+        }
+        const on = d.audioOn !== false;
+        return (
+          `<div class="row" data-key="${key}">` +
+          `<div class="name" title="${name}">${name}</div>` +
+          muteButtonHtml(on, key) +
+          `<input class="slider" data-action="volume" data-key="${key}" data-adb="${escapeHtml(d.adbSerial || "")}" type="range" min="0" max="100" step="1" value="${percent}">` +
+          `<div class="value">${percent}</div>` +
+          `</div>`
+        );
+      }).join("");
+
+      if (editingGlobal) {
+        globalSlider.focus();
+        if (keepGlobalValue != null) {
+          globalSlider.value = keepGlobalValue;
+          globalValue.textContent = String(keepGlobalValue);
+        }
+      } else if (editingDevice) {
+        const safe = String(editingDevice).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const el = listEl.querySelector(`input[data-action='volume'][data-key="${safe}"]`);
+        if (el) {
+          el.focus();
+          if (keepDeviceValue != null) {
+            el.value = keepDeviceValue;
+            const valueEl = el.closest(".row")?.querySelector(".value");
+            if (valueEl) valueEl.textContent = String(keepDeviceValue);
+          }
+        }
+      }
+    }
+
+    function schedule(key, fn) {
+      if (timers.has(key)) clearTimeout(timers.get(key));
+      timers.set(key, setTimeout(() => {
+        timers.delete(key);
+        void fn();
+      }, 120));
+    }
+
+    listEl.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-action='mute']");
+      if (!btn) return;
+      const deviceKey = btn.getAttribute("data-key");
+      void window.deviceSpeakerOverlayAPI?.toggleDeviceAudio?.({ deviceKey });
+    });
+
+    globalMuteBtn.addEventListener("click", () => {
+      if (globalMuteBtn.disabled) return;
+      cancelPendingGlobal();
+      // Optimistic UI ; le main applique la même logique que le clic dock.
+      const currentlyOn = globalMuteBtn.classList.contains("on")
+        || (Number(globalSlider.value) > 0 && !panelState?.globalMuted);
+      if (currentlyOn) {
+        const cur = Number(globalSlider.value);
+        if (cur > 0) savedGlobalPercent = cur;
+        globalSlider.value = "0";
+        globalValue.textContent = "0";
+        applyDevicePercents(0);
+      } else {
+        const restore = savedGlobalPercent > 0 ? savedGlobalPercent : 50;
+        globalSlider.value = String(restore);
+        globalValue.textContent = String(restore);
+        applyDevicePercents(restore);
+      }
+      void window.deviceSpeakerOverlayAPI?.toggleGlobalAudio?.();
+    });
+
+    function cancelPendingGlobal() {
+      if (timers.has("global")) {
+        clearTimeout(timers.get("global"));
+        timers.delete("global");
+      }
+    }
+
+    listEl.addEventListener("input", (event) => {
+      const slider = event.target.closest("input[data-action='volume']");
+      if (!slider) return;
+      cancelPendingGlobal();
+      const deviceKey = slider.getAttribute("data-key");
+      const adbSerial = slider.getAttribute("data-adb") || "";
+      const percent = Number(slider.value);
+      const row = slider.closest(".row");
+      const valueEl = row?.querySelector(".value");
+      if (valueEl) valueEl.textContent = String(percent);
+      const wantOn = percent > 0;
+      if (panelState?.devices) {
+        panelState.devices = panelState.devices.map((d) => {
+          const key = d.deviceKey || d.serial || "";
+          return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
+        });
+      }
+      // Slider 0 → OFF, sinon ON (UI immédiate).
+      setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
+      schedule(`vol:${deviceKey}`, () => window.deviceSpeakerOverlayAPI?.setVolume?.({
+        deviceKey,
+        adbSerial,
+        percent
+      }));
+    });
+
+    listEl.addEventListener("change", (event) => {
+      const slider = event.target.closest("input[data-action='volume']");
+      if (!slider) return;
+      cancelPendingGlobal();
+      const deviceKey = slider.getAttribute("data-key");
+      const adbSerial = slider.getAttribute("data-adb") || "";
+      const percent = Number(slider.value);
+      const row = slider.closest(".row");
+      const valueEl = row?.querySelector(".value");
+      if (valueEl) valueEl.textContent = String(percent);
+      const wantOn = percent > 0;
+      if (panelState?.devices) {
+        panelState.devices = panelState.devices.map((d) => {
+          const key = d.deviceKey || d.serial || "";
+          return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
+        });
+      }
+      setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
+      const key = `vol:${deviceKey}`;
+      if (timers.has(key)) {
+        clearTimeout(timers.get(key));
+        timers.delete(key);
+      }
+      void window.deviceSpeakerOverlayAPI?.setVolume?.({
+        deviceKey,
+        adbSerial,
+        percent
+      });
+    });
+
+    globalSlider.addEventListener("input", () => {
+      const percent = Number(globalSlider.value);
+      globalValue.textContent = String(percent);
+      applyDevicePercents(percent);
+      schedule("global", () => window.deviceSpeakerOverlayAPI?.setGlobalVolume?.({
+        percent
+      }));
+    });
+
+    globalSlider.addEventListener("change", () => {
+      const percent = Number(globalSlider.value);
+      globalValue.textContent = String(percent);
+      applyDevicePercents(percent);
+      if (timers.has("global")) {
+        clearTimeout(timers.get("global"));
+        timers.delete("global");
+      }
+      void window.deviceSpeakerOverlayAPI?.setGlobalVolume?.({ percent });
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") window.deviceSpeakerOverlayAPI?.hide?.();
+    });
+
+    window.deviceSpeakerOverlayAPI?.onRender?.((payload) => {
+      if (payload?.title) titleEl.textContent = payload.title;
+      applyPanel(payload?.panel);
+    });
+
+    window.deviceSpeakerOverlayAPI?.onPanel?.((panel) => {
+      applyPanel(panel, { preserveDeviceFocus: true });
+    });
+  </script>
+</body>
+</html>
