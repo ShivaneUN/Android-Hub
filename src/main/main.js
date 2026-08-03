@@ -1313,7 +1313,12 @@ function resolveHubSocketAudioEnabled(_options = {}) {
     return false;
 }
 
-async function startSessionAudioPlayback(sessionId, { serial, displayId = null, deviceKey = null } = {}) {
+async function startSessionAudioPlayback(sessionId, {
+    serial,
+    displayId = null,
+    deviceKey = null,
+    quick = false
+} = {}) {
     if (!sessionId || !serial || !global.sessionAudioProcessManager) return;
 
     let key = deviceKey;
@@ -1325,15 +1330,208 @@ async function startSessionAudioPlayback(sessionId, { serial, displayId = null, 
         key = entry?.stableDeviceId || niSession?.stableDeviceId || entry?.deviceId || serial;
     }
 
-    // Toujours démarrer la capture (même si PC muet) pour garder le HP device silencieux.
+    // Serial ADB effectif (USB/WiFi) pour aligner capture + volume.
+    let effectiveSerial = serial;
+    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+        try {
+            const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                deviceId: key,
+                serial
+            });
+            if (resolved) effectiveSerial = resolved;
+        } catch (_err) {
+            /* keep serial */
+        }
+    }
+
+    // Lit le toggle Hub (global/device) même sans clic manuel.
+    // OFF → 0% / ON → ~50% via slider ; capture REMOTE_SUBMIX (pas de mute device).
+    const audio = global.globalAudioOutputManager;
+    const pcPlayback = Boolean(audio?.isDeviceAudioEnabled?.(key));
+    const muted = !pcPlayback;
+    const overlay = global.deviceSpeakerOverlayManager;
+
+    // 1) UI Hub : slider AUDIO → 0% si OFF / % si ON.
+    overlay?.markLaunchAudioIntent?.({ deviceKey: key, muted });
+    try {
+        void overlay?.syncSlidersFromAudioState?.();
+    } catch (_err) {
+        /* ignore */
+    }
+
+    // Handoff launch-* → sessionId sans relâcher REMOTE_SUBMIX.
+    try {
+        global.sessionAudioProcessManager.adoptCaptureForSession?.(sessionId, {
+            serial: effectiveSerial,
+            deviceKey: key
+        });
+    } catch (_err) {
+        /* ignore */
+    }
+
+    // 2) Capture REMOTE_SUBMIX (+ --no-audio-playback si OFF = pas de son PC).
     try {
         await global.sessionAudioProcessManager.start(sessionId, {
-            serial,
+            serial: effectiveSerial,
             displayId,
-            deviceKey: key
+            deviceKey: key,
+            pcPlayback
         });
     } catch (err) {
         console.warn(`[SessionAudio ${sessionId}] demarrage:`, err?.message || err);
+        return;
+    }
+
+    // 3) Appliquer 0% (OFF) / ~50% (ON) sur le stream PC une fois la route posée.
+    const reinforce = async () => {
+        try {
+            if (overlay?.applyLaunchAudioForDevice) {
+                await overlay.applyLaunchAudioForDevice({
+                    deviceKey: key,
+                    adbSerial: effectiveSerial,
+                    muted
+                });
+            } else if (global.deviceAudioVolumeManager) {
+                const percent = muted
+                    ? 0
+                    : (overlay?.intentPercentByKey?.get?.(key) || overlay?.defaultOnPercent || 50);
+                const held = global.sessionAudioProcessManager?.hasCaptureForSerial?.(
+                    effectiveSerial,
+                    key
+                );
+                await global.deviceAudioVolumeManager.setVolumePercentPcOnly(effectiveSerial, percent, {
+                    force: Boolean(held),
+                    showUi: false
+                });
+            }
+        } catch (err) {
+            console.warn(`[SessionAudio ${sessionId}] volume intention:`, err?.message || err);
+        }
+    };
+    if (quick) {
+        void reinforce();
+    } else {
+        await reinforce();
+    }
+
+    // Même politique OFF/ON pour TOUTES les sessions actives (autres devices inclus).
+    try {
+        await ensureAllSessionsLaunchAudioPolicy({
+            quick: true,
+            exceptSessionId: sessionId
+        });
+    } catch (err) {
+        console.warn(`[SessionAudio] sync autres sessions:`, err?.message || err);
+    }
+}
+
+/**
+ * Avant --start-app / stream vidéo : démarrer capture + intention slider 0%/50%.
+ * sessionId peut être un launchId provisoire (Type B).
+ */
+async function prepareSessionAudioBeforeAppLaunch({
+    sessionId,
+    serial,
+    displayId = null,
+    deviceKey = null
+} = {}) {
+    if (!serial || !global.sessionAudioProcessManager) return;
+    const id = sessionId || `preaudio-${serial}-${Date.now()}`;
+    await startSessionAudioPlayback(id, {
+        serial,
+        displayId,
+        deviceKey,
+        quick: true
+    });
+}
+
+/**
+ * Sync des AUTRES sessions déjà actives : 0% OFF / ~50% ON + slider Hub.
+ */
+async function ensureAllSessionsLaunchAudioPolicy({
+    quick = true,
+    exceptSessionId = null
+} = {}) {
+    const sap = global.sessionAudioProcessManager;
+    const audio = global.globalAudioOutputManager;
+    const overlay = global.deviceSpeakerOverlayManager;
+    if (!sap) return;
+
+    const byKey = new Map();
+    const add = (item) => {
+        if (!item?.serial || !item?.sessionId) return;
+        if (exceptSessionId && item.sessionId === exceptSessionId) return;
+        const mapKey = String(item.deviceKey || item.serial);
+        const prev = byKey.get(mapKey);
+        if (prev && String(prev.sessionId).startsWith("launch-") && !String(item.sessionId).startsWith("launch-")) {
+            byKey.set(mapKey, item);
+            return;
+        }
+        if (!prev) byKey.set(mapKey, item);
+    };
+
+    try {
+        const targets = await sap.getActiveAudioTargets?.() || [];
+        for (const t of targets) add(t);
+    } catch (_err) {
+        /* ignore */
+    }
+    for (const t of sap.getRunningCaptures?.() || []) add(t);
+
+    if (!byKey.size) {
+        void overlay?.syncSlidersFromAudioState?.();
+        return;
+    }
+
+    await Promise.allSettled([...byKey.values()].map(async (t) => {
+        const key = t.deviceKey || t.serial;
+        const pcPlayback = Boolean(audio?.isDeviceAudioEnabled?.(key));
+        const muted = !pcPlayback;
+
+        overlay?.markLaunchAudioIntent?.({
+            deviceKey: key,
+            muted,
+            touchGlobal: false
+        });
+
+        try {
+            await sap.start(t.sessionId, {
+                serial: t.serial,
+                displayId: t.displayId ?? null,
+                deviceKey: key,
+                pcPlayback
+            });
+        } catch (_err) {
+            /* ignore */
+        }
+
+        const reinforce = async () => {
+            if (overlay?.applyDesiredPcVolumeForDevice) {
+                await overlay.applyDesiredPcVolumeForDevice({
+                    deviceKey: key,
+                    adbSerial: t.serial,
+                    muted
+                });
+                return;
+            }
+            if (overlay?.applyLaunchAudioForDevice) {
+                await overlay.applyLaunchAudioForDevice({
+                    deviceKey: key,
+                    adbSerial: t.serial,
+                    muted,
+                    touchGlobal: false
+                });
+            }
+        };
+
+        if (quick) void reinforce();
+        else await reinforce();
+    }));
+
+    try {
+        void overlay?.syncSlidersFromAudioState?.();
+    } catch (_err) {
+        /* ignore */
     }
 }
 
@@ -1347,18 +1545,26 @@ async function stopSessionAudioPlayback(sessionId) {
 }
 
 global.startSessionAudioPlayback = startSessionAudioPlayback;
+global.prepareSessionAudioBeforeAppLaunch = prepareSessionAudioBeforeAppLaunch;
+global.ensureAllSessionsLaunchAudioPolicy = ensureAllSessionsLaunchAudioPolicy;
 global.stopSessionAudioPlayback = stopSessionAudioPlayback;
 
 async function applyGlobalAudioMuteSideEffects(globalMuted, options = {}) {
     const audioState = globalMuted ? "off" : "on";
     console.log(`[GlobalAudio] Toggle → audio=${audioState}`);
 
-    // Capture scrcpy toujours active (REMOTE_SUBMIX). Mute PC = volume remote 0 côté overlay.
+    // Toujours sync captures (une par session).
     if (global.sessionAudioProcessManager) {
         await global.sessionAudioProcessManager.syncAllActiveSessions();
     }
 
+    // skipSpeakerRestore : l'appelant (overlay global / device) applique les volumes.
     if (!options.skipSpeakerRestore) {
+        try {
+            await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForActiveSessions?.();
+        } catch (err) {
+            console.warn("[GlobalAudio] volume sessions:", err?.message || err);
+        }
         void global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.().catch(() => {});
     }
 }
@@ -1601,10 +1807,30 @@ app.whenReady().then(() => {
     global.globalAudioOutputManager.setOnMuteStateChanged(async (globalMuted, options = {}) => {
         await applyGlobalAudioMuteSideEffects(globalMuted, options);
     });
-    global.globalAudioOutputManager.setOnDeviceMuteChanged(async (deviceKey, muted) => {
+    global.globalAudioOutputManager.setOnDeviceMuteChanged(async (deviceKey, muted, meta = {}) => {
         console.log(`[DeviceAudio] ${deviceKey} → ${muted ? "off" : "on"}`);
-        if (global.sessionAudioProcessManager?.syncDeviceSessions) {
+        const aliases = Array.isArray(meta.aliasKeys) ? meta.aliasKeys : [];
+        if (global.sessionAudioProcessManager?.syncDeviceSessionsWithAliases) {
+            await global.sessionAudioProcessManager.syncDeviceSessionsWithAliases(
+                deviceKey,
+                aliases,
+                muted
+            );
+        } else if (global.sessionAudioProcessManager?.syncDeviceSessions) {
             await global.sessionAudioProcessManager.syncDeviceSessions(deviceKey, muted);
+        }
+        // Overlay/dock toggleDeviceAudio ou slider appliquent déjà le volume — ne pas doubler.
+        if (global.deviceSpeakerOverlayManager?._deviceToggleInFlight
+            || global.deviceSpeakerOverlayManager?._sliderInFlight) {
+            return;
+        }
+        try {
+            await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForDevice?.({
+                deviceKey,
+                muted: Boolean(muted)
+            });
+        } catch (err) {
+            console.warn(`[DeviceAudio] volume ${deviceKey}:`, err?.message || err);
         }
     });
     registerAudioHandlers(() => win, global.globalAudioOutputManager);
@@ -2248,8 +2474,20 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             launchDims ? `${launchDims.width}x${launchDims.height}` : "dims-absentes"
         );
 
+        const launchId = `launch-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        // AVANT --start-app : OFF→0% / ON→~50% + capture + slider Hub.
         try {
-            const launchId = `launch-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            await prepareSessionAudioBeforeAppLaunch({
+                sessionId: launchId,
+                serial,
+                deviceKey: stableDeviceId || serial
+            });
+        } catch (err) {
+            console.warn(`[NewInstance] prepare audio avant app:`, err?.message || err);
+        }
+
+        try {
             const child = spawnHiddenProcess(scrcpyBinaryPath, args, {
                 detached: false,
                 stdio: ["ignore", "pipe", "pipe"]
@@ -2387,6 +2625,17 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         const entry = global.browserViewManager?.getSessionEntry(tabId);
         const isTypeA = !entry || entry.type !== "B";
         let dimsResolveMs = 0;
+
+        // Avant vidéo / lancement app : OFF→0% / ON→~50% + capture + slider.
+        try {
+            await prepareSessionAudioBeforeAppLaunch({
+                sessionId: tabId,
+                serial,
+                deviceKey: entry?.stableDeviceId || entry?.deviceId || serial
+            });
+        } catch (err) {
+            console.warn(`[SessionAudio ${tabId}] prepare avant stream:`, err?.message || err);
+        }
 
         if (isTypeA) {
             const dimsT0 = Date.now();

@@ -704,7 +704,7 @@ function renderDevicePanel(devices) {
 
 async function handleDeviceAudioToggle(device, button) {
     const key = deviceAudioKey(device);
-    if (!key || !window.audioAPI?.toggleDeviceMuted) {
+    if (!key) {
         return;
     }
     if (button?.classList?.contains("pending")) {
@@ -713,13 +713,54 @@ async function handleDeviceAudioToggle(device, button) {
 
     button?.classList?.add("pending");
     try {
-        const result = await window.audioAPI.toggleDeviceMuted(key);
-        if (result?.globalMuted !== undefined || result?.devices) {
+        // Même chemin que les boutons ON/OFF de l'overlay (mute + volume remote).
+        let result = null;
+        if (window.deviceSpeakerOverlayAPI?.toggleDeviceAudio) {
+            const currentlyOn = isDeviceAudioOn(device);
+            result = await window.deviceSpeakerOverlayAPI.toggleDeviceAudio({
+                deviceKey: key,
+                deviceId: device.deviceId || null,
+                serial: device.serial || null,
+                wantOff: currentlyOn
+            });
+        } else if (window.audioAPI?.toggleDeviceMuted) {
+            result = await window.audioAPI.toggleDeviceMuted(key);
+        } else {
+            return;
+        }
+
+        if (result?.panel?.globalMuted !== undefined || result?.globalMuted !== undefined) {
+            cachedAudioState = {
+                globalMuted: Boolean(result.panel?.globalMuted ?? result.globalMuted),
+                devices: result.panel
+                    ? Object.fromEntries(
+                        (result.panel.devices || []).map((d) => [
+                            d.deviceKey || d.deviceId || d.serial,
+                            { muted: d.audioOn === false }
+                        ])
+                    )
+                    : (result.devices || {})
+            };
+            // Alias serial / deviceId pour isDeviceAudioOn.
+            for (const d of result.panel?.devices || []) {
+                const muted = d.audioOn === false;
+                if (d.deviceId) cachedAudioState.devices[d.deviceId] = { muted };
+                if (d.serial) cachedAudioState.devices[d.serial] = { muted };
+                if (d.adbSerial) cachedAudioState.devices[d.adbSerial] = { muted };
+            }
+        } else if (result?.globalMuted !== undefined || result?.devices) {
             cachedAudioState = {
                 globalMuted: Boolean(result.globalMuted),
                 devices: result.devices || {}
             };
+        } else if (window.audioAPI?.getGlobalState) {
+            const state = await window.audioAPI.getGlobalState();
+            cachedAudioState = {
+                globalMuted: Boolean(state?.globalMuted),
+                devices: state?.devices || {}
+            };
         }
+
         const on = isDeviceAudioOn(device);
         syncDeviceAudioButtons(device);
         if (button) {

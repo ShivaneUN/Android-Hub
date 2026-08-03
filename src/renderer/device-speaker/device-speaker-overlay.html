@@ -322,9 +322,26 @@
 
     listEl.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-action='mute']");
-      if (!btn) return;
+      if (!btn || btn.disabled || btn.classList.contains("pending")) return;
       const deviceKey = btn.getAttribute("data-key");
-      void window.deviceSpeakerOverlayAPI?.toggleDeviceAudio?.({ deviceKey });
+      if (!deviceKey) return;
+      btn.classList.add("pending");
+      btn.disabled = true;
+      // Intention AVANT flip optimiste : OFF si bouton actuellement ON.
+      const wantOff = btn.classList.contains("on");
+      const next = wantOff ? 0 : 50;
+      setMuteButtonState(btn, !wantOff);
+      const row = btn.closest(".row");
+      const slider = row?.querySelector("input[data-action='volume']");
+      const valueEl = row?.querySelector(".value");
+      if (slider) slider.value = String(next);
+      if (valueEl) valueEl.textContent = String(next);
+      void window.deviceSpeakerOverlayAPI?.toggleDeviceAudio?.({ deviceKey, wantOff })
+        .catch((err) => console.error("[device-speaker] toggleDeviceAudio:", err))
+        .finally(() => {
+          btn.classList.remove("pending");
+          btn.disabled = false;
+        });
     });
 
     globalMuteBtn.addEventListener("click", () => {

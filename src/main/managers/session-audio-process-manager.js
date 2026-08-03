@@ -5,22 +5,16 @@ const CREATE_NO_WINDOW = 0x08000000;
 /**
  * Capture audio device → PC via scrcpy.exe dédié.
  * Args : --no-video --no-window --no-control --audio-buffer=100
- * (source = output / REMOTE_SUBMIX → HP device coupé tant que la capture vit).
+ * (source = output / REMOTE_SUBMIX → HP device toujours muet tant que la capture vit).
  *
- * ON/OFF PC : ne redémarre JAMAIS ce processus.
- * OFF = volume remote_submix à 0 (overlay / volume manager) → PC muet,
- *        capture gardée → HP device reste silencieux.
- * ON  = restore volume remote → son PC.
- *
- * Ne pas utiliser --no-audio ni --no-audio-playback ici :
- * un restart / hot-swap lâche REMOTE_SUBMIX et le HP device revient.
- *
- * Windows : kill arbre (taskkill /T /F) + balayage des orphelins --no-video.
+ * Principe (comme screen OFF) :
+ * - Lancement / OFF : pas de son PC (--no-audio-playback) + HP muet (capture)
+ * - ON global / device : son PC + HP toujours muet (même capture, lecture activée)
  */
 class SessionAudioProcessManager {
     constructor(scrcpyBinaryPath) {
         this.scrcpyBinaryPath = scrcpyBinaryPath;
-        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null, pid: number|null, deviceKey: string|null }>} */
+        /** @type {Map<string, { child: import('child_process').ChildProcess, serial: string, displayId: number|null, pid: number|null, deviceKey: string|null, pcPlayback: boolean }>} */
         this.processes = new Map();
         /** @type {Set<number>} */
         this._knownPids = new Set();
@@ -98,9 +92,15 @@ class SessionAudioProcessManager {
             || null;
     }
 
-    _buildArgs({ serial, displayId }) {
+    /** Lecture PC : défaut OFF (mute HP via capture, pas de son PC). */
+    _wantPcPlayback(deviceKey, aliasKeys = []) {
+        const audio = global.globalAudioOutputManager;
+        if (!audio?.isDeviceAudioEnabled) return false;
+        return Boolean(audio.isDeviceAudioEnabled(deviceKey, aliasKeys));
+    }
+
+    _buildArgs({ serial, displayId, pcPlayback }) {
         // audio-source=output (défaut) : REMOTE_SUBMIX → pas de son sur le HP device.
-        // Pas de --no-audio / --no-audio-playback : mute PC = volume remote 0, même process.
         const args = [
             "--serial", serial,
             "--no-video",
@@ -111,6 +111,11 @@ class SessionAudioProcessManager {
 
         if (Number.isInteger(displayId)) {
             args.push(`--display-id=${displayId}`);
+        }
+
+        // OFF PC : coupe la lecture sur le PC, garde la capture (HP device silencieux).
+        if (!pcPlayback) {
+            args.push("--no-audio-playback");
         }
 
         return args;
@@ -140,6 +145,77 @@ class SessionAudioProcessManager {
     isRunning(sessionId) {
         const entry = this.processes.get(sessionId);
         return Boolean(entry?.child && !entry.child.killed && entry.child.exitCode === null);
+    }
+
+    /** true si une capture scrcpy audio Hub tourne pour ce serial / deviceKey. */
+    hasCaptureForSerial(serial, deviceKey = null) {
+        const needle = String(serial || "").trim();
+        const key = String(deviceKey || "").trim();
+        if (!needle && !key) return false;
+        for (const [sessionId, entry] of this.processes.entries()) {
+            if (!entry || !this.isRunning(sessionId)) continue;
+            if (needle && entry.serial === needle) return true;
+            if (key && entry.deviceKey && entry.deviceKey === key) return true;
+            if (needle && entry.serial && (
+                needle.startsWith(entry.serial)
+                || entry.serial.startsWith(needle)
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Réattache une capture existante (ex. launch-*) sur le vrai sessionId
+     * sans relâcher REMOTE_SUBMIX.
+     */
+    adoptCaptureForSession(sessionId, { serial = null, deviceKey = null } = {}) {
+        if (!sessionId) return false;
+        if (this.isRunning(sessionId)) return true;
+        const needle = String(serial || "").trim();
+        const key = String(deviceKey || "").trim();
+        if (!needle && !key) return false;
+        for (const [id, entry] of this.processes.entries()) {
+            if (id === sessionId || !entry || !this.isRunning(id)) continue;
+            const sameSerial = needle && entry.serial && (
+                entry.serial === needle
+                || needle.startsWith(entry.serial)
+                || entry.serial.startsWith(needle)
+            );
+            const sameKey = key && entry.deviceKey && entry.deviceKey === key;
+            if (!sameSerial && !sameKey) continue;
+            this.processes.delete(id);
+            this.processes.set(sessionId, entry);
+            console.log(`[SessionAudio] adopt ${id} → ${sessionId} (serial=${entry.serial})`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Arrête les captures pour un serial (ex. handoff launchId → sessionId),
+     * en gardant éventuellement une session.
+     */
+    async stopBySerial(serial, { exceptSessionId = null, deviceKey = null } = {}) {
+        const needle = String(serial || "").trim();
+        const key = String(deviceKey || "").trim();
+        if (!needle && !key) return;
+        const toStop = [];
+        for (const [sessionId, entry] of this.processes.entries()) {
+            if (exceptSessionId && sessionId === exceptSessionId) continue;
+            if (!entry) continue;
+            const sameSerial = needle && entry.serial && (
+                entry.serial === needle
+                || needle.startsWith(entry.serial)
+                || entry.serial.startsWith(needle)
+            );
+            const sameKey = key && entry.deviceKey && entry.deviceKey === key;
+            if (sameSerial || sameKey) toStop.push(sessionId);
+        }
+        for (const sessionId of toStop) {
+            await this.stop(sessionId);
+        }
     }
 
     async stop(sessionId) {
@@ -182,7 +258,7 @@ class SessionAudioProcessManager {
         });
     }
 
-    async start(sessionId, { serial, displayId = null, deviceKey = null } = {}) {
+    async start(sessionId, { serial, displayId = null, deviceKey = null, pcPlayback = null } = {}) {
         if (!sessionId || !serial) return { success: false, error: "sessionId ou serial manquant" };
         if (!this.scrcpyBinaryPath) return { success: false, error: "scrcpy introuvable" };
 
@@ -192,6 +268,9 @@ class SessionAudioProcessManager {
         }
 
         const key = deviceKey || serial;
+        const wantPlayback = typeof pcPlayback === "boolean"
+            ? pcPlayback
+            : this._wantPcPlayback(key);
         const normalizedDisplayId = Number.isInteger(displayId) ? displayId : null;
         const existing = this.processes.get(sessionId);
         if (
@@ -199,18 +278,40 @@ class SessionAudioProcessManager {
             && existing.serial === serial
             && existing.displayId === normalizedDisplayId
             && existing.deviceKey === key
+            && existing.pcPlayback === wantPlayback
             && this.isRunning(sessionId)
         ) {
-            return { success: true, reused: true };
+            return { success: true, reused: true, pcPlayback: wantPlayback };
         }
 
         const args = this._buildArgs({
             serial,
-            displayId: normalizedDisplayId
+            displayId: normalizedDisplayId,
+            pcPlayback: wantPlayback
         });
-        console.log(`[SessionAudio ${sessionId}] demarrage scrcpy audio (${args.join(" ")})`);
+        console.log(
+            `[SessionAudio ${sessionId}] demarrage scrcpy audio `
+            + `(pcPlayback=${wantPlayback ? "on" : "off"} ; ${args.join(" ")})`
+        );
 
-        await this.stop(sessionId);
+        // Hot-swap si seul pcPlayback change : nouveau process AVANT de tuer l'ancien
+        // pour ne pas relâcher REMOTE_SUBMIX (sinon son sur le HP device).
+        const canHotSwap = Boolean(
+            existing
+            && this.isRunning(sessionId)
+            && existing.serial === serial
+            && existing.displayId === normalizedDisplayId
+            && existing.deviceKey === key
+            && existing.pcPlayback !== wantPlayback
+        );
+
+        let oldEntry = null;
+        if (canHotSwap) {
+            oldEntry = existing;
+            this.processes.delete(sessionId);
+        } else {
+            await this.stop(sessionId);
+        }
 
         try {
             const child = this._spawnHidden(this.scrcpyBinaryPath, args);
@@ -222,12 +323,31 @@ class SessionAudioProcessManager {
                 serial,
                 displayId: normalizedDisplayId,
                 pid,
-                deviceKey: key
+                deviceKey: key,
+                pcPlayback: wantPlayback
             });
             this._attachLogging(sessionId, child);
 
-            return { success: true };
+            if (oldEntry) {
+                setTimeout(() => {
+                    const oldPid = oldEntry.pid || oldEntry.child?.pid || null;
+                    if (oldPid) {
+                        this._killPidTree(oldPid);
+                        this._knownPids.delete(oldPid);
+                    }
+                    try {
+                        if (oldEntry.child && !oldEntry.child.killed) oldEntry.child.kill();
+                    } catch (_err) {
+                        /* ignore */
+                    }
+                }, 280);
+            }
+
+            return { success: true, pcPlayback: wantPlayback, hotSwap: Boolean(oldEntry) };
         } catch (err) {
+            if (oldEntry) {
+                this.processes.set(sessionId, oldEntry);
+            }
             return { success: false, error: err.message || "echec spawn scrcpy audio" };
         }
     }
@@ -239,6 +359,24 @@ class SessionAudioProcessManager {
     setResolvers({ getBrowserViewManager, getNewInstanceManager } = {}) {
         this._getBrowserViewManager = typeof getBrowserViewManager === "function" ? getBrowserViewManager : null;
         this._getNewInstanceManager = typeof getNewInstanceManager === "function" ? getNewInstanceManager : null;
+    }
+
+    /**
+     * Captures scrcpy audio encore vivantes (y compris launch-* avant handoff).
+     */
+    getRunningCaptures() {
+        const out = [];
+        for (const [sessionId, entry] of this.processes.entries()) {
+            if (!entry || !this.isRunning(sessionId)) continue;
+            out.push({
+                sessionId,
+                serial: entry.serial,
+                displayId: entry.displayId,
+                deviceKey: entry.deviceKey || entry.serial,
+                pcPlayback: Boolean(entry.pcPlayback)
+            });
+        }
+        return out;
     }
 
     _listActiveSessionTargets() {
@@ -254,7 +392,8 @@ class SessionAudioProcessManager {
             const niSession = entry?.type === "B"
                 ? this._getNewInstanceManager?.()?.getNewInstanceSession?.(sessionId)
                 : null;
-            let serial = entry?.deviceId || niSession?.serial;
+            // Préférer le serial ADB (niSession / deviceId transport), pas seulement stableId.
+            let serial = niSession?.serial || entry?.deviceId || session?.deviceId || null;
             if (!sessionId || !serial) continue;
 
             const deviceKey = this._resolveDeviceKey(entry, niSession, serial);
@@ -292,8 +431,25 @@ class SessionAudioProcessManager {
     }
 
     /**
-     * Garde une capture audio pour chaque session active.
-     * Mute PC ne change rien ici (volume remote 0 côté overlay).
+     * Cibles audio actives (une entrée par session), serial ADB résolu.
+     */
+    async getActiveAudioTargets() {
+        const out = [];
+        for (const target of this._listActiveSessionTargets()) {
+            const serial = await this._resolveSerial(target);
+            if (!serial) continue;
+            out.push({
+                sessionId: target.sessionId,
+                serial,
+                displayId: target.displayId,
+                deviceKey: target.deviceKey
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Une capture par session, avec pcPlayback selon mute global/device.
      */
     async syncAllActiveSessions() {
         const targets = this._listActiveSessionTargets();
@@ -318,7 +474,7 @@ class SessionAudioProcessManager {
     }
 
     /**
-     * ON/OFF device : s'assure que la capture tourne (ne redémarre pas pour mute).
+     * Resync capture(s) d'un device — redémarre si ON/OFF (pcPlayback) a changé.
      */
     async syncDeviceSessions(deviceKey, _muted) {
         const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
@@ -333,6 +489,17 @@ class SessionAudioProcessManager {
                 displayId: target.displayId,
                 deviceKey: target.deviceKey || key
             });
+        }
+    }
+
+    async syncDeviceSessionsWithAliases(deviceKey, aliasKeys = [], muted) {
+        const keys = [deviceKey, ...(Array.isArray(aliasKeys) ? aliasKeys : [])]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+        const unique = [...new Set(keys)];
+        if (!unique.length) return;
+        for (const key of unique) {
+            await this.syncDeviceSessions(key, muted);
         }
     }
 

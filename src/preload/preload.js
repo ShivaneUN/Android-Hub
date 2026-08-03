@@ -101,7 +101,8 @@ contextBridge.exposeInMainWorld("deviceSpeakerAPI", {
 contextBridge.exposeInMainWorld("deviceSpeakerOverlayAPI", {
     show: (payload = {}) => ipcRenderer.invoke("deviceSpeakerOverlay:show", payload),
     hide: () => ipcRenderer.invoke("deviceSpeakerOverlay:hide"),
-    toggleGlobalAudio: () => ipcRenderer.invoke("deviceSpeakerOverlay:toggleGlobalAudio")
+    toggleGlobalAudio: () => ipcRenderer.invoke("deviceSpeakerOverlay:toggleGlobalAudio"),
+    toggleDeviceAudio: (payload = {}) => ipcRenderer.invoke("deviceSpeakerOverlay:toggleDeviceAudio", payload)
 });
 
 contextBridge.exposeInMainWorld("sessionAPI", {

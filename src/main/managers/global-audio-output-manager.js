@@ -1,18 +1,18 @@
 /**
- * État audio PC :
- * - globalMuted : interrupteur maître (OFF = silence total)
- * - deviceMuted : OFF/ON par appareil (deviceKey = stableDeviceId || serial)
- *   défaut si absent de la map = ON (autorisé) dès que le maître est ON
+ * État audio PC (principe screen OFF) :
+ * - globalMuted : maître — OFF = tous OFF, ON = tous ON
+ * - deviceMuted : overrides par device, seulement après interaction locale
+ * - Un nouveau global efface les overrides (reprend le dessus)
  */
 class GlobalAudioOutputManager {
     constructor() {
         /** @type {boolean} true = son PC coupé (OFF) */
         this.globalMuted = true;
-        /** @type {Map<string, boolean>} deviceKey → true = muet */
+        /** @type {Map<string, boolean>} deviceKey → true = muet (override local) */
         this.deviceMuted = new Map();
-        /** @type {((muted: boolean) => Promise<void>)|null} */
+        /** @type {((muted: boolean, options?: object) => Promise<void>)|null} */
         this._onMuteStateChanged = null;
-        /** @type {((deviceKey: string, muted: boolean) => Promise<void>)|null} */
+        /** @type {((deviceKey: string, muted: boolean, meta?: object) => Promise<void>)|null} */
         this._onDeviceMuteChanged = null;
     }
 
@@ -20,25 +20,33 @@ class GlobalAudioOutputManager {
         return this.globalMuted;
     }
 
-    /**
-     * @param {string} deviceKey
-     * @returns {boolean} true si le son PC est autorisé pour cet appareil
-     */
-    isDeviceAudioEnabled(deviceKey) {
-        if (this.globalMuted) return false;
-        if (!deviceKey) return true;
-        if (this.deviceMuted.get(deviceKey) === true) return false;
-        return true;
+    /** Efface les overrides locaux — tout le monde suit le maître. */
+    clearAllDeviceMutes() {
+        this.deviceMuted.clear();
     }
 
     /**
-     * true si le device est considéré muet (maître OFF inclus).
-     * Accepte une clé unique ; le rendu UI peut croiser deviceId + serial.
+     * @param {string} deviceKey
+     * @param {string[]} [aliasKeys]
+     * @returns {boolean} true si le son PC est autorisé pour cet appareil
      */
-    isDeviceMuted(deviceKey) {
-        if (!deviceKey) return true;
+    isDeviceAudioEnabled(deviceKey, aliasKeys = []) {
+        return !this.isDeviceMuted(deviceKey, aliasKeys);
+    }
+
+    /**
+     * true si muet (maître OFF inclus, ou override local OFF).
+     */
+    isDeviceMuted(deviceKey, aliasKeys = []) {
         if (this.globalMuted) return true;
-        return this.deviceMuted.get(deviceKey) === true;
+        const keys = [deviceKey, ...(Array.isArray(aliasKeys) ? aliasKeys : [])]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+        if (!keys.length) return true;
+        for (const key of keys) {
+            if (this.deviceMuted.get(key) === true) return true;
+        }
+        return false;
     }
 
     getState() {
@@ -80,10 +88,18 @@ class GlobalAudioOutputManager {
         return next;
     }
 
+    /**
+     * Maître global. resetDevices (défaut true) : efface les overrides per-device
+     * pour que le global reprenne le dessus partout.
+     */
     async setGlobalMuted(muted, options = {}) {
         const nextMuted = Boolean(muted);
         const changed = nextMuted !== this.globalMuted;
         this.globalMuted = nextMuted;
+
+        if (options.resetDevices !== false) {
+            this.clearAllDeviceMutes();
+        }
 
         if (changed && this._onMuteStateChanged) {
             await this._onMuteStateChanged(this.globalMuted, options);
@@ -97,12 +113,12 @@ class GlobalAudioOutputManager {
     }
 
     /**
-     * Mute/unmute PC audio pour un appareil physique.
-     * Si on active un device alors que le maître est OFF → le maître passe ON
-     * (sync global qui respecte déjà le mute par device).
+     * Override local d'un device (après interaction utilisateur).
+     * Si ON alors que le maître est OFF → lève le maître (indépendance locale) ;
+     * l'appelant mute explicitement les siblings si besoin.
      * @param {string} deviceKey
      * @param {boolean} muted
-     * @param {{ aliasKeys?: string[] }} [options]
+     * @param {{ aliasKeys?: string[], silent?: boolean, skipSpeakerRestore?: boolean }} [options]
      */
     async setDeviceMuted(deviceKey, muted, options = {}) {
         const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
@@ -121,17 +137,19 @@ class GlobalAudioOutputManager {
             this.deviceMuted.set(alias, nextMuted);
         }
 
-        // Unmute device alors que le maître est OFF → maître ON (PC),
-        // sans restore HP de tous les devices (seul ce device sera rétabli par l'appelant).
         if (!nextMuted && this.globalMuted) {
             this.globalMuted = false;
-            if (this._onMuteStateChanged) {
-                await this._onMuteStateChanged(false, { skipSpeakerRestore: true });
+            // Ne pas resetDevices : on garde les overrides (siblings restent OFF).
+            if (!options.silent && this._onMuteStateChanged) {
+                await this._onMuteStateChanged(false, {
+                    skipSpeakerRestore: true,
+                    resetDevices: false
+                });
             }
         }
 
-        if (this._onDeviceMuteChanged) {
-            await this._onDeviceMuteChanged(key, nextMuted);
+        if (!options.silent && this._onDeviceMuteChanged) {
+            await this._onDeviceMuteChanged(key, nextMuted, { aliasKeys: aliases });
         }
 
         return { ...this.getState(), success: true, deviceKey: key };

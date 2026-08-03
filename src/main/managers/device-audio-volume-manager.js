@@ -355,7 +355,7 @@ class DeviceAudioVolumeManager {
      * percent > 0 : n'applique que si remote_submix est actif (son PC),
      * sauf force=true (ex. slider alors que la route n'est pas encore là).
      */
-    async setVolumePercentPcOnly(serial, percent, { force = false } = {}) {
+    async setVolumePercentPcOnly(serial, percent, { force = false, showUi = true } = {}) {
         const max = await this.ensureMax(serial);
         const level = percentToLevel(percent, max);
         const uiPercent = Math.max(
@@ -384,10 +384,15 @@ class DeviceAudioVolumeManager {
         }
 
         // media_session cible le device actif (remote_submix pendant mirroring).
+        // showUi=false (lancement OFF) : pas de barre volume Android.
         const commands = [
-            `cmd media_session volume --stream ${STREAM_MUSIC} --set ${level}`,
-            `cmd media_session volume --stream ${STREAM_MUSIC} --show --set ${level}`
+            `cmd media_session volume --stream ${STREAM_MUSIC} --set ${level}`
         ];
+        if (showUi !== false) {
+            commands.push(
+                `cmd media_session volume --stream ${STREAM_MUSIC} --show --set ${level}`
+            );
+        }
         let applied = false;
         for (const command of commands) {
             try {
