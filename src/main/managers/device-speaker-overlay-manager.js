@@ -195,8 +195,79 @@ class DeviceSpeakerOverlayManager {
             );
         } else {
             console.log(`[DeviceSpeaker] windows volume pid=${targetPid} → ${percent}%`);
+            const label = this._resolveMixerDeviceName?.(deviceKey, adbSerial)
+                || deviceKey
+                || adbSerial
+                || "Device";
+            let resolvedExe = null;
+            let mixerDisplayName = null;
+            try {
+                for (const entry of (sap?.processes?.values?.() || [])) {
+                    if (entry?.pid === targetPid) {
+                        if (entry.binaryPath) resolvedExe = entry.binaryPath;
+                        if (entry.mixerDisplayName) mixerDisplayName = entry.mixerDisplayName;
+                        break;
+                    }
+                }
+            } catch (_err) {
+                /* ignore */
+            }
+            if (!mixerDisplayName) {
+                mixerDisplayName = this._hostVolume.formatMixerDisplayName(label);
+            }
+            const applyId = (force = false) => this._hostVolume.setMixerIdentity(targetPid, {
+                displayName: mixerDisplayName,
+                deviceName: label,
+                exePath: resolvedExe,
+                force
+            }).catch((err) => {
+                console.warn("[DeviceSpeaker] mixer identity:", err?.message || err);
+            });
+            void applyId(true);
+            setTimeout(() => { void applyId(true); }, 700);
+            setTimeout(() => { void applyId(true); }, 2000);
         }
         return { ...result, pid: targetPid };
+    }
+
+    /** Nom friendly d'UN device pour le mixeur Windows (jamais un id hex / serial). */
+    _resolveMixerDeviceName(deviceKey = null, adbSerial = null) {
+        const isUgly = (value) => {
+            const v = String(value || "").trim();
+            if (!v || v === "Device") return true;
+            if (adbSerial && v === String(adbSerial).trim()) return true;
+            if (/^[0-9A-Fa-f]{8,}$/.test(v)) return true;
+            if (/^\d+\.\d+\.\d+\.\d+(?::\d+)?$/.test(v)) return true;
+            if (/^emulator-\d+$/i.test(v)) return true;
+            return false;
+        };
+
+        const keys = [deviceKey, adbSerial]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+        const devices = this.lastPanel?.devices || [];
+        for (const d of devices) {
+            const aliases = [d.deviceKey, d.deviceId, d.serial, d.adbSerial]
+                .map((x) => String(x || "").trim())
+                .filter(Boolean);
+            if (!keys.some((k) => aliases.includes(k))) continue;
+            const name = String(d.name || "").trim();
+            if (name && !isUgly(name)) return name;
+        }
+
+        try {
+            const cnm = global.customNamesManager;
+            if (cnm?.getDeviceDisplayName) {
+                for (const key of keys) {
+                    const n = String(cnm.getDeviceDisplayName(key, null) || "").trim();
+                    if (n && !isUgly(n)) return n;
+                }
+            }
+        } catch (_err) {
+            /* ignore */
+        }
+
+        return "Device";
     }
 
     /**

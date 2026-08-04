@@ -120,6 +120,147 @@ public static class HubVolumeMixer
         }
         return matched;
     }
+
+    /// <summary>
+    /// Nom + chemin icône (.ico) pour le mixeur Windows (session audio du PID).
+    /// </summary>
+    public static int SetApplicationIdentity(int pid, string displayName, string iconPath)
+    {
+        bool setName = !string.IsNullOrWhiteSpace(displayName);
+        bool setIcon = !string.IsNullOrWhiteSpace(iconPath);
+        if (!setName && !setIcon) return 0;
+
+        Guid guid = Guid.Empty;
+        int matched = 0;
+
+        IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+        try
+        {
+            matched += IdentityOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, displayName, iconPath, setName, setIcon, ref guid);
+            matched += IdentityOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, displayName, iconPath, setName, setIcon, ref guid);
+            matched += IdentityOnEndpoint(deviceEnumerator, ERole.eConsole, pid, displayName, iconPath, setName, setIcon, ref guid);
+
+            IMMDeviceCollection coll;
+            deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender, 1 /* DEVICE_STATE_ACTIVE */, out coll);
+            if (coll != null)
+            {
+                int n;
+                coll.GetCount(out n);
+                for (int i = 0; i < n; i++)
+                {
+                    IMMDevice device;
+                    coll.Item(i, out device);
+                    try
+                    {
+                        matched += IdentityOnDevice(device, pid, displayName, iconPath, setName, setIcon, ref guid);
+                    }
+                    finally
+                    {
+                        if (device != null) Marshal.ReleaseComObject(device);
+                    }
+                }
+                Marshal.ReleaseComObject(coll);
+            }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(deviceEnumerator);
+        }
+
+        return matched;
+    }
+
+    private static int IdentityOnEndpoint(
+        IMMDeviceEnumerator enumerator,
+        ERole role,
+        int pid,
+        string displayName,
+        string iconPath,
+        bool setName,
+        bool setIcon,
+        ref Guid guid
+    )
+    {
+        IMMDevice speakers = null;
+        try
+        {
+            enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, role, out speakers);
+            if (speakers == null) return 0;
+            return IdentityOnDevice(speakers, pid, displayName, iconPath, setName, setIcon, ref guid);
+        }
+        catch
+        {
+            return 0;
+        }
+        finally
+        {
+            if (speakers != null) Marshal.ReleaseComObject(speakers);
+        }
+    }
+
+    private static int IdentityOnDevice(
+        IMMDevice device,
+        int pid,
+        string displayName,
+        string iconPath,
+        bool setName,
+        bool setIcon,
+        ref Guid guid
+    )
+    {
+        Guid iid = typeof(IAudioSessionManager2).GUID;
+        object o;
+        device.Activate(ref iid, 23 /* CLSCTX_ALL */, IntPtr.Zero, out o);
+        if (o == null) return 0;
+
+        IAudioSessionManager2 mgr = (IAudioSessionManager2)o;
+        IAudioSessionEnumerator sessionEnumerator = null;
+        int matched = 0;
+        try
+        {
+            mgr.GetSessionEnumerator(out sessionEnumerator);
+            int count;
+            sessionEnumerator.GetCount(out count);
+
+            for (int i = 0; i < count; i++)
+            {
+                IAudioSessionControl ctl;
+                sessionEnumerator.GetSession(i, out ctl);
+                try
+                {
+                    IAudioSessionControl2 ctl2 = ctl as IAudioSessionControl2;
+                    if (ctl2 == null) continue;
+
+                    int cpid;
+                    ctl2.GetProcessId(out cpid);
+                    if (cpid != pid) continue;
+
+                    bool ok = false;
+                    if (setName)
+                    {
+                        int hr = ctl2.SetDisplayName(displayName, guid);
+                        if (hr >= 0) ok = true;
+                    }
+                    if (setIcon)
+                    {
+                        int hr = ctl2.SetIconPath(iconPath, guid);
+                        if (hr >= 0) ok = true;
+                    }
+                    if (ok) matched++;
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(ctl);
+                }
+            }
+        }
+        finally
+        {
+            if (sessionEnumerator != null) Marshal.ReleaseComObject(sessionEnumerator);
+            Marshal.ReleaseComObject(mgr);
+        }
+        return matched;
+    }
 }
 
 [ComImport]

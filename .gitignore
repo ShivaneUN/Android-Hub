@@ -6,3 +6,6 @@ releases/
 src/shared/update-feed.json
 .DS_Store
 *.log
+tools/Android Hub*
+tools/android-hub-mixer.ico
+tools/*.hub-ico

@@ -35,6 +35,9 @@ class WindowsProcessAudioVolume {
         this._queue = Promise.resolve();
         /** @type {Map<number, number>} */
         this._lastByPid = new Map();
+        /** @type {Map<number, string>} */
+        this._identityByPid = new Map();
+        this._iconPath = null;
     }
 
     _sourceCsPath() {
@@ -140,6 +143,120 @@ Write-Output $n
                 return { success: true, percent: p, matched };
             } catch (err) {
                 return { success: false, percent: p, error: err?.message || String(err) };
+            }
+        };
+
+        const next = this._queue.then(run, run);
+        this._queue = next.then(() => undefined, () => undefined);
+        return next;
+    }
+
+    formatMixerDisplayName(deviceName) {
+        const name = String(deviceName || "").trim().replace(/\.exe$/i, "") || "Device";
+        return `Android Hub - ${name}`.replace(/\.exe$/i, "");
+    }
+
+    resolveHubIconPath() {
+        if (this._iconPath && fs.existsSync(this._iconPath)) return this._iconPath;
+        try {
+            const { resolveHubIconPath } = require("./windows-exe-icon");
+            this._iconPath = resolveHubIconPath();
+        } catch (_err) {
+            this._iconPath = null;
+        }
+        return this._iconPath;
+    }
+
+    /**
+     * Nom + icône Hub dans le mixeur Windows (SetDisplayName / SetIconPath).
+     * L'icône embarquée dans l'exe ne suffit souvent pas pour le Volume Mixer.
+     */
+    setMixerIdentity(pid, opts = {}) {
+        const id = Number(pid);
+        if (!Number.isInteger(id) || id <= 0) {
+            return Promise.resolve({ success: false, error: "pid invalide" });
+        }
+        if (process.platform !== "win32") {
+            return Promise.resolve({ success: false, error: "windows uniquement" });
+        }
+
+        const displayName = String(
+            opts.displayName || this.formatMixerDisplayName(opts.deviceName) || "Android Hub"
+        ).trim().replace(/\.exe$/i, "");
+        // Icon path format Windows : "path,0" (exe brandé) ou .ico absolu.
+        // Win11 Settings préfère souvent l'icône HWND ; on pose quand même SetIconPath.
+        let iconPath = opts.iconPath || "";
+        if (!iconPath && opts.exePath && fs.existsSync(opts.exePath)) {
+            iconPath = `${opts.exePath},0`;
+        }
+        if (!iconPath) {
+            const ico = this.resolveHubIconPath() || "";
+            try {
+                const sap = global.sessionAudioProcessManager;
+                const toolsDir = sap?.scrcpyBinaryPath ? path.dirname(sap.scrcpyBinaryPath) : null;
+                if (toolsDir && ico && fs.existsSync(ico)) {
+                    const stable = path.join(toolsDir, "android-hub-mixer.ico");
+                    if (!fs.existsSync(stable) || fs.statSync(stable).mtimeMs < fs.statSync(ico).mtimeMs) {
+                        fs.copyFileSync(ico, stable);
+                    }
+                    iconPath = stable;
+                } else {
+                    iconPath = ico;
+                }
+            } catch (_err) {
+                iconPath = ico;
+            }
+        }
+
+        const cacheKey = `${displayName}|${iconPath}`;
+        if (!opts.force && this._identityByPid?.get(id) === cacheKey) {
+            return Promise.resolve({ success: true, skipped: true, displayName, iconPath });
+        }
+        if (!this._identityByPid) this._identityByPid = new Map();
+
+        const psQuote = (v) => `'${String(v ?? "").replace(/'/g, "''")}'`;
+        const run = async () => {
+            try {
+                const dll = await this._ensureDll();
+                const script = `
+Add-Type -Path ${psQuote(dll)};
+$n = [HubVolumeMixer]::SetApplicationIdentity(${id}, ${psQuote(displayName)}, ${psQuote(iconPath)});
+Write-Output $n
+`.trim();
+                let out = await execFileAsync(
+                    "powershell.exe",
+                    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                    { timeoutMs: 8000 }
+                );
+                let matched = Number.parseInt(String(out).trim(), 10);
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    await new Promise((r) => setTimeout(r, 500));
+                    out = await execFileAsync(
+                        "powershell.exe",
+                        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                        { timeoutMs: 8000 }
+                    );
+                    matched = Number.parseInt(String(out).trim(), 10);
+                }
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    return {
+                        success: false,
+                        matched: 0,
+                        displayName,
+                        iconPath,
+                        error: "session audio introuvable pour identité"
+                    };
+                }
+                this._identityByPid.set(id, cacheKey);
+                console.log(`[WindowsAudio] mixer identity pid=${id} → "${displayName}" + icon`);
+                return { success: true, matched, displayName, iconPath };
+            } catch (err) {
+                return {
+                    success: false,
+                    displayName,
+                    iconPath,
+                    error: err?.message || String(err)
+                };
             }
         };
 

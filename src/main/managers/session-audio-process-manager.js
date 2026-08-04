@@ -24,6 +24,8 @@ class SessionAudioProcessManager {
         this._knownPids = new Set();
         /** @type {Map<string, Promise<unknown>>} serialise start/stop par session */
         this._startLocks = new Map();
+        /** @type {Promise<string>|null} */
+        this._brandedPromise = null;
     }
 
     _spawnHidden(command, args) {
@@ -32,6 +34,311 @@ class SessionAudioProcessManager {
             options.creationFlags = CREATE_NO_WINDOW;
         }
         return spawn(command, args, options);
+    }
+
+    _sanitizeMixerFileName(name) {
+        return String(name || "Device")
+            .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 80) || "Device";
+    }
+
+    /** IDs techniques (serial, deviceId hex, IP:port) — jamais comme libellé mixeur. */
+    _isUglyMixerId(value, serial = null) {
+        const v = String(value || "").trim();
+        if (!v || v === "Device") return true;
+        if (serial && v === String(serial).trim()) return true;
+        if (/^[0-9A-Fa-f]{8,}$/.test(v)) return true; // deviceId / serial hex
+        if (/^\d+\.\d+\.\d+\.\d+(?::\d+)?$/.test(v)) return true;
+        if (/^emulator-\d+$/i.test(v)) return true;
+        if (/^Android Hub(\s*Audio)?$/i.test(v)) return true;
+        return false;
+    }
+
+    /**
+     * Un seul libellé friendly pour CE device (jamais la liste des devices).
+     * Ex. "Xiaomi Pad 5" → exe / FileDescription "Android Hub - Xiaomi Pad 5".
+     */
+    _resolveDeviceMixerLabel(deviceKey, serial) {
+        const isUgly = (value) => this._isUglyMixerId(value, serial);
+        const candidates = [];
+
+        const push = (value) => {
+            const v = String(value || "").trim();
+            if (v && !isUgly(v) && !candidates.includes(v)) candidates.push(v);
+        };
+
+        try {
+            const panel = global.deviceSpeakerOverlayManager?.lastPanel;
+            const keys = new Set(
+                [deviceKey, serial].map((x) => String(x || "").trim()).filter(Boolean)
+            );
+            for (const d of (panel?.devices || [])) {
+                const aliases = [d.deviceKey, d.deviceId, d.serial, d.adbSerial]
+                    .map((x) => String(x || "").trim())
+                    .filter(Boolean);
+                if (!aliases.some((a) => keys.has(a))) continue;
+                push(d.name);
+                break;
+            }
+        } catch (_err) {
+            /* ignore */
+        }
+
+        try {
+            const fromOverlay = global.deviceSpeakerOverlayManager?._resolveMixerDeviceName?.(
+                deviceKey,
+                serial
+            );
+            push(fromOverlay);
+        } catch (_err) {
+            /* ignore */
+        }
+
+        try {
+            const cnm = global.customNamesManager;
+            if (cnm?.getDeviceDisplayName) {
+                push(cnm.getDeviceDisplayName(serial, null));
+                push(cnm.getDeviceDisplayName(deviceKey, null));
+            }
+            if (cnm?.findDeviceRecord) {
+                const { record } = cnm.findDeviceRecord([deviceKey, serial], serial || deviceKey);
+                push(record?.customName);
+                push(record?.originalName);
+            }
+        } catch (_err) {
+            /* ignore */
+        }
+
+        if (candidates.length) return candidates[0];
+
+        // Dernier recours : ne jamais coller deviceKey/serial hex dans le mixeur.
+        return "Device";
+    }
+
+    /**
+     * Résolution async (registry) — un device → un nom.
+     */
+    async _resolveDeviceMixerLabelAsync(deviceKey, serial) {
+        const sync = this._resolveDeviceMixerLabel(deviceKey, serial);
+        if (sync && sync !== "Device" && !this._isUglyMixerId(sync, serial)) {
+            return sync;
+        }
+        try {
+            const unified = await global.deviceRegistry?.listUnifiedDevices?.({ forceFresh: false }) || [];
+            const keys = new Set(
+                [deviceKey, serial].map((x) => String(x || "").trim()).filter(Boolean)
+            );
+            for (const d of unified) {
+                const ids = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
+                    .map((x) => String(x || "").trim())
+                    .filter(Boolean);
+                if (!ids.some((id) => keys.has(id))) continue;
+                const name = String(d.name || d.model || "").trim();
+                if (name && !this._isUglyMixerId(name, serial)) return name;
+            }
+        } catch (_err) {
+            /* ignore */
+        }
+        try {
+            const cnm = global.customNamesManager;
+            if (cnm?.getDeviceDisplayName) {
+                for (const key of [serial, deviceKey]) {
+                    const n = String(cnm.getDeviceDisplayName(key, null) || "").trim();
+                    if (n && !this._isUglyMixerId(n, serial)) return n;
+                }
+            }
+        } catch (_err) {
+            /* ignore */
+        }
+        return sync || "Device";
+    }
+
+    /**
+     * Template : copie scrcpy.exe → "Android Hub Audio.exe" + rcedit (logo Hub).
+     * Jamais spawné tel quel — uniquement source des copies "Android Hub - {device}.exe".
+     */
+    async _ensureBrandedScrcpyTemplate() {
+        const fs = require("fs");
+        const path = require("path");
+        const { brandExeWithHubIdentity, resolveHubIconPath } = require("./windows-exe-icon");
+
+        const source = this.scrcpyBinaryPath;
+        if (!source || !fs.existsSync(source) || process.platform !== "win32") {
+            return source;
+        }
+        if (this._brandedPromise) return this._brandedPromise;
+
+        this._brandedPromise = (async () => {
+            const dir = path.dirname(source);
+            const branded = path.join(dir, "Android Hub Audio.exe");
+            const stampPath = path.join(dir, "Android Hub Audio.exe.hub-ico");
+            const iconPath = resolveHubIconPath();
+            if (!iconPath || !fs.existsSync(iconPath)) {
+                console.warn("[SessionAudio] icon.ico Hub introuvable — branding impossible");
+                return source;
+            }
+            const sourceMtime = fs.statSync(source).mtimeMs;
+            const iconMtime = fs.statSync(iconPath).mtimeMs;
+            const stampVersion = 4;
+
+            let stamp = null;
+            if (fs.existsSync(stampPath) && fs.existsSync(branded)) {
+                try {
+                    stamp = JSON.parse(fs.readFileSync(stampPath, "utf8"));
+                } catch (_err) {
+                    stamp = null;
+                }
+            }
+
+            const needRebuild = !stamp
+                || stamp.version !== stampVersion
+                || stamp.iconOk !== true
+                || stamp.sourceMtime !== sourceMtime
+                || stamp.iconMtime !== iconMtime
+                || stamp.source !== source;
+
+            if (!needRebuild) return branded;
+
+            try {
+                if (fs.existsSync(branded)) fs.unlinkSync(branded);
+            } catch (_err) {
+                /* ignore */
+            }
+
+            fs.copyFileSync(source, branded);
+            const brand = await brandExeWithHubIdentity(branded, {
+                iconPath,
+                displayName: "Android Hub"
+            });
+            if (!brand?.success) {
+                this._brandedPromise = null;
+                console.warn("[SessionAudio] brand Hub Audio.exe:", brand?.error || "echec");
+                try {
+                    if (fs.existsSync(stampPath)) fs.unlinkSync(stampPath);
+                } catch (_err) {
+                    /* ignore */
+                }
+                return source;
+            }
+
+            console.log(`[SessionAudio] Android Hub Audio.exe brandé (${path.basename(iconPath)})`);
+            fs.writeFileSync(stampPath, JSON.stringify({
+                version: stampVersion,
+                source,
+                sourceMtime,
+                iconMtime,
+                brandedAt: Date.now(),
+                iconOk: true,
+                iconPath
+            }));
+            return branded;
+        })();
+
+        try {
+            return await this._brandedPromise;
+        } catch (err) {
+            this._brandedPromise = null;
+            console.warn("[SessionAudio] branded template:", err?.message || err);
+            return this.scrcpyBinaryPath;
+        }
+    }
+
+    /**
+     * "Android Hub - {device}.exe" : 1 device = 1 exe brandé (nom de CE device uniquement).
+     * Ne spawn jamais le template "Android Hub Audio.exe".
+     * @returns {Promise<{ binaryPath: string, displayName: string, deviceLabel: string }>}
+     */
+    async _resolveLabeledScrcpyBinary(deviceKey, serial) {
+        const fs = require("fs");
+        const path = require("path");
+        const {
+            brandExeWithHubIdentity,
+            stripExeSuffix,
+            resolveHubIconPath,
+            readExeFileDescription
+        } = require("./windows-exe-icon");
+        const source = this.scrcpyBinaryPath;
+        const fallback = {
+            binaryPath: source,
+            displayName: "Android Hub",
+            deviceLabel: "Device"
+        };
+        if (!source || !fs.existsSync(source) || process.platform !== "win32") {
+            return fallback;
+        }
+
+        const branded = await this._ensureBrandedScrcpyTemplate();
+        if (!branded || !fs.existsSync(branded) || branded === source) {
+            return fallback;
+        }
+
+        const iconPath = resolveHubIconPath();
+        const deviceLabel = await this._resolveDeviceMixerLabelAsync(deviceKey, serial);
+        const uniqueKey = this._sanitizeMixerFileName(deviceKey || serial || "dev").slice(0, 16);
+        const fileLabel = (deviceLabel && deviceLabel !== "Device")
+            ? this._sanitizeMixerFileName(deviceLabel)
+            : `Device ${uniqueKey}`;
+        const displayName = stripExeSuffix(`Android Hub - ${deviceLabel}`);
+        const dir = path.dirname(source);
+        const labeledPath = path.join(dir, `Android Hub - ${fileLabel}.exe`);
+        const deviceStamp = `${labeledPath}.hub-ico`;
+        const brandedToken = String(fs.statSync(branded).mtimeMs);
+        const stampExpected = `v6|ok|${brandedToken}|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`;
+        const okResult = { binaryPath: labeledPath, displayName, deviceLabel };
+
+        if (fs.existsSync(labeledPath) && fs.existsSync(deviceStamp)) {
+            try {
+                const stampOk = fs.readFileSync(deviceStamp, "utf8").trim() === stampExpected;
+                const descOk = readExeFileDescription(labeledPath) === displayName;
+                if (stampOk && descOk) return okResult;
+            } catch (_err) {
+                /* recreate */
+            }
+        }
+
+        try {
+            if (fs.existsSync(labeledPath)) fs.unlinkSync(labeledPath);
+        } catch (_err) {
+            /* ignore */
+        }
+        try {
+            if (fs.existsSync(deviceStamp)) fs.unlinkSync(deviceStamp);
+        } catch (_err) {
+            /* ignore */
+        }
+
+        try {
+            fs.copyFileSync(branded, labeledPath);
+        } catch (copyErr) {
+            console.warn("[SessionAudio] label copy:", copyErr?.message || copyErr);
+            console.warn(
+                `[SessionAudio] spawn fallback template (pas de nom device) pour ${deviceKey || serial}`
+            );
+            return {
+                binaryPath: branded,
+                displayName: "Android Hub",
+                deviceLabel
+            };
+        }
+
+        const named = await brandExeWithHubIdentity(labeledPath, {
+            iconPath,
+            displayName
+        });
+        if (!named?.success) {
+            console.warn("[SessionAudio] label brand:", named?.error || "echec");
+            return okResult;
+        }
+
+        console.log(`[SessionAudio] spawn: ${path.basename(labeledPath)} ("${displayName}")`);
+        try {
+            fs.writeFileSync(deviceStamp, stampExpected);
+        } catch (_err) {
+            /* ignore */
+        }
+        return okResult;
     }
 
     _killPidTree(pid) {
@@ -62,16 +369,24 @@ class SessionAudioProcessManager {
         await new Promise((resolve) => {
             const script = [
                 "$killed = @()",
-                "$procs = Get-CimInstance Win32_Process -Filter \"Name = 'scrcpy.exe'\" -ErrorAction SilentlyContinue",
-                "foreach ($p in $procs) {",
-                "  if ($p.CommandLine -and (($p.CommandLine -like '*--no-video*') -or (($p.CommandLine -like '*--record=NUL*') -and ($p.CommandLine -notlike '*--no-audio*')))) {",
-                "    $killed += $p.ProcessId",
-                "    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue",
-                "    & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null",
+                "$procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |",
+                "  Where-Object {",
+                "    $_.CommandLine -and",
+                "    ($_.CommandLine -like '*--no-video*') -and",
+                "    ($_.CommandLine -like '*--no-window*' -or $_.CommandLine -like '*--record=NUL*') -and",
+                "    (",
+                "      $_.Name -eq 'scrcpy.exe' -or",
+                "      $_.Name -like 'Android Hub*.exe' -or",
+                "      $_.ExecutablePath -like '*\\Android Hub*'",
+                "    )",
                 "  }",
+                "foreach ($p in $procs) {",
+                "  $killed += $p.ProcessId",
+                "  Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue",
+                "  & taskkill.exe /PID $p.ProcessId /T /F 2>$null | Out-Null",
                 "}",
                 "if ($killed.Count -gt 0) { $killed -join ',' } else { '' }"
-            ].join("; ");
+            ].join(" ");
 
             execFile(
                 "powershell.exe",
@@ -107,6 +422,7 @@ class SessionAudioProcessManager {
 
     _buildArgs({ serial, displayId, pcPlayback }) {
         // audio-source=output (défaut) : REMOTE_SUBMIX → pas de son sur le HP device.
+        // Identité mixeur = exe brandé (Android Hub - {device}.exe + rcedit), pas de fenêtre.
         const args = [
             "--serial", serial,
             "--no-video",
@@ -387,8 +703,12 @@ class SessionAudioProcessManager {
             await new Promise((r) => setTimeout(r, 150));
         }
 
+        const labeled = await this._resolveLabeledScrcpyBinary(key, serial);
+        const binaryPath = labeled?.binaryPath || this.scrcpyBinaryPath;
+        const mixerDisplayName = labeled?.displayName || "Android Hub";
+
         try {
-            let child = this._spawnHidden(this.scrcpyBinaryPath, args);
+            let child = this._spawnHidden(binaryPath, args);
             let pid = child.pid || null;
             if (pid) this._knownPids.add(pid);
 
@@ -398,7 +718,9 @@ class SessionAudioProcessManager {
                 displayId: normalizedDisplayId,
                 pid,
                 deviceKey: key,
-                pcPlayback: wantPlayback
+                pcPlayback: wantPlayback,
+                binaryPath,
+                mixerDisplayName
             });
             this._attachLogging(sessionId, child);
 
@@ -410,7 +732,7 @@ class SessionAudioProcessManager {
                 );
                 await this.stop(sessionId);
                 await new Promise((r) => setTimeout(r, 300));
-                child = this._spawnHidden(this.scrcpyBinaryPath, args);
+                child = this._spawnHidden(binaryPath, args);
                 pid = child.pid || null;
                 if (pid) this._knownPids.add(pid);
                 this.processes.set(sessionId, {
@@ -419,19 +741,42 @@ class SessionAudioProcessManager {
                     displayId: normalizedDisplayId,
                     pid,
                     deviceKey: key,
-                    pcPlayback: wantPlayback
+                    pcPlayback: wantPlayback,
+                    binaryPath,
+                    mixerDisplayName
                 });
                 this._attachLogging(sessionId, child);
             }
 
-            if (wantPlayback && pid) {
-                void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
-                    pid,
-                    deviceKey: key,
-                    serial,
-                    sessionId,
-                    pcPlayback: true
-                });
+            if (pid) {
+                // Identité mixeur (nom device) même si volume saute (OFF / intent 0).
+                try {
+                    const hostVol = global.deviceSpeakerOverlayManager?._hostVolume;
+                    if (hostVol?.setMixerIdentity) {
+                        const applyId = () => hostVol.setMixerIdentity(pid, {
+                            displayName: mixerDisplayName,
+                            exePath: binaryPath,
+                            force: true
+                        }).catch((err) => {
+                            console.warn("[SessionAudio] mixer identity:", err?.message || err);
+                        });
+                        void applyId();
+                        setTimeout(() => { void applyId(); }, 800);
+                        setTimeout(() => { void applyId(); }, 2200);
+                    }
+                } catch (_err) {
+                    /* ignore */
+                }
+                if (wantPlayback) {
+                    void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
+                        pid,
+                        deviceKey: key,
+                        serial,
+                        sessionId,
+                        pcPlayback: true,
+                        mixerDisplayName
+                    });
+                }
             }
 
             return {
