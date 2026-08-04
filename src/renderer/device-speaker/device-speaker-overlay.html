@@ -177,7 +177,9 @@
     const globalMuteBtn = document.getElementById("global-mute");
     const timers = new Map();
     let panelState = { devices: [], globalVolume: 0, globalMax: 15, globalMuted: true };
-    let savedGlobalPercent = 50;
+    let savedGlobalPercent = 100;
+    /** % UI par device — autoritatif tant que le global ne force pas tout le monde. */
+    const deviceVolumeLocal = new Map();
     let rendering = false;
 
     function escapeHtml(value) {
@@ -186,6 +188,10 @@
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+    }
+
+    function deviceRowKey(d) {
+      return String(d?.deviceKey || d?.deviceId || d?.serial || "").trim();
     }
 
     const AUDIO_ICON_ON =
@@ -221,28 +227,47 @@
       muteBtn.setAttribute("aria-label", label);
     }
 
+    /** Global uniquement : aligne TOUS les devices sur le même %. */
     function applyDevicePercents(percent) {
       const p = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
       const wantOn = p > 0;
       if (wantOn) savedGlobalPercent = p;
       setMuteButtonState(globalMuteBtn, wantOn);
+      deviceVolumeLocal.clear();
       listEl.querySelectorAll(".row").forEach((row) => {
         const slider = row.querySelector("input[data-action='volume']");
         if (!slider) return;
+        const key = slider.getAttribute("data-key") || row.getAttribute("data-key") || "";
+        if (key) deviceVolumeLocal.set(key, p);
         slider.value = String(p);
         const valueEl = row.querySelector(".value");
         if (valueEl) valueEl.textContent = String(p);
         setMuteButtonState(row.querySelector("[data-action='mute']"), wantOn);
       });
       if (panelState?.devices) {
-        panelState.devices = panelState.devices.map((d) => ({
-          ...d,
-          percent: p,
-          audioOn: wantOn
-        }));
+        panelState.devices = panelState.devices.map((d) => {
+          const key = deviceRowKey(d);
+          if (key) deviceVolumeLocal.set(key, p);
+          return { ...d, percent: p, audioOn: wantOn };
+        });
       }
       panelState.globalVolume = p;
       panelState.globalMuted = !wantOn;
+    }
+
+    function resolveDevicePercent(d, panel) {
+      const key = deviceRowKey(d);
+      if (panel?._scope === "global") {
+        const p = Number.isInteger(d.percent) ? d.percent : 0;
+        if (key) deviceVolumeLocal.set(key, p);
+        return p;
+      }
+      if (key && deviceVolumeLocal.has(key)) {
+        return deviceVolumeLocal.get(key);
+      }
+      const p = Number.isInteger(d.percent) ? d.percent : 0;
+      if (key) deviceVolumeLocal.set(key, p);
+      return p;
     }
 
     function applyPanel(panel, { preserveDeviceFocus = false } = {}) {
@@ -254,6 +279,15 @@
       const editingGlobal = active === globalSlider;
       const keepDeviceValue = editingDevice ? active.value : null;
       const keepGlobalValue = editingGlobal ? active.value : null;
+
+      if (panel._scope === "global") {
+        deviceVolumeLocal.clear();
+      } else if (panel._scope === "device" && panel._changedKey) {
+        const changed = (panel.devices || []).find((d) => deviceRowKey(d) === panel._changedKey);
+        if (changed) {
+          deviceVolumeLocal.set(panel._changedKey, Number.isInteger(changed.percent) ? changed.percent : 0);
+        }
+      }
 
       panelState = panel;
       const gVol = Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0;
@@ -275,13 +309,13 @@
       }
 
       listEl.innerHTML = devices.map((d) => {
-        const key = escapeHtml(d.deviceKey || d.serial || "");
+        const key = escapeHtml(deviceRowKey(d));
         const name = escapeHtml(d.name || d.serial || "Device");
-        let percent = Number.isInteger(d.percent) ? d.percent : 0;
-        if (editingDevice && d.deviceKey === editingDevice && keepDeviceValue != null) {
+        let percent = resolveDevicePercent(d, panel);
+        if (editingDevice && deviceRowKey(d) === editingDevice && keepDeviceValue != null) {
           percent = Number(keepDeviceValue);
         }
-        const on = d.audioOn !== false;
+        const on = percent > 0 && d.audioOn !== false;
         return (
           `<div class="row" data-key="${key}">` +
           `<div class="name" title="${name}">${name}</div>` +
@@ -329,7 +363,8 @@
       btn.disabled = true;
       // Intention AVANT flip optimiste : OFF si bouton actuellement ON.
       const wantOff = btn.classList.contains("on");
-      const next = wantOff ? 0 : 50;
+      const next = wantOff ? 0 : 100;
+      if (deviceKey) deviceVolumeLocal.set(deviceKey, next);
       setMuteButtonState(btn, !wantOff);
       const row = btn.closest(".row");
       const slider = row?.querySelector("input[data-action='volume']");
@@ -357,7 +392,7 @@
         globalValue.textContent = "0";
         applyDevicePercents(0);
       } else {
-        const restore = savedGlobalPercent > 0 ? savedGlobalPercent : 50;
+        const restore = 100;
         globalSlider.value = String(restore);
         globalValue.textContent = String(restore);
         applyDevicePercents(restore);
@@ -383,13 +418,14 @@
       const valueEl = row?.querySelector(".value");
       if (valueEl) valueEl.textContent = String(percent);
       const wantOn = percent > 0;
+      if (deviceKey) deviceVolumeLocal.set(deviceKey, percent);
       if (panelState?.devices) {
         panelState.devices = panelState.devices.map((d) => {
-          const key = d.deviceKey || d.serial || "";
+          const key = deviceRowKey(d);
           return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
         });
       }
-      // Slider 0 → OFF, sinon ON (UI immédiate).
+      // Uniquement CE device — pas les autres lignes.
       setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
       schedule(`vol:${deviceKey}`, () => window.deviceSpeakerOverlayAPI?.setVolume?.({
         deviceKey,
@@ -409,9 +445,10 @@
       const valueEl = row?.querySelector(".value");
       if (valueEl) valueEl.textContent = String(percent);
       const wantOn = percent > 0;
+      if (deviceKey) deviceVolumeLocal.set(deviceKey, percent);
       if (panelState?.devices) {
         panelState.devices = panelState.devices.map((d) => {
-          const key = d.deviceKey || d.serial || "";
+          const key = deviceRowKey(d);
           return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
         });
       }

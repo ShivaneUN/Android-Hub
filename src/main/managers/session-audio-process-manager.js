@@ -7,9 +7,13 @@ const CREATE_NO_WINDOW = 0x08000000;
  * Args : --no-video --no-window --no-control --audio-buffer=100
  * (source = output / REMOTE_SUBMIX → HP device toujours muet tant que la capture vit).
  *
+ * scrcpy 4.0 : --no-audio-playback SANS --record désactive l'audio entièrement
+ * ("No audio playback, no recording: audio disabled" → nothing to do).
+ * OFF = --no-audio-playback --record=NUL pour garder la capture / REMOTE_SUBMIX.
+ *
  * Principe (comme screen OFF) :
- * - Lancement / OFF : pas de son PC (--no-audio-playback) + HP muet (capture)
- * - ON global / device : son PC + HP toujours muet (même capture, lecture activée)
+ * - Lancement / OFF : pas de son PC + HP muet (capture + record NUL)
+ * - ON : son PC + HP toujours muet (capture + lecture)
  */
 class SessionAudioProcessManager {
     constructor(scrcpyBinaryPath) {
@@ -18,6 +22,8 @@ class SessionAudioProcessManager {
         this.processes = new Map();
         /** @type {Set<number>} */
         this._knownPids = new Set();
+        /** @type {Map<string, Promise<unknown>>} serialise start/stop par session */
+        this._startLocks = new Map();
     }
 
     _spawnHidden(command, args) {
@@ -113,9 +119,14 @@ class SessionAudioProcessManager {
             args.push(`--display-id=${displayId}`);
         }
 
-        // OFF PC : coupe la lecture sur le PC, garde la capture (HP device silencieux).
         if (!pcPlayback) {
-            args.push("--no-audio-playback");
+            // scrcpy 4.0 : sans --record, --no-audio-playback coupe TOUT l'audio
+            // puis exit "nothing to do". record=NUL garde la capture (HP muet) sans son PC.
+            args.push(
+                "--no-audio-playback",
+                "--record=NUL",
+                "--record-format=opus"
+            );
         }
 
         return args;
@@ -258,8 +269,61 @@ class SessionAudioProcessManager {
         });
     }
 
+    /**
+     * PID du process scrcpy audio pour UNE session / device (match exact — pas de préfixe).
+     * Évite qu'un slider Pad 6 touche le PID d'un autre pad.
+     */
+    getCapturePid({ sessionId = null, serial = null, deviceKey = null } = {}) {
+        if (sessionId && this.isRunning(sessionId)) {
+            const pid = this.processes.get(sessionId)?.pid;
+            return Number.isInteger(pid) && pid > 0 ? pid : null;
+        }
+        const needle = String(serial || "").trim();
+        const key = String(deviceKey || "").trim();
+
+        // 1) Match exact deviceKey
+        if (key) {
+            for (const [id, entry] of this.processes.entries()) {
+                if (!entry || !this.isRunning(id)) continue;
+                if (entry.deviceKey === key) {
+                    return Number.isInteger(entry.pid) && entry.pid > 0 ? entry.pid : null;
+                }
+            }
+        }
+        // 2) Match exact serial
+        if (needle) {
+            for (const [id, entry] of this.processes.entries()) {
+                if (!entry || !this.isRunning(id)) continue;
+                if (entry.serial === needle) {
+                    return Number.isInteger(entry.pid) && entry.pid > 0 ? entry.pid : null;
+                }
+            }
+        }
+        return null;
+    }
+
     async start(sessionId, { serial, displayId = null, deviceKey = null, pcPlayback = null } = {}) {
         if (!sessionId || !serial) return { success: false, error: "sessionId ou serial manquant" };
+
+        const run = () => this._startUnlocked(sessionId, {
+            serial,
+            displayId,
+            deviceKey,
+            pcPlayback
+        });
+        const prev = this._startLocks.get(sessionId) || Promise.resolve();
+        const next = prev.then(run, run);
+        this._startLocks.set(sessionId, next);
+        try {
+            return await next;
+        } finally {
+            if (this._startLocks.get(sessionId) === next) {
+                this._startLocks.delete(sessionId);
+            }
+        }
+    }
+
+    async _startUnlocked(sessionId, { serial, displayId = null, deviceKey = null, pcPlayback = null } = {}) {
         if (!this.scrcpyBinaryPath) return { success: false, error: "scrcpy introuvable" };
 
         const fs = require("fs");
@@ -281,7 +345,21 @@ class SessionAudioProcessManager {
             && existing.pcPlayback === wantPlayback
             && this.isRunning(sessionId)
         ) {
-            return { success: true, reused: true, pcPlayback: wantPlayback };
+            if (wantPlayback && existing.pid) {
+                void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
+                    pid: existing.pid,
+                    deviceKey: key,
+                    serial,
+                    sessionId,
+                    pcPlayback: true
+                });
+            }
+            return {
+                success: true,
+                reused: true,
+                pcPlayback: wantPlayback,
+                pid: existing.pid || null
+            };
         }
 
         const args = this._buildArgs({
@@ -294,9 +372,8 @@ class SessionAudioProcessManager {
             + `(pcPlayback=${wantPlayback ? "on" : "off"} ; ${args.join(" ")})`
         );
 
-        // Hot-swap si seul pcPlayback change : nouveau process AVANT de tuer l'ancien
-        // pour ne pas relâcher REMOTE_SUBMIX (sinon son sur le HP device).
-        const canHotSwap = Boolean(
+        // Flip pcPlayback (OFF↔ON) : stop puis restart (pas de hot-swap — REMOTE_SUBMIX exclusif).
+        const wasPlaybackFlip = Boolean(
             existing
             && this.isRunning(sessionId)
             && existing.serial === serial
@@ -305,17 +382,14 @@ class SessionAudioProcessManager {
             && existing.pcPlayback !== wantPlayback
         );
 
-        let oldEntry = null;
-        if (canHotSwap) {
-            oldEntry = existing;
-            this.processes.delete(sessionId);
-        } else {
-            await this.stop(sessionId);
+        await this.stop(sessionId);
+        if (wasPlaybackFlip) {
+            await new Promise((r) => setTimeout(r, 150));
         }
 
         try {
-            const child = this._spawnHidden(this.scrcpyBinaryPath, args);
-            const pid = child.pid || null;
+            let child = this._spawnHidden(this.scrcpyBinaryPath, args);
+            let pid = child.pid || null;
             if (pid) this._knownPids.add(pid);
 
             this.processes.set(sessionId, {
@@ -328,28 +402,69 @@ class SessionAudioProcessManager {
             });
             this._attachLogging(sessionId, child);
 
-            if (oldEntry) {
-                setTimeout(() => {
-                    const oldPid = oldEntry.pid || oldEntry.child?.pid || null;
-                    if (oldPid) {
-                        this._killPidTree(oldPid);
-                        this._knownPids.delete(oldPid);
-                    }
-                    try {
-                        if (oldEntry.child && !oldEntry.child.killed) oldEntry.child.kill();
-                    } catch (_err) {
-                        /* ignore */
-                    }
-                }, 280);
+            const diedEarly = await this._waitEarlyExit(child, 1200);
+            if (diedEarly) {
+                console.warn(
+                    `[SessionAudio ${sessionId}] exit precoce apres start `
+                    + `(pcPlayback=${wantPlayback ? "on" : "off"}) — retry`
+                );
+                await this.stop(sessionId);
+                await new Promise((r) => setTimeout(r, 300));
+                child = this._spawnHidden(this.scrcpyBinaryPath, args);
+                pid = child.pid || null;
+                if (pid) this._knownPids.add(pid);
+                this.processes.set(sessionId, {
+                    child,
+                    serial,
+                    displayId: normalizedDisplayId,
+                    pid,
+                    deviceKey: key,
+                    pcPlayback: wantPlayback
+                });
+                this._attachLogging(sessionId, child);
             }
 
-            return { success: true, pcPlayback: wantPlayback, hotSwap: Boolean(oldEntry) };
-        } catch (err) {
-            if (oldEntry) {
-                this.processes.set(sessionId, oldEntry);
+            if (wantPlayback && pid) {
+                void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
+                    pid,
+                    deviceKey: key,
+                    serial,
+                    sessionId,
+                    pcPlayback: true
+                });
             }
+
+            return {
+                success: true,
+                pcPlayback: wantPlayback,
+                restarted: wasPlaybackFlip,
+                retried: Boolean(diedEarly),
+                pid: pid || null
+            };
+        } catch (err) {
             return { success: false, error: err.message || "echec spawn scrcpy audio" };
         }
+    }
+
+    /** true si le process quitte avant timeoutMs (échec démarrage audio typique). */
+    _waitEarlyExit(child, timeoutMs = 800) {
+        return new Promise((resolve) => {
+            if (!child || child.exitCode != null) {
+                resolve(true);
+                return;
+            }
+            let done = false;
+            const finish = (died) => {
+                if (done) return;
+                done = true;
+                child.removeListener("exit", onExit);
+                clearTimeout(timer);
+                resolve(died);
+            };
+            const onExit = () => finish(true);
+            const timer = setTimeout(() => finish(false), Math.max(100, timeoutMs));
+            child.once("exit", onExit);
+        });
     }
 
     async refreshForGlobalAudio() {
@@ -431,6 +546,160 @@ class SessionAudioProcessManager {
     }
 
     /**
+     * Garantit une capture scrcpy audio pour CE device.
+     * Résout USB/WiFi via registry pour retrouver la vraie session Hub
+     * (évite device-audio-* orphelin quand Pad 5/6 ne partagent pas le même serial).
+     */
+    async ensureCaptureForDevice({
+        deviceKey = null,
+        serial = null,
+        pcPlayback = true,
+        aliasKeys = []
+    } = {}) {
+        const needles = new Set(
+            [deviceKey, serial, ...(Array.isArray(aliasKeys) ? aliasKeys : [])]
+                .map((k) => String(k || "").trim())
+                .filter(Boolean)
+        );
+        if (!needles.size) {
+            return { success: false, error: "deviceKey/serial manquant" };
+        }
+
+        let resolvedSerial = String(serial || "").trim() || null;
+        let resolvedKey = String(deviceKey || "").trim() || resolvedSerial;
+
+        let unified = [];
+        try {
+            unified = await global.deviceRegistry?.listUnifiedDevices?.() || [];
+        } catch (_err) {
+            unified = [];
+        }
+
+        // Enrichir avec USB/WiFi du registry (Pad WiFi ≠ serial session USB, etc.).
+        for (const d of unified) {
+            const ids = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
+                .map((x) => String(x || "").trim())
+                .filter(Boolean);
+            if (!ids.some((id) => needles.has(id))) continue;
+            ids.forEach((id) => needles.add(id));
+            resolvedKey = d.deviceId || resolvedKey;
+            if (!resolvedSerial) {
+                resolvedSerial = d.wifiSerial || d.usbSerial || d.serial || null;
+            }
+            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                try {
+                    const eff = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                        deviceId: d.deviceId || null,
+                        serial: resolvedSerial
+                    });
+                    if (eff) {
+                        resolvedSerial = eff;
+                        needles.add(eff);
+                    }
+                } catch (_err) {
+                    /* ignore */
+                }
+            }
+            break;
+        }
+
+        let sessionId = null;
+        let displayId = null;
+
+        for (const target of this._listActiveSessionTargets()) {
+            const tSerial = await this._resolveSerial(target);
+            const ids = new Set([
+                target.deviceKey,
+                target.serial,
+                tSerial,
+                target.entry?.stableDeviceId,
+                target.entry?.deviceId,
+                target.niSession?.stableDeviceId,
+                target.niSession?.serial
+            ].map((x) => String(x || "").trim()).filter(Boolean));
+
+            // USB/WiFi du même pad (session USB + slider WiFi, ou l'inverse).
+            for (const d of unified) {
+                const cand = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
+                    .map((x) => String(x || "").trim())
+                    .filter(Boolean);
+                if (!cand.some((id) => ids.has(id) || needles.has(id))) continue;
+                cand.forEach((id) => ids.add(id));
+            }
+
+            const hit = [...ids].some((id) => needles.has(id))
+                || [...needles].some((n) => this._matchesDeviceKey(target, n))
+                || (tSerial && [...needles].some((n) => (
+                    n === tSerial
+                    || n.startsWith(tSerial)
+                    || tSerial.startsWith(n)
+                )));
+            if (!hit) continue;
+
+            sessionId = target.sessionId;
+            displayId = target.displayId;
+            resolvedKey = target.deviceKey || resolvedKey;
+            resolvedSerial = tSerial || resolvedSerial || target.serial;
+            break;
+        }
+
+        // Capture déjà vivante sous un autre sessionId (ex. launch-* / device-audio-*) :
+        // réutiliser plutôt que d'en créer une 2e (REMOTE_SUBMIX exclusif).
+        if (!sessionId) {
+            for (const [id, entry] of this.processes.entries()) {
+                if (!entry || !this.isRunning(id)) continue;
+                const same = (entry.serial && needles.has(String(entry.serial)))
+                    || (entry.deviceKey && needles.has(String(entry.deviceKey)))
+                    || (resolvedSerial && entry.serial && (
+                        entry.serial === resolvedSerial
+                        || resolvedSerial.startsWith(entry.serial)
+                        || entry.serial.startsWith(resolvedSerial)
+                    ));
+                if (!same) continue;
+                sessionId = id;
+                resolvedSerial = entry.serial || resolvedSerial;
+                resolvedKey = entry.deviceKey || resolvedKey;
+                displayId = Number.isInteger(entry.displayId) ? entry.displayId : displayId;
+                break;
+            }
+        }
+
+        if (!sessionId) {
+            if (!resolvedSerial) {
+                return { success: false, error: "serial introuvable" };
+            }
+            // Pas de session Hub : capture dédiée pour piloter le volume device.
+            sessionId = `device-audio-${resolvedKey || resolvedSerial}`;
+            console.log(
+                `[SessionAudio] ensureCapture: pas de session Hub pour ${resolvedKey}, `
+                + `capture dédiée ${sessionId} (${resolvedSerial})`
+            );
+        }
+
+        const result = await this.start(sessionId, {
+            serial: resolvedSerial,
+            displayId,
+            deviceKey: resolvedKey,
+            pcPlayback: Boolean(pcPlayback)
+        });
+
+        if (pcPlayback && resolvedSerial) {
+            void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.({
+                onlySerial: resolvedSerial
+            }).catch((err) => {
+                console.warn("[SessionAudio] ensureAdb after ensureCapture:", err?.message || err);
+            });
+        }
+
+        return {
+            ...result,
+            sessionId,
+            serial: resolvedSerial,
+            deviceKey: resolvedKey
+        };
+    }
+
+    /**
      * Cibles audio actives (une entrée par session), serial ADB résolu.
      */
     async getActiveAudioTargets() {
@@ -454,11 +723,13 @@ class SessionAudioProcessManager {
     async syncAllActiveSessions() {
         const targets = this._listActiveSessionTargets();
         const activeIds = new Set();
+        const activeSerials = new Set();
 
         for (const target of targets) {
             const serial = await this._resolveSerial(target);
             if (!serial) continue;
             activeIds.add(target.sessionId);
+            activeSerials.add(serial);
             await this.start(target.sessionId, {
                 serial,
                 displayId: target.displayId,
@@ -467,10 +738,23 @@ class SessionAudioProcessManager {
         }
 
         for (const sessionId of [...this.processes.keys()]) {
-            if (!activeIds.has(sessionId)) {
-                await this.stop(sessionId);
+            if (activeIds.has(sessionId)) continue;
+            // Garder les captures "device-audio-*" tant que le serial est encore une session active.
+            const entry = this.processes.get(sessionId);
+            if (
+                String(sessionId).startsWith("device-audio-")
+                && entry?.serial
+                && activeSerials.has(entry.serial)
+            ) {
+                continue;
             }
+            await this.stop(sessionId);
         }
+
+        // ADB 100 % sur toutes les captures en playback (connues ou device-audio-*).
+        void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
+            console.warn("[SessionAudio] ensureAdb after syncAll:", err?.message || err);
+        });
     }
 
     /**

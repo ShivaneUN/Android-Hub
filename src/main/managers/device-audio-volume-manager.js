@@ -153,7 +153,9 @@ class DeviceAudioVolumeManager {
         const maxMatch = block.match(/\bMax\s*:\s*(\d+)/i);
         const streamMatch = block.match(/\bstreamVolume\s*:\s*(\d+)/i);
         const speakerMatch = block.match(/\b2\s*\(speaker\)\s*:\s*(\d+)/i);
-        const remoteMatch = block.match(/\b8000\s*\(remote_submix\)\s*:\s*(\d+)/i);
+        const remoteMatch = block.match(/\b8000\s*\(remote_submix\)\s*:\s*(\d+)/i)
+            || block.match(/\(\s*remote_submix\s*\)\s*:\s*(\d+)/i)
+            || block.match(/remote_submix[^\d]*(\d+)/i);
         const mutedMatch = block.match(/\bMuted\s*:\s*(true|false)/i);
         const devicesMatch = block.match(/\bDevices\s*:\s*([^\r\n]+)/i);
         return {
@@ -384,13 +386,16 @@ class DeviceAudioVolumeManager {
         }
 
         // media_session cible le device actif (remote_submix pendant mirroring).
-        // showUi=false (lancement OFF) : pas de barre volume Android.
+        // HyperOS (Pad 6) ignore souvent --set sans --show : toujours tenter --show
+        // sauf showUi=false ET pas force (lancement OFF silencieux).
         const commands = [
             `cmd media_session volume --stream ${STREAM_MUSIC} --set ${level}`
         ];
-        if (showUi !== false) {
+        if (showUi !== false || force) {
             commands.push(
-                `cmd media_session volume --stream ${STREAM_MUSIC} --show --set ${level}`
+                `cmd media_session volume --stream ${STREAM_MUSIC} --show --set ${level}`,
+                `media volume --stream ${STREAM_MUSIC} --set ${level}`,
+                `media volume --stream ${STREAM_MUSIC} --show --set ${level}`
             );
         }
         let applied = false;
@@ -405,26 +410,108 @@ class DeviceAudioVolumeManager {
             }
         }
 
-        // Jamais de keyevents VOLUME_* ici : ça injecte des inputs fantômes dans les sessions Hub.
-        const dumpsys = await this._probeDumpsysMusic(serial);
-        const activeVol = this._activeMusicVolumeFromDumpsys(dumpsys);
+        let dumpsys = await this._probeDumpsysMusic(serial);
+        let activeVol = this._activeMusicVolumeFromDumpsys(dumpsys);
         const tol = Math.max(1, Math.round(max * 0.03));
         if (Number.isInteger(activeVol) && Math.abs(activeVol - level) <= tol) {
             applied = true;
         }
 
-        this.volumeBySerial.set(serial, level);
-        this._remember(serial, level, dumpsys.max || max);
+        // HyperOS (ex. Pad 6) : --set souvent ignoré → --adj puis keyevents stream ACTIF.
+        if (
+            (!applied || (Number.isInteger(activeVol) && Math.abs(activeVol - level) > tol))
+            && (force || await this.isRemoteAudioRouteActive(serial))
+        ) {
+            const adjVol = await this._adjustActiveStreamWithAdj(serial, level, max);
+            dumpsys = await this._probeDumpsysMusic(serial);
+            activeVol = this._activeMusicVolumeFromDumpsys(dumpsys);
+            if (Number.isInteger(activeVol) && Math.abs(activeVol - level) <= tol) {
+                applied = true;
+            } else if (Number.isInteger(adjVol) && Math.abs(adjVol - level) <= Math.max(tol, 2)) {
+                applied = true;
+                activeVol = adjVol;
+            }
+        }
+
+        // Dernier recours Pad 6 : VOLUME_UP/DOWN sur le stream actif (remote_submix).
+        if (
+            uiPercent >= UI_MAX_PERCENT
+            && force
+            && (!applied || (Number.isInteger(activeVol) && activeVol < level - tol))
+        ) {
+            const keyed = await this._adjustActiveStreamWithKeys(serial, level, max);
+            dumpsys = await this._probeDumpsysMusic(serial);
+            activeVol = this._activeMusicVolumeFromDumpsys(dumpsys);
+            if (Number.isInteger(activeVol) && Math.abs(activeVol - level) <= Math.max(tol, 2)) {
+                applied = true;
+            } else if (Number.isInteger(keyed) && keyed >= level - Math.max(tol, 2)) {
+                applied = true;
+                activeVol = keyed;
+            }
+        }
+
+        const finalVol = Number.isInteger(activeVol) ? activeVol : level;
+        this.volumeBySerial.set(serial, finalVol);
+        this._remember(serial, finalVol, dumpsys.max || max);
 
         return {
             success: applied || uiPercent === 0,
-            volume: level,
+            volume: finalVol,
             max: sanitizeMax(dumpsys.max, max),
             percent: uiPercent,
             speakerVolume: dumpsys.speakerVolume ?? 0,
             remoteVolume: dumpsys.remoteVolume ?? null,
             muted: uiPercent <= 0
         };
+    }
+
+    /**
+     * Ajuste le stream MUSIC actif via media_session --adj (raise/lower).
+     * Même effet « via le device » que le slider Pad 5, sans keyevents.
+     */
+    async _adjustActiveStreamWithAdj(serial, target, max) {
+        let dumpsys = await this._probeDumpsysMusic(serial);
+        let current = this._activeMusicVolumeFromDumpsys(dumpsys);
+        if (!Number.isInteger(current)) current = 0;
+
+        if (dumpsys.muted && target > 0 && current <= 0) {
+            try {
+                await this._runShell(
+                    serial,
+                    `cmd media_session volume --stream ${STREAM_MUSIC} --adj raise`
+                );
+            } catch (_err) {
+                /* ignore */
+            }
+            dumpsys = await this._probeDumpsysMusic(serial);
+            current = this._activeMusicVolumeFromDumpsys(dumpsys);
+            if (!Number.isInteger(current)) current = 0;
+        }
+
+        let guard = 0;
+        while (current !== target && guard < 40) {
+            guard += 1;
+            const diff = target - current;
+            if (diff === 0) break;
+            const dir = diff > 0 ? "raise" : "lower";
+            const steps = Math.min(Math.max(1, Math.ceil(Math.abs(diff) / 4)), 10);
+            try {
+                // Une shell : N adj d'affilée (plus rapide / fiable qu'ADB répétés).
+                await this._runShell(
+                    serial,
+                    `sh -c 'i=0; while [ $i -lt ${steps} ]; do `
+                    + `cmd media_session volume --stream ${STREAM_MUSIC} --adj ${dir}; `
+                    + `i=$((i+1)); done'`
+                );
+            } catch (_err) {
+                break;
+            }
+            dumpsys = await this._probeDumpsysMusic(serial);
+            const next = this._activeMusicVolumeFromDumpsys(dumpsys);
+            if (!Number.isInteger(next) || next === current) break;
+            current = Math.max(0, Math.min(max, next));
+        }
+        return current;
     }
 
     /**
@@ -721,6 +808,58 @@ class DeviceAudioVolumeManager {
             ...result,
             percent: levelToPercent(result.volume, result.max || max)
         };
+    }
+
+    /**
+     * Force STREAM_MUSIC (remote_submix pendant capture) au max device.
+     * Chemin dédié ON Hub — HyperOS Pad 6 inclus.
+     */
+    async forceStreamMusicMax(serial) {
+        if (!serial) {
+            return { success: false, error: "Serial manquant" };
+        }
+        await this.waitForRemoteAudioRoute(serial, { timeoutMs: 5500 });
+        const max = await this.ensureMax(serial);
+        let result = await this.setVolumePercentPcOnly(serial, UI_MAX_PERCENT, {
+            force: true,
+            showUi: true
+        });
+
+        let dumpsys = await this._probeDumpsysMusic(serial);
+        let active = this._activeMusicVolumeFromDumpsys(dumpsys);
+        const tol = Math.max(1, Math.round(max * 0.05));
+        const nearMax = (v) => Number.isInteger(v) && v >= max - tol;
+
+        if (!nearMax(active)) {
+            // Insister : adj + keys sur le stream ACTIF uniquement (remote_submix).
+            await this._adjustActiveStreamWithAdj(serial, max, max);
+            await this._adjustActiveStreamWithKeys(serial, max, max);
+            dumpsys = await this._probeDumpsysMusic(serial);
+            active = this._activeMusicVolumeFromDumpsys(dumpsys);
+            result = {
+                success: nearMax(active),
+                volume: active ?? max,
+                max,
+                percent: UI_MAX_PERCENT,
+                remoteVolume: dumpsys.remoteVolume ?? null
+            };
+        } else {
+            result = {
+                success: true,
+                volume: active,
+                max,
+                percent: UI_MAX_PERCENT,
+                remoteVolume: dumpsys.remoteVolume ?? null
+            };
+        }
+
+        console.log(
+            `[DeviceSpeaker] forceStreamMusicMax ${serial} → `
+            + `${result.volume}/${max}`
+            + (result.success ? "" : " (approx)")
+        );
+        this._remember(serial, result.volume, max);
+        return result;
     }
 
     async setVolumePercentMany(serials = [], percent, { shouldContinue } = {}) {

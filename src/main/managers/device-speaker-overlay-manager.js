@@ -4,6 +4,7 @@ const {
     DEFAULT_MAX_VOLUME,
     UI_MAX_PERCENT
 } = require("./device-audio-volume-manager");
+const { WindowsProcessAudioVolume } = require("./windows-process-audio-volume");
 
 const POPOVER_W = 300;
 const ROW_H = 44;
@@ -28,8 +29,8 @@ async function resolveAdbSerial({ serial = null, stableDeviceId = null } = {}) {
 
 /**
  * Popup audio multi-device au-dessus des BrowserViews.
- * - ON/OFF : mute audio PC (GlobalAudioOutputManager)
- * - Sliders : volume libre 0–100% (stream PC / capture), HP device toujours silencieux
+ * - ON/OFF : scrcpy --no-audio-playback (HP device silencieux via REMOTE_SUBMIX)
+ * - Sliders 0–100 % : volume Windows par PID scrcpy (1 device = 1 process)
  */
 class DeviceSpeakerOverlayManager {
     constructor(mainWindow) {
@@ -50,11 +51,13 @@ class DeviceSpeakerOverlayManager {
         /** Volume global mémorisé avant OFF (dock + popup). */
         this.savedGlobalPercent = null;
         /** Fallback si aucun volume mémorisé à la remise ON. */
-        this.defaultOnPercent = 50;
+        this.defaultOnPercent = 100;
         /** true pendant _toggleDeviceAudio (évite double apply volume via callback mute). */
         this._deviceToggleInFlight = false;
         /** true pendant un drag slider device (évite applyDesired qui écrase le %). */
         this._sliderInFlight = false;
+        /** Volume PC Windows par PID scrcpy (1 slider Hub = 1 process scrcpy). */
+        this._hostVolume = new WindowsProcessAudioVolume();
 
         this._onMainMove = () => this._syncBounds();
         this._onMainResize = () => this.hide();
@@ -108,6 +111,290 @@ class DeviceSpeakerOverlayManager {
 
     _audioManager() {
         return global.globalAudioOutputManager || null;
+    }
+
+    /**
+     * Clé d'intention volume : deviceId/deviceKey uniquement (pas serial/adb —
+     * évite qu'un pad écrase le % d'un autre via alias).
+     */
+    _canonicalVolumeKey(device = {}, fallback = null) {
+        return String(
+            device.deviceId
+            || device.deviceKey
+            || fallback
+            || ""
+        ).trim() || null;
+    }
+
+    /** Lit le % mémorisé pour UN device (100 par défaut si ON sans historique). */
+    _getDeviceIntentPercent(deviceKey, { serial = null, adbSerial = null } = {}) {
+        const keys = [deviceKey, serial, adbSerial]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+        for (const k of keys) {
+            if (this.intentPercentByKey.has(k)) {
+                const v = this.intentPercentByKey.get(k);
+                if (Number.isInteger(v)) return v;
+            }
+        }
+        for (const k of keys) {
+            if (this.savedPercentByKey.has(k)) {
+                const v = this.savedPercentByKey.get(k);
+                if (Number.isInteger(v) && v > 0) {
+                    if (deviceKey) this.intentPercentByKey.set(deviceKey, v);
+                    return v;
+                }
+            }
+        }
+        if (deviceKey) this.intentPercentByKey.set(deviceKey, this.defaultOnPercent);
+        return this.defaultOnPercent;
+    }
+
+    /** Écrit le % pour UN device seulement (jamais les aliases multi-device). */
+    _setDeviceIntentPercent(deviceKey, percent) {
+        const key = String(deviceKey || "").trim();
+        if (!key) return;
+        const p = Math.max(0, Math.min(UI_MAX_PERCENT, Math.round(Number(percent) || 0)));
+        this.intentPercentByKey.set(key, p);
+        if (p > 0) this.savedPercentByKey.set(key, p);
+    }
+
+    /**
+     * Slider Hub → volume Windows du process scrcpy audio de CE device (par PID).
+     * ON/OFF reste géré par --no-audio-playback ; le % progressif est le mixer Windows.
+     */
+    async applyWindowsPlaybackVolume({
+        deviceKey = null,
+        adbSerial = null,
+        sessionId = null,
+        percent = 100,
+        pid = null
+    } = {}) {
+        const sap = global.sessionAudioProcessManager;
+        const targetPid = Number.isInteger(pid) && pid > 0
+            ? pid
+            : sap?.getCapturePid?.({
+                sessionId,
+                serial: adbSerial,
+                deviceKey
+            });
+        if (!targetPid) {
+            return { success: false, error: "pid capture manquant", percent };
+        }
+        const result = await this._hostVolume.setVolumePercent(targetPid, percent);
+        if (!result?.success) {
+            console.warn(
+                `[DeviceSpeaker] windows volume pid=${targetPid} %=${percent}:`,
+                result?.error || "echec"
+            );
+        } else {
+            console.log(`[DeviceSpeaker] windows volume pid=${targetPid} → ${percent}%`);
+        }
+        return { ...result, pid: targetPid };
+    }
+
+    /** @deprecated alias → applyWindowsPlaybackVolume */
+    async applyHostPlaybackVolume(opts = {}) {
+        return this.applyWindowsPlaybackVolume(opts);
+    }
+
+    /** @deprecated ancien chemin ADB — conservé si besoin ponctuel */
+    async applyDeviceScrcpyVolume(opts = {}) {
+        const {
+            deviceKey = null,
+            adbSerial = null,
+            percent = 100,
+            waitForPcRoute = true,
+            showUi = true,
+            opId = null
+        } = opts;
+        if (!adbSerial) {
+            return { success: false, error: "serial manquant", percent };
+        }
+        return this._applyPcVolume(adbSerial, percent, {
+            opId,
+            waitForPcRoute,
+            deviceKey,
+            force: true,
+            showUi
+        });
+    }
+
+    /**
+     * Au ON : force le stream device (remote_submix / media_session) à 100 %.
+     * Les sliders Hub restent sur le volume Windows du PID scrcpy.
+     * Résout USB/WiFi (Pad 6) et insiste jusqu'au vrai max dumpsys.
+     * Fonctionne pour devices déjà connus ET captures orphelines (device-audio-*).
+     */
+    async _ensureDeviceScrcpyVolumeAt100(adbSerial, deviceKey = null) {
+        let serial = String(adbSerial || "").trim() || null;
+        if (!serial && deviceKey) {
+            serial = await this._resolveDeviceSerial({
+                deviceKey,
+                deviceId: deviceKey,
+                serial: null,
+                adbSerial: null
+            });
+        } else if (serial || deviceKey) {
+            const resolved = await resolveAdbSerial({
+                serial,
+                stableDeviceId: deviceKey
+            });
+            if (resolved) serial = resolved;
+        }
+        if (!serial) return { success: false, error: "serial manquant" };
+
+        const vm = this._volumeManager();
+        if (!vm?.forceStreamMusicMax && !vm?.setVolumePercentPcOnly) {
+            return { success: false, error: "volume manager indisponible" };
+        }
+
+        // Attendre que la capture tienne REMOTE_SUBMIX sur CE serial.
+        const sap = global.sessionAudioProcessManager;
+        for (let i = 0; i < 15; i += 1) {
+            if (sap?.hasCaptureForSerial?.(serial, deviceKey)) break;
+            await new Promise((r) => setTimeout(r, 200));
+        }
+
+        let last = { success: false };
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            if (typeof vm.forceStreamMusicMax === "function") {
+                last = await vm.forceStreamMusicMax(serial);
+            } else {
+                last = await this.applyDeviceScrcpyVolume({
+                    deviceKey,
+                    adbSerial: serial,
+                    percent: 100,
+                    waitForPcRoute: true,
+                    showUi: true
+                });
+            }
+            const vol = Number(last?.volume);
+            const max = Number(last?.max) || 0;
+            const nearMax = Number.isInteger(vol) && max > 0 && vol >= max - Math.max(1, Math.round(max * 0.05));
+            if (last?.success && (nearMax || last?.percent >= 100)) {
+                console.log(
+                    `[DeviceSpeaker] device scrcpy volume ${serial} → 100% `
+                    + `(${vol}/${max || "?"})`
+                );
+                return { ...last, success: true, adbSerial: serial };
+            }
+            console.warn(
+                `[DeviceSpeaker] ADB 100% incomplete ${serial} `
+                + `attempt=${attempt + 1} vol=${vol}/${max || "?"} — retry`
+            );
+            await new Promise((r) => setTimeout(r, 400));
+        }
+        return { ...last, adbSerial: serial };
+    }
+
+    /**
+     * ADB 100 % pour CHAQUE device en ON :
+     * - panel / registry (connus)
+     * - captures scrcpy vivantes y compris device-audio-* (pas encore connus du panel)
+     * - sessions Hub actives
+     */
+    async ensureAdbVolumeMaxForAllDevices({ onlySerial = null } = {}) {
+        const needle = String(onlySerial || "").trim() || null;
+        const seen = new Set();
+        const results = [];
+
+        const accept = (serial) => {
+            const s = String(serial || "").trim();
+            if (!s || seen.has(s)) return false;
+            if (needle && s !== needle && !s.startsWith(needle) && !needle.startsWith(s)) {
+                return false;
+            }
+            seen.add(s);
+            return true;
+        };
+
+        const run = async (serial, deviceKey) => {
+            if (!accept(serial)) return;
+            results.push(await this._ensureDeviceScrcpyVolumeAt100(serial, deviceKey));
+        };
+
+        // 1) Devices connectés connus
+        try {
+            const connected = await this._listConnectedDevices();
+            for (const entry of connected) {
+                const serial = await resolveAdbSerial({
+                    serial: entry.serial,
+                    stableDeviceId: entry.deviceId
+                });
+                const key = entry.deviceId || entry.serial || serial;
+                if (!serial) continue;
+                if (!this._isPcAudioOn(entry.deviceId, entry.serial || serial, key)) continue;
+                await run(serial, key);
+            }
+        } catch (err) {
+            console.warn("[DeviceSpeaker] ensureAdb all connected:", err?.message || err);
+        }
+
+        // 2) Captures vivantes (connues ou orphelines device-audio-*)
+        try {
+            const caps = global.sessionAudioProcessManager?.getRunningCaptures?.() || [];
+            for (const cap of caps) {
+                if (!cap?.pcPlayback || !cap.serial) continue;
+                await run(cap.serial, cap.deviceKey || cap.serial);
+            }
+        } catch (err) {
+            console.warn("[DeviceSpeaker] ensureAdb all captures:", err?.message || err);
+        }
+
+        // 3) Sessions Hub actives (au cas où pas encore dans getRunningCaptures)
+        try {
+            const targets = await global.sessionAudioProcessManager?.getActiveAudioTargets?.() || [];
+            for (const t of targets) {
+                if (!t?.serial) continue;
+                const key = t.deviceKey || t.serial;
+                if (!this._isPcAudioOn(null, t.serial, key)) continue;
+                await run(t.serial, key);
+            }
+        } catch (err) {
+            console.warn("[DeviceSpeaker] ensureAdb all sessions:", err?.message || err);
+        }
+
+        console.log(
+            `[DeviceSpeaker] ensureAdbVolumeMaxForAllDevices → ${seen.size} device(s)`
+            + (needle ? ` (filter=${needle})` : "")
+        );
+        return {
+            success: results.length === 0 || results.some((r) => r?.success),
+            count: seen.size,
+            results
+        };
+    }
+
+    /**
+     * Après start capture avec playback : réapplique le % Hub sur le PID Windows.
+     */
+    async reapplyHostVolumeForCapture({
+        pid = null,
+        deviceKey = null,
+        serial = null,
+        sessionId = null,
+        pcPlayback = true
+    } = {}) {
+        if (!pcPlayback) return { success: true, skipped: true, reason: "playback off" };
+        const intentKey = String(deviceKey || serial || "").trim();
+        let percent = intentKey
+            ? (this.intentPercentByKey.get(intentKey)
+                || this.savedPercentByKey.get(intentKey)
+                || this.defaultOnPercent)
+            : this.defaultOnPercent;
+        if (!(percent > 0)) percent = this.defaultOnPercent;
+        // Windows enregistre la session audio scrcpy un peu après le spawn.
+        await new Promise((r) => setTimeout(r, 550));
+        // Feed device toujours à 100 % ; le slider Hub règle Windows.
+        await this._ensureDeviceScrcpyVolumeAt100(serial, intentKey || deviceKey);
+        return this.applyWindowsPlaybackVolume({
+            pid,
+            deviceKey,
+            adbSerial: serial,
+            sessionId,
+            percent
+        });
     }
 
     async _listConnectedDevices() {
@@ -165,6 +452,7 @@ class DeviceSpeakerOverlayManager {
                 serial: entry.serial,
                 stableDeviceId: entry.deviceId
             });
+            // Clé canonique = deviceId stable (jamais serial seul si deviceId existe).
             const deviceKey = entry.deviceId || entry.serial || adbSerial;
             const audioOn = this._isPcAudioOn(
                 entry.deviceId,
@@ -174,15 +462,10 @@ class DeviceSpeakerOverlayManager {
 
             let percent = 0;
             if (audioOn) {
-                if (this.intentPercentByKey.has(deviceKey)) {
-                    percent = this.intentPercentByKey.get(deviceKey);
-                } else if (this.savedPercentByKey.has(deviceKey)) {
-                    percent = this.savedPercentByKey.get(deviceKey);
-                    this.intentPercentByKey.set(deviceKey, percent);
-                } else {
-                    percent = this.defaultOnPercent;
-                    this.intentPercentByKey.set(deviceKey, percent);
-                }
+                percent = this._getDeviceIntentPercent(deviceKey, {
+                    serial: entry.serial || adbSerial,
+                    adbSerial
+                });
             } else {
                 percent = 0;
             }
@@ -200,10 +483,7 @@ class DeviceSpeakerOverlayManager {
             });
         }
 
-        const percents = devices.map((d) => d.percent).filter((v) => Number.isInteger(v));
-        if (this.lastGlobalPercent === null && percents.length) {
-            this.lastGlobalPercent = percents[0];
-        }
+        // globalVolume est indépendant des % device (seul le slider global le pilote).
         const globalVolume = Number.isInteger(this.lastGlobalPercent)
             ? this.lastGlobalPercent
             : 0;
@@ -284,7 +564,8 @@ class DeviceSpeakerOverlayManager {
         opId = null,
         waitForPcRoute = false,
         deviceKey = null,
-        force = null
+        force = null,
+        showUi = true
     } = {}) {
         const volumeManager = this._volumeManager();
         if (!volumeManager || !adbSerial) {
@@ -319,20 +600,24 @@ class DeviceSpeakerOverlayManager {
 
         const result = await volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, {
             force: useForce,
-            showUi: false
+            showUi
         });
         if (result?.deferred && captureHeld) {
             return volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, {
                 force: true,
-                showUi: false
+                showUi
             });
+        }
+        if (result?.success) {
+            console.log(`[DeviceSpeaker] scrcpy/device volume ${adbSerial} → ${uiPercent}%`);
         }
         return result;
     }
 
     /**
-     * Slider libre 0–100 sur UN device (progressif).
-     * 0 → OFF (--no-audio-playback) ; >0 → ON lecture + niveau remote_submix.
+     * Slider libre 0–100 sur UN device (progressif, indépendant des autres).
+     * 0 → OFF (--no-audio-playback) ; >0 → ON lecture + volume Windows du PID scrcpy.
+     * Ne touche jamais lastGlobalPercent ni les autres devices.
      */
     async _setDeviceVolume(payload = {}) {
         const volumeManager = this._volumeManager();
@@ -340,7 +625,6 @@ class DeviceSpeakerOverlayManager {
         let adbSerial = String(payload.adbSerial || "").trim()
             || await this._resolveDeviceSerial(payload);
         if (!volumeManager || !adbSerial) {
-            // Dernier recours : panel frais
             const base = await this._buildPanel();
             const d = (base.devices || []).find((x) => this._matchDeviceKey(x, payload));
             adbSerial = d?.adbSerial || d?.serial || null;
@@ -365,109 +649,125 @@ class DeviceSpeakerOverlayManager {
             })) || { deviceKey, adbSerial, serial: adbSerial, deviceId: payload.deviceId || null };
 
             const audio = this._audioManager();
-            const key = device.deviceKey || deviceKey || adbSerial;
+            const key = this._canonicalVolumeKey(device, deviceKey || adbSerial);
             const aliases = this._deviceAliasKeys({ ...device, adbSerial });
-            const stampKeys = [...new Set([key, ...aliases].filter(Boolean))];
+            if (!key) {
+                return { success: false, error: "deviceKey manquant" };
+            }
 
             const audioOn = percent > 0;
             if (audioOn) {
-                for (const k of stampKeys) {
-                    this.savedPercentByKey.set(k, percent);
-                    this.intentPercentByKey.set(k, percent);
-                }
+                this._setDeviceIntentPercent(key, percent);
             } else {
                 const prev = Number.isInteger(device.percent) && device.percent > 0
                     ? device.percent
                     : (this.savedPercentByKey.get(key) || this.defaultOnPercent);
-                for (const k of stampKeys) {
-                    if (prev > 0) this.savedPercentByKey.set(k, prev);
-                    this.intentPercentByKey.set(k, 0);
-                }
+                if (prev > 0) this.savedPercentByKey.set(key, prev);
+                this.intentPercentByKey.set(key, 0);
             }
 
-            const patchPanel = (result = {}) => {
-                const panel = {
-                    ...base,
-                    globalMuted: Boolean(audio?.isGlobalMuted?.()),
-                    globalVolume: Number.isInteger(this.lastGlobalPercent)
-                        ? this.lastGlobalPercent
-                        : (base.globalVolume ?? 0),
-                    devices: (base.devices || []).map((d) => {
-                        const isTarget = key
-                            && (d.deviceKey === key || d.deviceId === key
-                                || d.serial === key || d.adbSerial === key
-                                || d.adbSerial === adbSerial || d.serial === adbSerial);
-                        if (!isTarget) return d;
-                        return {
-                            ...d,
-                            adbSerial: adbSerial || d.adbSerial,
-                            volume: Number.isInteger(result.volume) ? result.volume : d.volume,
-                            max: result.max || d.max,
-                            percent,
-                            audioOn
-                        };
-                    })
-                };
+            const broadcastFresh = async (extra = {}) => {
+                // Panel frais depuis intents individuels — aucun miroir.
+                const panel = await this._buildPanel();
+                panel._scope = "device";
+                panel._changedKey = key;
+                Object.assign(panel, extra);
                 this.lastPanel = panel;
                 this._broadcastPanel(panel);
                 return panel;
             };
 
             // UI immédiate (le son suit ensuite).
-            let panel = patchPanel();
+            let panel = await broadcastFresh();
+
+            const ensure = await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
+                deviceKey: key,
+                serial: adbSerial,
+                pcPlayback: audioOn,
+                aliasKeys: aliases
+            });
+            if (ensure?.serial) {
+                adbSerial = ensure.serial;
+            }
+            const ensureSessionId = ensure?.sessionId || null;
+            const ensurePid = ensure?.pid
+                || global.sessionAudioProcessManager?.getCapturePid?.({
+                    sessionId: ensureSessionId,
+                    serial: adbSerial,
+                    deviceKey: key
+                });
 
             if (!audioOn) {
-                // 0 % = OFF device (coupe lecture PC, garde capture).
                 if (audio && key) {
-                    await audio.setDeviceMuted(key, true, { aliasKeys: aliases });
-                }
-                const captureHeld = Boolean(
-                    global.sessionAudioProcessManager?.hasCaptureForSerial?.(adbSerial, key)
-                );
-                if (captureHeld) {
-                    await this._applyPcVolume(adbSerial, 0, {
-                        opId,
-                        waitForPcRoute: false,
-                        deviceKey: key,
-                        force: true
+                    await audio.setDeviceMuted(key, true, {
+                        aliasKeys: aliases,
+                        silent: true
                     });
                 }
-                panel = patchPanel();
+                // OFF = --no-audio-playback ; volume Windows 0 si session encore visible.
+                if (ensurePid) {
+                    await this.applyWindowsPlaybackVolume({
+                        pid: ensurePid,
+                        deviceKey: key,
+                        adbSerial,
+                        sessionId: ensureSessionId,
+                        percent: 0
+                    });
+                }
+                panel = await broadcastFresh();
                 return { success: true, percent, panel };
             }
 
-            // >0 = ON + niveau progressif.
-            // Uniquement (ré)activer la lecture si l'appareil était OFF — pas de resync
-            // capture à chaque cran du slider (sinon le % se fige sur 0/50).
             const wasOff = !this._isPcAudioOn(
                 device.deviceId,
                 device.serial || adbSerial,
                 key
             );
             if (audio && key && wasOff) {
-                await audio.setDeviceMuted(key, false, { aliasKeys: aliases });
+                await audio.setDeviceMuted(key, false, {
+                    aliasKeys: aliases,
+                    silent: true
+                });
             }
 
-            const captureHeld = Boolean(
-                global.sessionAudioProcessManager?.hasCaptureForSerial?.(adbSerial, key)
-            );
+            if (wasOff || ensure?.restarted || ensure?.retried) {
+                await new Promise((r) => setTimeout(r, 550));
+            }
 
-            // Attendre remote si besoin, puis poser le % exact (force si capture tenue).
-            let result = { success: false, deferred: true };
+            // ON (ou passage 0→%) : stream device scrcpy à 100 %, puis % Hub via Windows.
+            if (wasOff || ensure?.restarted || ensure?.retried) {
+                await this._ensureDeviceScrcpyVolumeAt100(adbSerial, key);
+            }
+
+            let result = { success: false };
             for (let attempt = 0; attempt < 6; attempt += 1) {
                 if (opId !== this._volumeOpId) break;
-                result = await this._applyPcVolume(adbSerial, percent, {
-                    opId,
-                    waitForPcRoute: !captureHeld && attempt === 0,
+                const pid = global.sessionAudioProcessManager?.getCapturePid?.({
+                    sessionId: ensureSessionId,
+                    serial: adbSerial,
+                    deviceKey: key
+                }) || ensurePid;
+                if (!pid && attempt === 2) {
+                    await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
+                        deviceKey: key,
+                        serial: adbSerial,
+                        pcPlayback: true,
+                        aliasKeys: aliases
+                    });
+                }
+                result = await this.applyWindowsPlaybackVolume({
+                    pid,
                     deviceKey: key,
-                    force: true
+                    adbSerial,
+                    sessionId: ensureSessionId,
+                    percent
                 });
-                if (result?.success && !result?.deferred && !result?.skipped) break;
-                await new Promise((r) => setTimeout(r, 200));
+                if (result?.success) break;
+                await new Promise((r) => setTimeout(r, 350));
             }
 
-            panel = patchPanel(result);
-            return { ...result, success: true, percent, panel };
+            panel = await broadcastFresh();
+            return { ...result, success: Boolean(result?.success), percent, panel };
         } finally {
             this._sliderInFlight = false;
         }
@@ -563,16 +863,14 @@ class DeviceSpeakerOverlayManager {
             }
         }
 
-        // 3) Volume sur CHAQUE serial (panel ∪ sessions) — aucun device oublié.
+        // 3) Volume sur CHAQUE serial (panel ∪ sessions) — même chemin que Pad 5.
         const targets = await this._collectAudioMuteTargets(devices);
         const results = [];
         for (const t of targets) {
             if (opId !== this._volumeOpId) break;
-            const key = t.deviceKey;
+            const key = this._canonicalVolumeKey({ deviceKey: t.deviceKey }, t.deviceKey || t.adbSerial);
             if (goingOn) {
-                this.intentPercentByKey.set(key, percent);
-                this.savedPercentByKey.set(key, percent);
-                // Map déjà clear : pas besoin setDeviceMuted (évite callbacks en boucle).
+                this._setDeviceIntentPercent(key, percent);
             } else {
                 const prev = this.savedPercentByKey.get(key)
                     || this.intentPercentByKey.get(key)
@@ -580,13 +878,24 @@ class DeviceSpeakerOverlayManager {
                 if (prev > 0) this.savedPercentByKey.set(key, prev);
                 this.intentPercentByKey.set(key, 0);
             }
+            const ensure = await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
+                deviceKey: key,
+                serial: t.adbSerial,
+                pcPlayback: goingOn,
+                aliasKeys: t.aliases || []
+            });
+            if (goingOn) {
+                await new Promise((r) => setTimeout(r, 500));
+                await this._ensureDeviceScrcpyVolumeAt100(t.adbSerial, key);
+            }
             results.push({
                 serial: t.adbSerial,
-                ...(await this._applyPcVolume(t.adbSerial, goingOn ? percent : 0, {
-                    opId,
-                    waitForPcRoute: true,
+                ...(await this.applyWindowsPlaybackVolume({
+                    pid: ensure?.pid || null,
                     deviceKey: key,
-                    force: true
+                    adbSerial: t.adbSerial,
+                    sessionId: ensure?.sessionId || null,
+                    percent: goingOn ? percent : 0
                 }))
             });
         }
@@ -602,6 +911,7 @@ class DeviceSpeakerOverlayManager {
             ...panelBefore,
             globalVolume: percent,
             globalMuted: Boolean(audio?.isGlobalMuted?.()),
+            _scope: "global",
             devices: devices.map((d) => {
                 const serial = d.adbSerial || d.serial;
                 const r = bySerial.get(d.adbSerial) || bySerial.get(d.serial) || bySerial.get(serial);
@@ -616,6 +926,12 @@ class DeviceSpeakerOverlayManager {
         };
         this.lastPanel = panel;
         this._broadcastPanel(panel);
+        if (goingOn) {
+            // Tous les devices ON (connus + captures) → ADB 100 %.
+            void this.ensureAdbVolumeMaxForAllDevices().catch((err) => {
+                console.warn("[DeviceSpeaker] ensureAdb after global:", err?.message || err);
+            });
+        }
         return {
             success: true,
             globalMuted: Boolean(audio?.isGlobalMuted?.()),
@@ -654,10 +970,8 @@ class DeviceSpeakerOverlayManager {
             return this._setGlobalVolume({ percent: 0 });
         }
 
-        const restore = Number.isInteger(this.savedGlobalPercent) && this.savedGlobalPercent > 0
-            ? this.savedGlobalPercent
-            : this.defaultOnPercent;
-        return this._setGlobalVolume({ percent: restore });
+        // ON global = 100 % sur tous les devices (son réel).
+        return this._setGlobalVolume({ percent: this.defaultOnPercent });
     }
 
     /**
@@ -695,7 +1009,7 @@ class DeviceSpeakerOverlayManager {
             }
 
             const deviceKeyForMute = device.deviceKey || device.deviceId || device.serial || key;
-            // Intention UI prioritaire (évite Pad bloqué à 50% si map/UI désynchro).
+            // Intention UI prioritaire (évite Pad bloqué à 100% si map/UI désynchro).
             let goingOff;
             if (typeof payload.wantOff === "boolean") {
                 goingOff = payload.wantOff;
@@ -709,7 +1023,7 @@ class DeviceSpeakerOverlayManager {
                 );
             }
             const aliases = this._deviceAliasKeys(device);
-            const intentKey = device.deviceKey || key;
+            const intentKey = this._canonicalVolumeKey(device, key);
             const muteKey = deviceKeyForMute;
             const wasGlobalMuted = Boolean(audio.isGlobalMuted?.());
 
@@ -736,11 +1050,9 @@ class DeviceSpeakerOverlayManager {
                 nextPercent = 0;
                 await audio.setDeviceMuted(muteKey, true, { aliasKeys: aliases });
             } else {
-                nextPercent = this.savedPercentByKey.has(intentKey)
-                    ? this.savedPercentByKey.get(intentKey)
-                    : this.defaultOnPercent;
-                if (!(nextPercent > 0)) nextPercent = this.defaultOnPercent;
-                this.intentPercentByKey.set(intentKey, nextPercent);
+                // ON device = toujours 100 % réel (pas seulement le slider UI).
+                nextPercent = this.defaultOnPercent;
+                this._setDeviceIntentPercent(intentKey, nextPercent);
 
                 const siblings = wasGlobalMuted
                     ? (base.devices || []).filter((d) => !isSameDevice(d))
@@ -751,7 +1063,7 @@ class DeviceSpeakerOverlayManager {
                 for (const other of siblings) {
                     const otherKey = other.deviceKey || other.deviceId || other.serial;
                     if (!otherKey) continue;
-                    const otherIntent = other.deviceKey || otherKey;
+                    const otherIntent = this._canonicalVolumeKey(other, otherKey);
                     const prev = Number.isInteger(other.percent) && other.percent > 0
                         ? other.percent
                         : (this.savedPercentByKey.get(otherIntent) || this.defaultOnPercent);
@@ -778,6 +1090,8 @@ class DeviceSpeakerOverlayManager {
                     globalVolume: Number.isInteger(this.lastGlobalPercent)
                         ? this.lastGlobalPercent
                         : (base.globalVolume ?? 0),
+                    _scope: "device",
+                    _changedKey: intentKey,
                     devices: (base.devices || []).map((d) => {
                         if (isSameDevice(d)) {
                             return { ...d, percent: nextPercent, audioOn: !goingOff };
@@ -810,23 +1124,40 @@ class DeviceSpeakerOverlayManager {
                 });
 
             if (adbSerial && !goingOff) {
-                // ON : restore % (50 par défaut) sur remote_submix seulement.
-                await this._applyPcVolume(adbSerial, nextPercent, {
-                    opId,
-                    waitForPcRoute: true,
-                    deviceKey: muteKey
+                // ON : playback scrcpy + device stream 100 % + Windows 100 %.
+                const ensure = await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
+                    deviceKey: intentKey,
+                    serial: adbSerial,
+                    pcPlayback: true,
+                    aliasKeys: aliases
                 });
-            } else if (adbSerial && goingOff) {
-                // OFF : PC déjà coupé via --no-audio-playback ; volume 0 si route OK.
-                const vm = this._volumeManager();
-                const routeOk = await vm?.isRemoteAudioRouteActive?.(adbSerial);
-                if (routeOk) {
-                    await this._applyPcVolume(adbSerial, 0, {
-                        opId,
-                        waitForPcRoute: false,
-                        deviceKey: muteKey
+                const serial = ensure?.serial || adbSerial;
+                await new Promise((r) => setTimeout(r, 550));
+                await this._ensureDeviceScrcpyVolumeAt100(serial, intentKey);
+                for (let attempt = 0; attempt < 6; attempt += 1) {
+                    if (opId !== this._volumeOpId) break;
+                    const applied = await this.applyWindowsPlaybackVolume({
+                        pid: ensure?.pid || null,
+                        deviceKey: intentKey,
+                        adbSerial: serial,
+                        sessionId: ensure?.sessionId || null,
+                        percent: this.defaultOnPercent
                     });
+                    if (applied?.success) break;
+                    await new Promise((r) => setTimeout(r, 350));
                 }
+            } else if (adbSerial && goingOff) {
+                await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
+                    deviceKey: intentKey,
+                    serial: adbSerial,
+                    pcPlayback: false,
+                    aliasKeys: aliases
+                });
+                await this.applyWindowsPlaybackVolume({
+                    deviceKey: intentKey,
+                    adbSerial,
+                    percent: 0
+                });
             }
 
             const panel = buildResultPanel();
@@ -879,7 +1210,7 @@ class DeviceSpeakerOverlayManager {
                 || this.intentPercentByKey.get(intentKey)
                 || this.defaultOnPercent;
             if (!(percent > 0)) percent = this.defaultOnPercent;
-            this.intentPercentByKey.set(intentKey, percent);
+            this._setDeviceIntentPercent(intentKey, percent);
             if (touchGlobal && (!Number.isInteger(this.lastGlobalPercent) || this.lastGlobalPercent <= 0)) {
                 this.lastGlobalPercent = percent;
             }
@@ -887,8 +1218,7 @@ class DeviceSpeakerOverlayManager {
     }
 
     /**
-     * Au lancement d'une session : OFF→0% / ON→~50% via le slider Hub + capture PC.
-     * Pas de mute device : le volume remote_submix suit uniquement le %.
+     * Au lancement d'une session : OFF→0% / ON→100% via slider Hub + volume device scrcpy (ADB).
      */
     async applyLaunchAudioForDevice({
         deviceKey = null,
@@ -909,35 +1239,32 @@ class DeviceSpeakerOverlayManager {
             ? 0
             : (this.intentPercentByKey.get(intentKey) || this.defaultOnPercent);
 
-        const volumeManager = this._volumeManager();
         const sap = global.sessionAudioProcessManager;
 
-        // Attendre que la capture Hub tienne REMOTE_SUBMIX.
         for (let i = 0; i < 20; i += 1) {
             if (sap?.hasCaptureForSerial?.(serial, intentKey)) break;
             await new Promise((r) => setTimeout(r, 200));
         }
 
-        if (volumeManager?.waitForRemoteAudioRoute) {
-            await volumeManager.waitForRemoteAudioRoute(serial, { timeoutMs: 4500 });
-        }
-
-        let result = { success: false };
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-            const captureHeld = Boolean(sap?.hasCaptureForSerial?.(serial, intentKey));
-            const routeOk = Boolean(await volumeManager?.isRemoteAudioRouteActive?.(serial));
-            if (!captureHeld && !routeOk) {
-                await new Promise((r) => setTimeout(r, 250));
-                continue;
+        let result = { success: isMuted, skipped: isMuted };
+        if (!isMuted) {
+            await new Promise((r) => setTimeout(r, 550));
+            await this._ensureDeviceScrcpyVolumeAt100(serial, intentKey);
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                result = await this.applyWindowsPlaybackVolume({
+                    deviceKey: intentKey,
+                    adbSerial: serial,
+                    percent
+                });
+                if (result?.success) break;
+                await new Promise((r) => setTimeout(r, 300));
             }
-            // Forcer le set seulement si la capture tient déjà la route (évite de taper le HP).
-            const force = Boolean(captureHeld);
-            result = await volumeManager.setVolumePercentPcOnly(serial, percent, {
-                force,
-                showUi: false
+        } else {
+            await this.applyWindowsPlaybackVolume({
+                deviceKey: intentKey,
+                adbSerial: serial,
+                percent: 0
             });
-            if (result?.success && !result?.deferred) break;
-            await new Promise((r) => setTimeout(r, 250));
         }
 
         try {
@@ -951,7 +1278,7 @@ class DeviceSpeakerOverlayManager {
 
     /**
      * Comme screenOff au lancement : applique l'intention audio PC courante
-     * (0 si muet, % sauvé / 50 sinon) une fois remote_submix prêt.
+     * (0 si muet, % sauvé / 100 sinon) une fois la capture prête.
      */
     async applyDesiredPcVolumeForDevice({
         deviceKey = null,
@@ -1019,14 +1346,16 @@ class DeviceSpeakerOverlayManager {
                 ? this.savedPercentByKey.get(intentKey)
                 : (this.intentPercentByKey.get(intentKey) || this.defaultOnPercent);
             if (!(percent > 0)) percent = this.defaultOnPercent;
-            this.intentPercentByKey.set(intentKey, percent);
+            this._setDeviceIntentPercent(intentKey, percent);
         }
 
-        const result = await this._applyPcVolume(serial, percent, {
-            opId: null,
-            waitForPcRoute: true,
+        if (!isMuted && percent > 0) {
+            await this._ensureDeviceScrcpyVolumeAt100(serial, intentKey);
+        }
+        const result = await this.applyWindowsPlaybackVolume({
             deviceKey: intentKey,
-            force: true
+            adbSerial: serial,
+            percent
         });
         return { ...result, percent, muted: isMuted, adbSerial: serial };
     }
@@ -1048,6 +1377,8 @@ class DeviceSpeakerOverlayManager {
                 muted: null
             }));
         }
+        // Couvre aussi les captures orphelines / devices pas encore dans le panel.
+        await this.ensureAdbVolumeMaxForAllDevices();
         return { success: true, results };
     }
 
@@ -1188,6 +1519,11 @@ class DeviceSpeakerOverlayManager {
         win.webContents.send("deviceSpeakerOverlay:render", {
             title: String(payload.title || "Audio"),
             panel
+        });
+
+        // À l'ouverture : ADB 100 % pour tout device ON (connu ou capture orpheline).
+        void this.ensureAdbVolumeMaxForAllDevices().catch((err) => {
+            console.warn("[DeviceSpeaker] ensureAdb on show:", err?.message || err);
         });
 
         if (!win.isVisible()) win.show();

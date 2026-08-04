@@ -1394,7 +1394,7 @@ async function startSessionAudioPlayback(sessionId, {
             } else if (global.deviceAudioVolumeManager) {
                 const percent = muted
                     ? 0
-                    : (overlay?.intentPercentByKey?.get?.(key) || overlay?.defaultOnPercent || 50);
+                    : (overlay?.intentPercentByKey?.get?.(key) || overlay?.defaultOnPercent || 100);
                 const held = global.sessionAudioProcessManager?.hasCaptureForSerial?.(
                     effectiveSerial,
                     key
@@ -1564,6 +1564,11 @@ async function applyGlobalAudioMuteSideEffects(globalMuted, options = {}) {
             await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForActiveSessions?.();
         } catch (err) {
             console.warn("[GlobalAudio] volume sessions:", err?.message || err);
+        }
+        if (!globalMuted) {
+            void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
+                console.warn("[GlobalAudio] ensureAdb all:", err?.message || err);
+            });
         }
         void global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.().catch(() => {});
     }
