@@ -150,13 +150,19 @@ class DeviceSpeakerOverlayManager {
         return this.defaultOnPercent;
     }
 
-    /** Écrit le % pour UN device seulement (jamais les aliases multi-device). */
-    _setDeviceIntentPercent(deviceKey, percent) {
-        const key = String(deviceKey || "").trim();
-        if (!key) return;
+    /**
+     * Écrit le % pour un device + aliases (USB/WiFi/deviceId) pour que
+     * reapply / global / device trouvent toujours la même intention.
+     */
+    _setDeviceIntentPercent(deviceKey, percent, aliasKeys = []) {
         const p = Math.max(0, Math.min(UI_MAX_PERCENT, Math.round(Number(percent) || 0)));
-        this.intentPercentByKey.set(key, p);
-        if (p > 0) this.savedPercentByKey.set(key, p);
+        const keys = [deviceKey, ...(Array.isArray(aliasKeys) ? aliasKeys : [])]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+        for (const key of [...new Set(keys)]) {
+            this.intentPercentByKey.set(key, p);
+            if (p > 0) this.savedPercentByKey.set(key, p);
+        }
     }
 
     /**
@@ -191,6 +197,49 @@ class DeviceSpeakerOverlayManager {
             console.log(`[DeviceSpeaker] windows volume pid=${targetPid} → ${percent}%`);
         }
         return { ...result, pid: targetPid };
+    }
+
+    /**
+     * Slider GLOBAL uniquement : volume Windows sur TOUS les PID scrcpy audio.
+     * Ne touche ni ADB ni restart capture — chemin dédié, séparé des sliders device.
+     */
+    async applyGlobalWindowsVolume(percent, { opId = null } = {}) {
+        const p = Math.max(0, Math.min(UI_MAX_PERCENT, Math.round(Number(percent) || 0)));
+        const caps = global.sessionAudioProcessManager?.getRunningCaptures?.() || [];
+        const results = [];
+        const seenPids = new Set();
+
+        for (const cap of caps) {
+            if (opId != null && opId !== this._volumeOpId) {
+                return { success: false, superseded: true, results };
+            }
+            if (!cap?.pcPlayback) continue;
+            const pid = global.sessionAudioProcessManager?.getCapturePid?.({
+                sessionId: cap.sessionId,
+                serial: cap.serial,
+                deviceKey: cap.deviceKey
+            });
+            if (!pid || seenPids.has(pid)) continue;
+            seenPids.add(pid);
+            results.push(await this.applyWindowsPlaybackVolume({
+                pid,
+                deviceKey: cap.deviceKey,
+                adbSerial: cap.serial,
+                sessionId: cap.sessionId,
+                percent: p
+            }));
+        }
+
+        console.log(
+            `[DeviceSpeaker] global Windows volume → ${p}% `
+            + `(${seenPids.size} pid(s))`
+        );
+        return {
+            success: results.length === 0 || results.some((r) => r?.success),
+            percent: p,
+            count: seenPids.size,
+            results
+        };
     }
 
     /** @deprecated alias → applyWindowsPlaybackVolume */
@@ -367,7 +416,8 @@ class DeviceSpeakerOverlayManager {
     }
 
     /**
-     * Après start capture avec playback : réapplique le % Hub sur le PID Windows.
+     * Après start/restart capture : réapplique uniquement le % Windows du PID.
+     * Pas d'ADB ici (évite de bloquer / écraser les sliders device après un global).
      */
     async reapplyHostVolumeForCapture({
         pid = null,
@@ -377,17 +427,21 @@ class DeviceSpeakerOverlayManager {
         pcPlayback = true
     } = {}) {
         if (!pcPlayback) return { success: true, skipped: true, reason: "playback off" };
-        const intentKey = String(deviceKey || serial || "").trim();
-        let percent = intentKey
-            ? (this.intentPercentByKey.get(intentKey)
-                || this.savedPercentByKey.get(intentKey)
-                || this.defaultOnPercent)
-            : this.defaultOnPercent;
-        if (!(percent > 0)) percent = this.defaultOnPercent;
+        if (this._sliderInFlight) {
+            return { success: true, skipped: true, reason: "slider in flight" };
+        }
+        const percent = this._getDeviceIntentPercent(deviceKey, {
+            serial,
+            adbSerial: serial
+        });
+        if (!(percent > 0)) {
+            return { success: true, skipped: true, reason: "intent off" };
+        }
         // Windows enregistre la session audio scrcpy un peu après le spawn.
         await new Promise((r) => setTimeout(r, 550));
-        // Feed device toujours à 100 % ; le slider Hub règle Windows.
-        await this._ensureDeviceScrcpyVolumeAt100(serial, intentKey || deviceKey);
+        if (this._sliderInFlight) {
+            return { success: true, skipped: true, reason: "slider in flight" };
+        }
         return this.applyWindowsPlaybackVolume({
             pid,
             deviceKey,
@@ -483,10 +537,24 @@ class DeviceSpeakerOverlayManager {
             });
         }
 
-        // globalVolume est indépendant des % device (seul le slider global le pilote).
-        const globalVolume = Number.isInteger(this.lastGlobalPercent)
+        // globalVolume : piloté par le slider/bouton global (indépendant des % device).
+        // Affichage : si maître ON mais lastGlobal encore à 0, montrer 100 % pour
+        // réactiver le slider sans écraser un override device tant qu'on ne retouche pas.
+        const anyOn = devices.some((d) => d.audioOn);
+        let globalVolume = Number.isInteger(this.lastGlobalPercent)
             ? this.lastGlobalPercent
             : 0;
+        if (
+            !audio?.isGlobalMuted?.()
+            && anyOn
+            && globalVolume <= 0
+            && Number.isInteger(this.savedGlobalPercent)
+            && this.savedGlobalPercent > 0
+        ) {
+            globalVolume = this.savedGlobalPercent;
+        } else if (!audio?.isGlobalMuted?.() && anyOn && globalVolume <= 0) {
+            globalVolume = this.defaultOnPercent;
+        }
 
         const panel = {
             success: true,
@@ -617,7 +685,8 @@ class DeviceSpeakerOverlayManager {
     /**
      * Slider libre 0–100 sur UN device (progressif, indépendant des autres).
      * 0 → OFF (--no-audio-playback) ; >0 → ON lecture + volume Windows du PID scrcpy.
-     * Ne touche jamais lastGlobalPercent ni les autres devices.
+     * Ne touche jamais lastGlobalPercent : le slider global reste (ex. 100 % sidebar)
+     * et reprend le dessus seulement si l'utilisateur le retouche.
      */
     async _setDeviceVolume(payload = {}) {
         const volumeManager = this._volumeManager();
@@ -657,13 +726,16 @@ class DeviceSpeakerOverlayManager {
 
             const audioOn = percent > 0;
             if (audioOn) {
-                this._setDeviceIntentPercent(key, percent);
+                this._setDeviceIntentPercent(key, percent, aliases);
             } else {
                 const prev = Number.isInteger(device.percent) && device.percent > 0
                     ? device.percent
                     : (this.savedPercentByKey.get(key) || this.defaultOnPercent);
                 if (prev > 0) this.savedPercentByKey.set(key, prev);
                 this.intentPercentByKey.set(key, 0);
+                for (const a of aliases) {
+                    if (a) this.intentPercentByKey.set(String(a), 0);
+                }
             }
 
             const broadcastFresh = async (extra = {}) => {
@@ -671,6 +743,10 @@ class DeviceSpeakerOverlayManager {
                 const panel = await this._buildPanel();
                 panel._scope = "device";
                 panel._changedKey = key;
+                // Garder le % global affiché (sidebar / dernier global) — le device ne l'efface pas.
+                if (Number.isInteger(this.lastGlobalPercent) && this.lastGlobalPercent > 0) {
+                    panel.globalVolume = this.lastGlobalPercent;
+                }
                 Object.assign(panel, extra);
                 this.lastPanel = panel;
                 this._broadcastPanel(panel);
@@ -679,6 +755,36 @@ class DeviceSpeakerOverlayManager {
 
             // UI immédiate (le son suit ensuite).
             let panel = await broadcastFresh();
+
+            // Chemin rapide : device déjà en lecture PC → uniquement volume Windows de CE PID.
+            // (évite ensureCapture/reapply/ADB qui écrasaient le slider après un global).
+            const existingPid = global.sessionAudioProcessManager?.getCapturePid?.({
+                serial: adbSerial,
+                deviceKey: key
+            });
+            const alreadyPlaying = Boolean(
+                audioOn
+                && existingPid
+                && this._isPcAudioOn(device.deviceId, device.serial || adbSerial, key)
+            );
+            if (alreadyPlaying) {
+                let result = { success: false };
+                for (let attempt = 0; attempt < 4; attempt += 1) {
+                    if (opId !== this._volumeOpId) {
+                        return { success: true, percent, panel, superseded: true };
+                    }
+                    result = await this.applyWindowsPlaybackVolume({
+                        pid: existingPid,
+                        deviceKey: key,
+                        adbSerial,
+                        percent
+                    });
+                    if (result?.success) break;
+                    await new Promise((r) => setTimeout(r, 200));
+                }
+                panel = await broadcastFresh();
+                return { ...result, success: Boolean(result?.success), percent, panel };
+            }
 
             const ensure = await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
                 deviceKey: key,
@@ -810,9 +916,10 @@ class DeviceSpeakerOverlayManager {
     }
 
     /**
-     * Maître global (comme screen OFF) :
-     * OFF → tous les devices OFF (flags reset + volume 0 sur chaque capture)
-     * ON  → tous les devices ON (flags reset + volume restore sur chaque capture)
+     * Maître global :
+     * - Slider progressif (déjà ON) → UNIQUEMENT volume Windows sur tous les PID scrcpy
+     *   (chemin dédié, n'appelle ni ADB ni restart — laisse les sliders device libres après).
+     * - OFF↔ON → capture + ADB 100 % + Windows.
      * Reprend toujours le dessus sur les overrides per-device.
      */
     async _setGlobalVolume(payload = {}) {
@@ -830,9 +937,16 @@ class DeviceSpeakerOverlayManager {
             Math.min(UI_MAX_PERCENT, Math.round(Number(payload.percent ?? payload.volume) || 0))
         );
         const goingOn = percent > 0;
+        const wasGlobalOn = Boolean(
+            audio
+            && !audio.isGlobalMuted?.()
+            && Number.isInteger(this.lastGlobalPercent)
+            && this.lastGlobalPercent > 0
+        );
 
         if (goingOn) {
             this.savedGlobalPercent = percent;
+            this.lastGlobalPercent = percent;
         } else {
             const prev = Number.isInteger(this.lastGlobalPercent) && this.lastGlobalPercent > 0
                 ? this.lastGlobalPercent
@@ -840,15 +954,51 @@ class DeviceSpeakerOverlayManager {
                     ? panelBefore.globalVolume
                     : null);
             if (prev > 0) this.savedGlobalPercent = prev;
+            this.lastGlobalPercent = 0;
         }
-        this.lastGlobalPercent = percent;
 
-        // 1) Une capture par session active (REMOTE_SUBMIX) — obligatoire avant volume.
+        const targets = await this._collectAudioMuteTargets(devices);
+
+        // --- Chemin dédié slider global : Windows only (déjà ON → ON) ---
+        if (goingOn && wasGlobalOn) {
+            for (const t of targets) {
+                if (opId !== this._volumeOpId) {
+                    return { success: true, panel: this.lastPanel || panelBefore, superseded: true };
+                }
+                const key = this._canonicalVolumeKey({ deviceKey: t.deviceKey }, t.deviceKey || t.adbSerial);
+                this._setDeviceIntentPercent(key, percent, t.aliases || []);
+            }
+            await this.applyGlobalWindowsVolume(percent, { opId });
+            if (opId !== this._volumeOpId) {
+                return { success: true, panel: this.lastPanel || panelBefore, superseded: true };
+            }
+            this._broadcastAudioState();
+            const panel = {
+                ...panelBefore,
+                globalVolume: percent,
+                globalMuted: Boolean(audio?.isGlobalMuted?.()),
+                _scope: "global",
+                devices: devices.map((d) => ({
+                    ...d,
+                    percent,
+                    audioOn: true
+                }))
+            };
+            this.lastPanel = panel;
+            this._broadcastPanel(panel);
+            return {
+                success: true,
+                globalMuted: Boolean(audio?.isGlobalMuted?.()),
+                panel,
+                windowsOnly: true
+            };
+        }
+
+        // --- OFF ou premier ON : capture + mute flags + ADB 100 % + Windows ---
         if (global.sessionAudioProcessManager?.syncAllActiveSessions) {
             await global.sessionAudioProcessManager.syncAllActiveSessions();
         }
 
-        // 2) Maître global : reset overrides, tout le monde suit.
         if (audio) {
             if (goingOn) {
                 await audio.setGlobalMuted(false, {
@@ -863,20 +1013,21 @@ class DeviceSpeakerOverlayManager {
             }
         }
 
-        // 3) Volume sur CHAQUE serial (panel ∪ sessions) — même chemin que Pad 5.
-        const targets = await this._collectAudioMuteTargets(devices);
         const results = [];
         for (const t of targets) {
             if (opId !== this._volumeOpId) break;
             const key = this._canonicalVolumeKey({ deviceKey: t.deviceKey }, t.deviceKey || t.adbSerial);
             if (goingOn) {
-                this._setDeviceIntentPercent(key, percent);
+                this._setDeviceIntentPercent(key, percent, t.aliases || []);
             } else {
                 const prev = this.savedPercentByKey.get(key)
                     || this.intentPercentByKey.get(key)
                     || this.defaultOnPercent;
                 if (prev > 0) this.savedPercentByKey.set(key, prev);
                 this.intentPercentByKey.set(key, 0);
+                for (const a of (t.aliases || [])) {
+                    if (a) this.intentPercentByKey.set(String(a), 0);
+                }
             }
             const ensure = await global.sessionAudioProcessManager?.ensureCaptureForDevice?.({
                 deviceKey: key,
@@ -885,7 +1036,7 @@ class DeviceSpeakerOverlayManager {
                 aliasKeys: t.aliases || []
             });
             if (goingOn) {
-                await new Promise((r) => setTimeout(r, 500));
+                await new Promise((r) => setTimeout(r, 400));
                 await this._ensureDeviceScrcpyVolumeAt100(t.adbSerial, key);
             }
             results.push({
@@ -927,7 +1078,6 @@ class DeviceSpeakerOverlayManager {
         this.lastPanel = panel;
         this._broadcastPanel(panel);
         if (goingOn) {
-            // Tous les devices ON (connus + captures) → ADB 100 %.
             void this.ensureAdbVolumeMaxForAllDevices().catch((err) => {
                 console.warn("[DeviceSpeaker] ensureAdb after global:", err?.message || err);
             });
@@ -940,9 +1090,9 @@ class DeviceSpeakerOverlayManager {
     }
 
     /**
-     * ON/OFF global (dock clic gauche + icône popup).
-     * OFF → TOUS les devices OFF ; ON → TOUS les devices ON.
-     * Reprend toujours le dessus (comme screen OFF).
+     * ON/OFF global (dock sidebar centrale + icône popup).
+     * ON → tous à 100 % ; OFF → tous à 0 %.
+     * Reprend toujours le dessus sur les overrides per-device.
      */
     async _toggleGlobalAudio() {
         const audio = this._audioManager();
@@ -955,22 +1105,45 @@ class DeviceSpeakerOverlayManager {
             const result = await audio.setGlobalMuted(!audio.isGlobalMuted?.(), {
                 resetDevices: true
             });
+            if (!result?.globalMuted) {
+                this.lastGlobalPercent = this.defaultOnPercent;
+                this.savedGlobalPercent = this.defaultOnPercent;
+            } else {
+                this.lastGlobalPercent = 0;
+            }
             this._broadcastAudioState();
-            return { success: true, globalMuted: Boolean(result?.globalMuted), panel };
+            return {
+                success: true,
+                globalMuted: Boolean(result?.globalMuted),
+                panel: {
+                    ...panel,
+                    globalMuted: Boolean(result?.globalMuted),
+                    globalVolume: this.lastGlobalPercent || 0
+                }
+            };
         }
 
         const gVol = Number.isInteger(this.lastGlobalPercent)
             ? this.lastGlobalPercent
             : (Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0);
         const anyDeviceOn = devices.some((d) => d.audioOn);
-        const currentlyOn = Boolean(audio && !audio.isGlobalMuted?.() && (gVol > 0 || anyDeviceOn));
+        // ON global = maître non muet ET (slider global > 0 OU tous les devices suivent encore).
+        // Un device seul ON ne compte pas comme "global ON" si le slider global est à 0
+        // → recliquer la sidebar centrale allume bien tout à 100 %.
+        const currentlyOn = Boolean(
+            audio
+            && !audio.isGlobalMuted?.()
+            && gVol > 0
+            && anyDeviceOn
+        );
 
         if (currentlyOn) {
             if (gVol > 0) this.savedGlobalPercent = gVol;
             return this._setGlobalVolume({ percent: 0 });
         }
 
-        // ON global = 100 % sur tous les devices (son réel).
+        // ON sidebar centrale = toujours 100 % + reprend le dessus partout.
+        this.savedGlobalPercent = this.defaultOnPercent;
         return this._setGlobalVolume({ percent: this.defaultOnPercent });
     }
 
@@ -1036,8 +1209,8 @@ class DeviceSpeakerOverlayManager {
                 return false;
             };
 
-            // Appliquer le mute flag + sync AVANT tout return superseded,
-            // puis toujours renvoyer un panel cohérent pour CE device.
+            // Intention device seule — ne pas toucher lastGlobalPercent (global reste à 100 %
+            // après sidebar centrale ; un retouch global reprendra le dessus).
             let nextPercent = 0;
             if (goingOff) {
                 const current = Number.isInteger(device.percent) && device.percent > 0
@@ -1172,13 +1345,15 @@ class DeviceSpeakerOverlayManager {
         // UI only — jamais de force volume ADB à 0 ici.
         const panel = await this._buildPanel();
         const anyOn = (panel.devices || []).some((d) => d.audioOn);
-        if (!anyOn) this.lastGlobalPercent = 0;
-        else if (!Number.isInteger(this.lastGlobalPercent)) {
-            this.lastGlobalPercent = this.defaultOnPercent;
+        const audio = this._audioManager();
+        if (!anyOn && Boolean(audio?.isGlobalMuted?.())) {
+            this.lastGlobalPercent = 0;
         }
-        panel.globalVolume = Number.isInteger(this.lastGlobalPercent)
+        // Ne pas forcer lastGlobalPercent ici : seul le bouton/slider global l'écrit
+        // (sinon un device ON écraserait l'indépendance). L'UI lit panel.globalVolume.
+        panel.globalVolume = Number.isInteger(this.lastGlobalPercent) && this.lastGlobalPercent > 0
             ? this.lastGlobalPercent
-            : 0;
+            : panel.globalVolume;
         this._broadcastPanel(panel);
         return panel;
     }
@@ -1505,8 +1680,7 @@ class DeviceSpeakerOverlayManager {
     async show(payload = {}) {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return false;
 
-        // Nouvelle ouverture : ré-estimer le global depuis l'état devices (tous égaux ou 1er).
-        this.lastGlobalPercent = null;
+        // Ne pas reset le % global (sidebar centrale ON à 100 % doit rester visible).
         const panel = await this._buildPanel();
         this._sizeForDeviceCount(panel.devices.length || 1);
         this._placeAboveAnchor(payload.anchor || {});

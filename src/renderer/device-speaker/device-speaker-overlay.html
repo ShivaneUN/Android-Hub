@@ -290,13 +290,27 @@
       }
 
       panelState = panel;
-      const gVol = Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0;
-      const globalOn = !panel.globalMuted && gVol > 0;
+      const gVolRaw = Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0;
+      // Slider device : ne pas écraser le global affiché (reste à 100 % après sidebar).
+      // Slider global : suit le panel (reprend le dessus).
+      let gVol = gVolRaw;
+      if (panel._scope === "device") {
+        const currentUi = Number(globalSlider.value);
+        if (gVolRaw <= 0 && currentUi > 0) {
+          gVol = currentUi;
+        } else if (gVolRaw <= 0 && savedGlobalPercent > 0 && !panel.globalMuted) {
+          gVol = savedGlobalPercent;
+        }
+      }
+      const globalOn = !panel.globalMuted && (gVol > 0 || (panel.devices || []).some((d) => d.audioOn));
       if (gVol > 0) savedGlobalPercent = gVol;
       globalSlider.max = "100";
       if (!editingGlobal) {
-        globalSlider.value = String(gVol);
-        globalValue.textContent = String(gVol);
+        // Device scope : garder le % global UI ; global scope : appliquer panel.
+        if (panel._scope !== "device" || gVolRaw > 0) {
+          globalSlider.value = String(gVol);
+          globalValue.textContent = String(gVol);
+        }
       }
       setMuteButtonState(globalMuteBtn, globalOn);
       globalMuteBtn.disabled = !(panel.devices || []).length;

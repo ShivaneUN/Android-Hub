@@ -683,7 +683,8 @@ class SessionAudioProcessManager {
             pcPlayback: Boolean(pcPlayback)
         });
 
-        if (pcPlayback && resolvedSerial) {
+        // ADB 100 % seulement au vrai start/restart — pas à chaque reuse (slider device).
+        if (pcPlayback && resolvedSerial && !result?.reused) {
             void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.({
                 onlySerial: resolvedSerial
             }).catch((err) => {
