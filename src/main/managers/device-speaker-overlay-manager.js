@@ -283,7 +283,8 @@ class DeviceSpeakerOverlayManager {
     async _applyPcVolume(adbSerial, percent, {
         opId = null,
         waitForPcRoute = false,
-        deviceKey = null
+        deviceKey = null,
+        force = null
     } = {}) {
         const volumeManager = this._volumeManager();
         if (!volumeManager || !adbSerial) {
@@ -311,18 +312,26 @@ class DeviceSpeakerOverlayManager {
             return { success: true, skipped: true, percent: uiPercent, deferred: true };
         }
 
-        // Notre capture tient la route : dumpsys rate parfois → forcer le set PC.
-        const force = Boolean(captureHeld && !routeReady);
+        // force explicite (slider) ou capture tenue alors que dumpsys ne voit pas encore remote.
+        const useForce = typeof force === "boolean"
+            ? force
+            : Boolean(captureHeld && !routeReady);
 
-        const result = await volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, { force });
+        const result = await volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, {
+            force: useForce,
+            showUi: false
+        });
         if (result?.deferred && captureHeld) {
-            return volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, { force: true });
+            return volumeManager.setVolumePercentPcOnly(adbSerial, uiPercent, {
+                force: true,
+                showUi: false
+            });
         }
         return result;
     }
 
     /**
-     * Slider libre 0–100 sur UN device.
+     * Slider libre 0–100 sur UN device (progressif).
      * 0 → OFF (--no-audio-playback) ; >0 → ON lecture + niveau remote_submix.
      */
     async _setDeviceVolume(payload = {}) {
@@ -358,17 +367,22 @@ class DeviceSpeakerOverlayManager {
             const audio = this._audioManager();
             const key = device.deviceKey || deviceKey || adbSerial;
             const aliases = this._deviceAliasKeys({ ...device, adbSerial });
+            const stampKeys = [...new Set([key, ...aliases].filter(Boolean))];
 
             const audioOn = percent > 0;
             if (audioOn) {
-                this.savedPercentByKey.set(key, percent);
-                this.intentPercentByKey.set(key, percent);
+                for (const k of stampKeys) {
+                    this.savedPercentByKey.set(k, percent);
+                    this.intentPercentByKey.set(k, percent);
+                }
             } else {
                 const prev = Number.isInteger(device.percent) && device.percent > 0
                     ? device.percent
                     : (this.savedPercentByKey.get(key) || this.defaultOnPercent);
-                if (prev > 0) this.savedPercentByKey.set(key, prev);
-                this.intentPercentByKey.set(key, 0);
+                for (const k of stampKeys) {
+                    if (prev > 0) this.savedPercentByKey.set(k, prev);
+                    this.intentPercentByKey.set(k, 0);
+                }
             }
 
             const patchPanel = (result = {}) => {
@@ -407,41 +421,49 @@ class DeviceSpeakerOverlayManager {
                 if (audio && key) {
                     await audio.setDeviceMuted(key, true, { aliasKeys: aliases });
                 }
-                const routeOk = await volumeManager.isRemoteAudioRouteActive?.(adbSerial);
-                if (routeOk) {
+                const captureHeld = Boolean(
+                    global.sessionAudioProcessManager?.hasCaptureForSerial?.(adbSerial, key)
+                );
+                if (captureHeld) {
                     await this._applyPcVolume(adbSerial, 0, {
                         opId,
                         waitForPcRoute: false,
-                        deviceKey: key
+                        deviceKey: key,
+                        force: true
                     });
                 }
                 panel = patchPanel();
                 return { success: true, percent, panel };
             }
 
-            // >0 = ON + niveau. Réactive la lecture scrcpy si elle était en --no-audio-playback.
-            if (audio && key && !this._isPcAudioOn(device.deviceId, device.serial || adbSerial, key)) {
+            // >0 = ON + niveau progressif.
+            // Uniquement (ré)activer la lecture si l'appareil était OFF — pas de resync
+            // capture à chaque cran du slider (sinon le % se fige sur 0/50).
+            const wasOff = !this._isPcAudioOn(
+                device.deviceId,
+                device.serial || adbSerial,
+                key
+            );
+            if (audio && key && wasOff) {
                 await audio.setDeviceMuted(key, false, { aliasKeys: aliases });
-            } else if (global.sessionAudioProcessManager?.syncDeviceSessionsWithAliases) {
-                // Déjà "ON" en flag mais process peut encore être sans playback.
-                await global.sessionAudioProcessManager.syncDeviceSessionsWithAliases(
-                    key,
-                    aliases,
-                    false
-                );
             }
 
-            // Attendre remote puis poser le % (retries : dumpsys flaky sur multi-device).
+            const captureHeld = Boolean(
+                global.sessionAudioProcessManager?.hasCaptureForSerial?.(adbSerial, key)
+            );
+
+            // Attendre remote si besoin, puis poser le % exact (force si capture tenue).
             let result = { success: false, deferred: true };
             for (let attempt = 0; attempt < 6; attempt += 1) {
                 if (opId !== this._volumeOpId) break;
                 result = await this._applyPcVolume(adbSerial, percent, {
                     opId,
-                    waitForPcRoute: true,
-                    deviceKey: key
+                    waitForPcRoute: !captureHeld && attempt === 0,
+                    deviceKey: key,
+                    force: true
                 });
                 if (result?.success && !result?.deferred && !result?.skipped) break;
-                await new Promise((r) => setTimeout(r, 250));
+                await new Promise((r) => setTimeout(r, 200));
             }
 
             panel = patchPanel(result);
@@ -563,7 +585,8 @@ class DeviceSpeakerOverlayManager {
                 ...(await this._applyPcVolume(t.adbSerial, goingOn ? percent : 0, {
                     opId,
                     waitForPcRoute: true,
-                    deviceKey: key
+                    deviceKey: key,
+                    force: true
                 }))
             });
         }
@@ -1002,7 +1025,8 @@ class DeviceSpeakerOverlayManager {
         const result = await this._applyPcVolume(serial, percent, {
             opId: null,
             waitForPcRoute: true,
-            deviceKey: intentKey
+            deviceKey: intentKey,
+            force: true
         });
         return { ...result, percent, muted: isMuted, adbSerial: serial };
     }
