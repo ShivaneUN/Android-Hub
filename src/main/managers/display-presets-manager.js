@@ -11,6 +11,8 @@ const {
 
 const TRANSPORT_USB = "usb";
 const TRANSPORT_WIFI = "wifi";
+const PERFORMANCE_PRESET_ID = "performance-qhd";
+const PERFORMANCE_PRESET_NAME = "Performance qHD";
 
 const SEED_PRESETS = Object.freeze([
     {
@@ -235,7 +237,6 @@ class DisplayPresetsManager {
 
     _clearPerformanceOverride() {
         this.data.performanceResolutionActive = false;
-        this.data.prePerformanceDefaults = null;
     }
 
     getDefault(transport = TRANSPORT_USB) {
@@ -361,39 +362,63 @@ class DisplayPresetsManager {
     }
 
     /**
-     * Mode performance : overlay qHD au lancement sans écraser les presets sauvegardés.
-     * Soigne aussi les seeds déjà corrompus en qHD.
+     * Mode performance : crée/réutilise le preset « Performance qHD »
+     * et le met par défaut USB + Wi‑Fi (sans écraser les autres presets).
      */
     applyPerformanceResolution() {
         this._ensureDefaultPreset();
         this._healSeedPresetsFromPerformance();
-        // Annuler d'anciennes mutations directes via snapshot si présent.
-        if (this.data.prePerformanceDefaults) {
-            const snapshot = this.data.prePerformanceDefaults;
-            const usbPreset = this._findPreset(snapshot.usbPresetId || this.data.defaultPresetUsb);
-            const wifiPreset = this._findPreset(snapshot.wifiPresetId || this.data.defaultPresetWifi);
-            if (usbPreset && snapshot.usb) Object.assign(usbPreset, sanitizePresetInput(snapshot.usb));
-            if (wifiPreset && snapshot.wifi) Object.assign(wifiPreset, sanitizePresetInput(snapshot.wifi));
-            this.data.prePerformanceDefaults = null;
+
+        if (!this.data.prePerformanceDefaults) {
+            this.data.prePerformanceDefaults = {
+                usbPresetId: this.data.defaultPresetUsb,
+                wifiPresetId: this.data.defaultPresetWifi
+            };
         }
-        this.data.performanceResolutionActive = true;
+
+        const usbCurrent = this.resolveParams(this.data.defaultPresetUsb);
+        const perfParams = sanitizePresetInput({
+            ...usbCurrent,
+            width: PERFORMANCE_STREAM_RESOLUTION.width,
+            height: PERFORMANCE_STREAM_RESOLUTION.height
+        });
+
+        let preset = this._findPreset(PERFORMANCE_PRESET_ID);
+        if (!preset) {
+            preset = {
+                id: PERFORMANCE_PRESET_ID,
+                name: PERFORMANCE_PRESET_NAME,
+                ...perfParams
+            };
+            this.data.presets.push(preset);
+        } else {
+            Object.assign(preset, {
+                name: PERFORMANCE_PRESET_NAME,
+                ...perfParams
+            });
+        }
+
+        this.data.defaultPresetUsb = PERFORMANCE_PRESET_ID;
+        this.data.defaultPresetWifi = PERFORMANCE_PRESET_ID;
+        // Preset réel : plus besoin d'overlay au lancement.
+        this.data.performanceResolutionActive = false;
         this.save();
 
-        const defaultPreset = this._findPreset(this.data.defaultPresetUsb);
         return {
             success: true,
-            defaultPreset: this.data.defaultPresetUsb,
+            defaultPreset: PERFORMANCE_PRESET_ID,
             defaultPresetUsb: this.data.defaultPresetUsb,
             defaultPresetWifi: this.data.defaultPresetWifi,
-            performanceResolutionActive: true,
-            preset: defaultPreset ? { ...defaultPreset } : null,
-            params: this.getDefault(TRANSPORT_USB).params,
-            message: "Mode performance : qHD au lancement (presets inchangés)."
+            performanceResolutionActive: false,
+            performancePresetId: PERFORMANCE_PRESET_ID,
+            preset: { ...preset },
+            params: this.resolveParams(PERFORMANCE_PRESET_ID),
+            message: "Preset Performance qHD créé et défini par défaut."
         };
     }
 
     /**
-     * Restaure après sortie du mode performance.
+     * Restaure les défauts USB/Wi‑Fi d'avant le mode performance.
      * @param {{ healSeeds?: boolean }} [opts]
      */
     restorePerformanceResolution(opts = {}) {
@@ -402,14 +427,12 @@ class DisplayPresetsManager {
         const snapshot = this.data.prePerformanceDefaults;
 
         if (snapshot && typeof snapshot === "object") {
-            const usbPreset = this._findPreset(snapshot.usbPresetId || this.data.defaultPresetUsb);
-            const wifiPreset = this._findPreset(snapshot.wifiPresetId || this.data.defaultPresetWifi);
-            if (usbPreset && snapshot.usb) {
-                Object.assign(usbPreset, sanitizePresetInput(snapshot.usb));
+            if (snapshot.usbPresetId && this._findPreset(snapshot.usbPresetId)) {
+                this.data.defaultPresetUsb = snapshot.usbPresetId;
                 restored = true;
             }
-            if (wifiPreset && snapshot.wifi) {
-                Object.assign(wifiPreset, sanitizePresetInput(snapshot.wifi));
+            if (snapshot.wifiPresetId && this._findPreset(snapshot.wifiPresetId)) {
+                this.data.defaultPresetWifi = snapshot.wifiPresetId;
                 restored = true;
             }
         }
@@ -424,21 +447,20 @@ class DisplayPresetsManager {
             restored = this._healSeedPresetsFromPerformance() || restored;
         }
 
-        if (restored) this.save();
+        this._ensureDefaultPresets();
+        this.save();
 
         const defaultPreset = this._findPreset(this.data.defaultPresetUsb);
         return {
             success: true,
-            restored,
+            restored: true,
             defaultPreset: this.data.defaultPresetUsb,
             defaultPresetUsb: this.data.defaultPresetUsb,
             defaultPresetWifi: this.data.defaultPresetWifi,
             performanceResolutionActive: false,
             preset: defaultPreset ? { ...defaultPreset } : null,
             params: this.resolveParams(),
-            message: restored
-                ? "Presets USB / Wi‑Fi restaurés hors mode performance."
-                : "Aucun preset performance à restaurer."
+            message: "Défauts USB / Wi‑Fi restaurés hors mode performance."
         };
     }
 

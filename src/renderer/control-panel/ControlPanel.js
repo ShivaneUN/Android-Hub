@@ -364,12 +364,23 @@
         }
 
         await loadPresets();
-        applyPerformanceResolutionToDraft({ markApplied: !state.selectedSessionId });
+        const perfPreset = state.presets.find((preset) => preset.id === "performance-qhd")
+            || state.presets.find((preset) => (
+                preset.width === 960 && preset.height === 540
+            ));
+        if (perfPreset) {
+            state.selectedPresetId = perfPreset.id;
+            if (els.presetSelect) els.presetSelect.value = perfPreset.id;
+            await applyPresetToDraft(perfPreset.id);
+        } else {
+            applyPerformanceResolutionToDraft({ markApplied: !state.selectedSessionId });
+        }
+        syncPresetControls();
         updateCurrentPresetLabel(prefs);
-        const res = getPerformanceResolution();
+        const draft = readDraftParams();
         setStatus(
             t("controlPanel.presets.performanceActive", {
-                resolution: `${res.width}×${res.height}`
+                resolution: `${draft.width}×${draft.height}`
             }),
             "success"
         );

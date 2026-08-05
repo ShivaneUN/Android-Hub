@@ -125,7 +125,7 @@ function registerUiPreferencesHandlers(deps) {
                 }
             } else if (turnedOff) {
                 const presetResult = presets?.restorePerformanceResolution?.({ healSeeds: true });
-                if (presetResult?.success && presetResult.restored) {
+                if (presetResult?.success) {
                     broadcastDisplayPresetsUpdated(getWindows);
                 }
             }
