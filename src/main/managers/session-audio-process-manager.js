@@ -532,11 +532,7 @@ class SessionAudioProcessManager {
         for (const [sessionId, entry] of this.processes.entries()) {
             if (exceptSessionId && sessionId === exceptSessionId) continue;
             if (!entry) continue;
-            const sameSerial = needle && entry.serial && (
-                entry.serial === needle
-                || needle.startsWith(entry.serial)
-                || entry.serial.startsWith(needle)
-            );
+            const sameSerial = needle && entry.serial && entry.serial === needle;
             const sameKey = key && entry.deviceKey && entry.deviceKey === key;
             if (sameSerial || sameKey) toStop.push(sessionId);
         }
@@ -963,22 +959,18 @@ class SessionAudioProcessManager {
                 target.niSession?.serial
             ].map((x) => String(x || "").trim()).filter(Boolean));
 
-            // USB/WiFi du même pad (session USB + slider WiFi, ou l'inverse).
+            // Enrichir UNIQUEMENT avec le même appareil physique (USB/WiFi).
+            // Ne jamais utiliser needles ici : sinon OFF device A matche aussi device B.
             for (const d of unified) {
                 const cand = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
                     .map((x) => String(x || "").trim())
                     .filter(Boolean);
-                if (!cand.some((id) => ids.has(id) || needles.has(id))) continue;
+                if (!cand.some((id) => ids.has(id))) continue;
                 cand.forEach((id) => ids.add(id));
             }
 
             const hit = [...ids].some((id) => needles.has(id))
-                || [...needles].some((n) => this._matchesDeviceKey(target, n))
-                || (tSerial && [...needles].some((n) => (
-                    n === tSerial
-                    || n.startsWith(tSerial)
-                    || tSerial.startsWith(n)
-                )));
+                || [...needles].some((n) => this._matchesDeviceKey(target, n));
             if (!hit) continue;
 
             sessionId = target.sessionId;
@@ -995,11 +987,7 @@ class SessionAudioProcessManager {
                 if (!entry || !this.isRunning(id)) continue;
                 const same = (entry.serial && needles.has(String(entry.serial)))
                     || (entry.deviceKey && needles.has(String(entry.deviceKey)))
-                    || (resolvedSerial && entry.serial && (
-                        entry.serial === resolvedSerial
-                        || resolvedSerial.startsWith(entry.serial)
-                        || entry.serial.startsWith(resolvedSerial)
-                    ));
+                    || (resolvedSerial && entry.serial === resolvedSerial);
                 if (!same) continue;
                 sessionId = id;
                 resolvedSerial = entry.serial || resolvedSerial;
@@ -1104,9 +1092,10 @@ class SessionAudioProcessManager {
     }
 
     /**
-     * Resync capture(s) d'un device — redémarre si ON/OFF (pcPlayback) a changé.
+     * Resync capture(s) d'UN device — redémarre si ON/OFF (pcPlayback) a changé.
+     * Ne touche jamais les autres devices.
      */
-    async syncDeviceSessions(deviceKey, _muted) {
+    async syncDeviceSessions(deviceKey, muted) {
         const key = typeof deviceKey === "string" ? deviceKey.trim() : "";
         if (!key) return;
 
@@ -1114,11 +1103,16 @@ class SessionAudioProcessManager {
             if (!this._matchesDeviceKey(target, key)) continue;
             const serial = await this._resolveSerial(target);
             if (!serial) continue;
-            await this.start(target.sessionId, {
+            const opts = {
                 serial,
                 displayId: target.displayId,
                 deviceKey: target.deviceKey || key
-            });
+            };
+            // muted explicite (callback device) → ne pas ré-inférer via d'autres overrides.
+            if (typeof muted === "boolean") {
+                opts.pcPlayback = !muted;
+            }
+            await this.start(target.sessionId, opts);
         }
     }
 
@@ -1128,8 +1122,24 @@ class SessionAudioProcessManager {
             .filter(Boolean);
         const unique = [...new Set(keys)];
         if (!unique.length) return;
-        for (const key of unique) {
-            await this.syncDeviceSessions(key, muted);
+
+        // Une seule passe : matcher chaque session au plus une fois (évite multi-restart).
+        const seen = new Set();
+        for (const target of this._listActiveSessionTargets()) {
+            const hit = unique.some((k) => this._matchesDeviceKey(target, k));
+            if (!hit || seen.has(target.sessionId)) continue;
+            seen.add(target.sessionId);
+            const serial = await this._resolveSerial(target);
+            if (!serial) continue;
+            const opts = {
+                serial,
+                displayId: target.displayId,
+                deviceKey: target.deviceKey || deviceKey || serial
+            };
+            if (typeof muted === "boolean") {
+                opts.pcPlayback = !muted;
+            }
+            await this.start(target.sessionId, opts);
         }
     }
 
