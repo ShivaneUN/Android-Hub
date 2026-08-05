@@ -188,10 +188,12 @@
           <span class="devices-discover-status" id="devices-discover-status" aria-live="polite"></span>
         </div>
         <div class="settings-section-label" data-i18n="devicesPanel.usb">USB</div>
+        <p class="devices-panel-default-hint" data-i18n="devicesPanel.usbDefaultHint">Par défaut : FULL HD 1920×1080 · 60 fps · 8 Mbps</p>
         <div class="devices-panel-list" id="devices-panel-usb-list">
           <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
         </div>
         <div class="settings-section-label" data-i18n="devicesPanel.wifi">WiFi</div>
+        <p class="devices-panel-default-hint" data-i18n="devicesPanel.wifiDefaultHint">Par défaut : HD 720p · 30 fps · 8 Mbps</p>
         <div class="devices-panel-list" id="devices-panel-wifi-list">
           <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
         </div>
@@ -247,21 +249,28 @@
             <div class="control-session-list" id="control-session-list"></div>
             <div id="control-presets-section" class="control-presets-compact">
               <div class="control-section-label" data-i18n="controlPanel.presets.label">Presets d'affichage</div>
-              <div class="control-preset-row">
+              <div class="control-preset-transport" id="control-preset-transport" role="group" aria-label="Transport">
+                <button type="button" class="control-preset-transport-btn is-active" data-preset-transport="usb" aria-pressed="true" data-i18n="controlPanel.presets.transportUsb">USB</button>
+                <button type="button" class="control-preset-transport-btn" data-preset-transport="wifi" aria-pressed="false" data-i18n="controlPanel.presets.transportWifi">Wi‑Fi</button>
+              </div>
+              <div class="control-preset-row control-preset-row--with-action">
                 <select class="control-preset-select" id="control-preset-select" aria-label="Preset">
                   <option value="" data-i18n="controlPanel.presets.none">— Aucun preset —</option>
                 </select>
+                <button type="button" class="control-btn control-btn-danger control-btn-delete-preset" id="control-btn-delete-preset" data-i18n="controlPanel.presets.delete" title="Supprimer le preset">Supprimer</button>
               </div>
               <label class="control-preset-default-toggle">
                 <input type="checkbox" id="control-preset-set-default">
-                <span data-i18n="controlPanel.presets.setDefault">Définir par défaut</span>
+                <span id="control-preset-set-default-label" data-i18n="controlPanel.presets.setDefaultUsb">Définir par défaut USB</span>
               </label>
               <div class="control-preset-save-row">
                 <input type="text" id="control-preset-name-input" class="control-preset-name-input" maxlength="48" autocomplete="off" data-i18n-placeholder="controlPanel.presets.namePlaceholder" placeholder="Nom du preset">
                 <button type="button" class="control-btn" id="control-btn-save-preset" data-i18n="controlPanel.presets.saveCurrent">Enregistrer</button>
               </div>
               <button type="button" class="control-btn control-btn-primary control-btn-block" id="control-btn-apply-all" data-i18n="controlPanel.presets.applyAll">Appliquer à toutes</button>
-              <p class="control-preset-hint" id="control-preset-apply-all-hint" data-i18n="controlPanel.presets.applyAllHint">Met à jour le preset par défaut pour les prochains lancements.</p>
+              <button type="button" class="control-btn control-btn-block" id="control-btn-reset-factory" data-i18n="controlPanel.presets.resetFactoryUsb">Réinitialiser défaut USB</button>
+              <p class="control-preset-hint" id="control-preset-apply-all-hint" data-i18n="controlPanel.presets.applyAllHintUsb">Met à jour le preset USB par défaut pour les prochains lancements.</p>
+              <p class="control-preset-current" id="control-preset-current" data-i18n="controlPanel.presets.currentNone">Preset actuel : —</p>
             </div>
           </aside>
           <section class="control-col control-col--right">
@@ -274,7 +283,6 @@
             </div>
             <div id="control-actions-section" class="control-actions-sticky">
               <div class="control-actions">
-                <button type="button" class="control-btn" id="control-btn-reset" data-i18n="controlPanel.reset">Réinitialiser</button>
                 <button type="button" class="control-btn" id="control-btn-cancel" data-i18n="controlPanel.cancel">Annuler</button>
                 <button type="button" class="control-btn control-btn-primary" id="control-btn-apply" data-i18n="controlPanel.apply">Appliquer</button>
               </div>
@@ -435,7 +443,7 @@
             </span>
             <span class="settings-perf-mode-copy">
               <strong data-i18n="settingsPanel.performanceModeTitle">Mode performance</strong>
-              <span data-i18n="settingsPanel.performanceModeDesc">Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes.</span>
+              <span data-i18n="settingsPanel.performanceModeDesc">Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes. Applique aussi qHD (960×540) pour les prochaines sessions — toujours modifiable.</span>
             </span>
           </button>
         </div>

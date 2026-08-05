@@ -5,6 +5,7 @@ module.exports = {
         "screen": "Écran",
         "portrait": "Portrait",
         "audio": "Audio",
+        "deviceSpeaker": "Son",
         "devices": "Appareils",
         "control": "Contrôle",
         "settings": "Paramètres",
@@ -154,6 +155,9 @@ module.exports = {
         "audioTitle": "Couper ou réactiver l'audio de toutes les sessions",
         "audioOn": "ON",
         "audioOff": "OFF",
+        "deviceSpeakerTitle": "Audio appareils",
+        "deviceSpeakerOn": "ON",
+        "deviceSpeakerOff": "OFF",
         "devicesTitle": "Appareils USB et WiFi",
         "helpTitle": "Aide et raccourcis clavier",
         "settingsTitle": "Appareils, contrôle et nettoyage"
@@ -177,7 +181,7 @@ module.exports = {
         "homeShortcutsSaveFailed": "Impossible d’enregistrer le raccourci Accueil.",
         "performanceLead": "Réduisez la charge CPU/GPU sur les petits PC. Le mode performance coupe d’un coup les fonctions les plus coûteuses.",
         "performanceModeTitle": "Mode performance",
-        "performanceModeDesc": "Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes.",
+        "performanceModeDesc": "Désactive FPS, logos d’apps, aperçus Home/survol, batteries live du dock, animations, et le basculement USB/Wi‑Fi avec sessions ouvertes. Applique aussi qHD (960×540) pour les prochaines sessions — toujours modifiable.",
         "performanceFeaturesTitle": "Fonctions",
         "performanceFeaturesHint": "En mode performance, les fonctions restent coupées. Désactivez le mode pour les régler une par une.",
         "performanceSaveFailed": "Impossible d’enregistrer les performances.",
@@ -188,6 +192,10 @@ module.exports = {
         "perfDockBattery": "Batteries dock live",
         "perfAnimations": "Animations UI",
         "perfSessionSwitch": "USB/Wi‑Fi avec sessions",
+        "screenPowerTitle": "Écran appareil",
+        "rememberScreenTitle": "Mémoriser l’état écran",
+        "rememberScreenDesc": "Si l’écran est éteint à la déconnexion, il reste éteint à la reconnexion ; s’il est allumé, il reste allumé.",
+        "rememberScreenSaveFailed": "Impossible d’enregistrer l’option d’écran.",
         "homeShortcutsModulesTitle": "Modules",
         "homeShortcutsDragTitle": "Glisser le titre",
         "homeShortcutsDragDesc": "Déplacer un module librement sur l’Accueil.",
@@ -243,7 +251,7 @@ module.exports = {
         "aboutFeat2Title": "Nouvelle instance",
         "aboutFeat2Desc": "Lancez une app en display virtuel (clones & profils), avec sélection appareil / apps et récents. Un changement USB ↔ Wi‑Fi relance la session pour rattacher le display.",
         "aboutFeat3Title": "Mirroring & presets",
-        "aboutFeat3Desc": "Stream scrcpy contrôlable, avec presets résolution, DPI, FPS, bitrate, GOP et codec. En mirroring, USB ↔ Wi‑Fi reste transparent : seul l’ID de connexion est rafraîchi.",
+        "aboutFeat3Desc": "Stream scrcpy contrôlable, avec presets résolution, DPI, FPS, bitrate, GOP et codec. Défaut USB : FULL HD · 60 fps · 8 Mbps ; défaut WiFi : HD 720p · 30 fps · 8 Mbps. En mirroring, USB ↔ Wi‑Fi reste transparent : seul l’ID de connexion est rafraîchi.",
         "aboutFeat4Title": "Mode Stream Deck",
         "aboutFeat4Desc": "Affichez plusieurs sessions en grille, focus ou duo, avec tuile active pour le contrôle.",
         "aboutFeat5Title": "Dock & batteries",
@@ -264,7 +272,7 @@ module.exports = {
         "aboutFeat12Title": "Raccourcis Accueil",
         "aboutFeat12Desc": "Activez les pastilles Accueil (Nouvelle instance, Stream Deck, Wi‑Fi, Appareils, Apparence, Contrôle, Nettoyage, Performances) dans Paramètres → Raccourcis Accueil. Ctrl+clic pour déplacer / verrouiller ; à gauche du dock elles restent visibles hors Accueil.",
         "aboutFeat13Title": "Performances",
-        "aboutFeat13Desc": "Mode performance et toggles individuels : FPS, logos d’apps, aperçus Home/survol, batteries dock live, animations UI, et basculement USB/Wi‑Fi avec sessions ouvertes. Idéal pour les petits PC."
+        "aboutFeat13Desc": "Mode performance et toggles individuels : FPS, logos d’apps, aperçus Home/survol, batteries dock live, animations UI, basculement USB/Wi‑Fi avec sessions ouvertes, et preset qHD (960×540) à l’activation. Idéal pour les petits PC."
     },
     "devicePanel": {
         "wifiEnabled": "WiFi activé",
@@ -287,6 +295,7 @@ module.exports = {
         },
         "usbUnpluggedTitle": "USB débranché",
         "usbUnpluggedBody": "Continuer la session en WiFi, ou déconnecter ?",
+        "usbUnpluggedStreamHint": "Par défaut WiFi (nouvelles sessions) : HD 720p · 30 fps · 8 Mbps",
         "continueWifi": "Continuer en WiFi",
         "playOnDevice": "Déconnecter",
         "disconnectedToast": "Session déconnectée",
@@ -320,6 +329,8 @@ module.exports = {
         "discoverNoNew": "Aucun nouvel appareil ({connected} connecté(s))",
         "discoverNone": "Aucun appareil détecté — vérifiez USB ou WiFi",
         "discoverFailed": "Recherche impossible",
+        "usbDefaultHint": "Par défaut : FULL HD 1920×1080 · 60 fps · 8 Mbps",
+        "wifiDefaultHint": "Par défaut : HD 720p · 30 fps · 8 Mbps",
         "maintenanceHint": "Auto cache : {days} jours. Manuel : cache et historique sans délai.",
         "autoCleanup": "Nettoyage automatique",
         "autoCleanupEnabled": "Activer le nettoyage auto ({days} jours)",
@@ -437,21 +448,48 @@ module.exports = {
             "label": "Presets d'affichage",
             "none": "— Aucun preset —",
             "setDefault": "Définir par défaut",
+            "setDefaultUsb": "Définir par défaut USB",
+            "setDefaultWifi": "Définir par défaut Wi‑Fi",
+            "transportUsb": "USB",
+            "transportWifi": "Wi‑Fi",
             "saveCurrent": "Enregistrer le réglage actuel",
             "applyAll": "Appliquer à toutes les instances",
             "applyAllHint": "Met à jour le preset par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.",
+            "applyAllHintUsb": "Met à jour le preset USB par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.",
+            "applyAllHintWifi": "Met à jour le preset Wi‑Fi par défaut pour les prochains lancements. Les sessions ouvertes ne sont pas redémarrées.",
             "namePlaceholder": "Nom du preset",
             "nameEmpty": "Indiquez un nom pour le preset.",
             "namePrompt": "Nom du preset :",
             "saved": "Preset « {name} » enregistré.",
             "saveFailed": "Impossible d'enregistrer le preset.",
             "defaultSet": "Preset « {name} » défini par défaut pour les nouvelles sessions.",
+            "defaultSetUsb": "Preset « {name} » défini par défaut pour les sessions USB.",
+            "defaultSetWifi": "Preset « {name} » défini par défaut pour les sessions Wi‑Fi.",
             "defaultSetFailed": "Impossible de définir le preset par défaut.",
             "loadFailed": "Impossible de charger les presets.",
             "applyAllUnavailable": "Mise à jour du preset par défaut indisponible.",
             "applyingAll": "Enregistrement pour les prochains lancements…",
             "appliedAll": "Paramètres enregistrés pour les prochains lancements. Les sessions actives restent inchangées.",
-            "applyAllFailed": "Impossible d'enregistrer les paramètres pour les prochains lancements."
+            "applyAllFailed": "Impossible d'enregistrer les paramètres pour les prochains lancements.",
+            "delete": "Supprimer",
+            "deleteConfirm": "Supprimer le preset « {name} » ?",
+            "deleted": "Preset « {name} » supprimé.",
+            "deleteFailed": "Impossible de supprimer le preset.",
+            "deleteNone": "Sélectionnez un preset à supprimer.",
+            "deleteLast": "Impossible de supprimer le dernier preset.",
+            "current": "Preset actuel : {name} ★",
+            "currentBoth": "USB : {usb} ★ · Wi‑Fi : {wifi} ★",
+            "currentNone": "Preset actuel : —",
+            "performanceActive": "Mode performance activé · {resolution}",
+            "loaded": "Preset « {name} » · {resolution}",
+            "resetFactoryUsb": "Réinitialiser défaut USB",
+            "resetFactoryWifi": "Réinitialiser défaut Wi‑Fi",
+            "resetFactoryConfirmUsb": "Remettre le preset USB d'usine (Full HD 1920×1080) ?",
+            "resetFactoryConfirmWifi": "Remettre le preset Wi‑Fi d'usine (HD 1280×720) ?",
+            "resetFactoryDoneUsb": "Preset USB réinitialisé (Full HD).",
+            "resetFactoryDoneWifi": "Preset Wi‑Fi réinitialisé (HD 720p).",
+            "resetFactoryFailed": "Impossible de réinitialiser le preset.",
+            "resetFactoryUnavailable": "Réinitialisation indisponible."
         },
         "resolution": {
             "label": "Résolution",
@@ -827,7 +865,7 @@ module.exports = {
                                 "Paramètres",
                                 "Performances"
                             ],
-                            "desc": "Mode performance et fonctions individuelles (FPS, logos, aperçus, batteries dock, animations, USB/Wi‑Fi avec sessions)."
+                            "desc": "Mode performance et fonctions individuelles (FPS, logos, aperçus, batteries dock, animations, USB/Wi‑Fi avec sessions). Applique qHD (960×540) à l’activation."
                         },
                         {
                             "keys": [
@@ -915,7 +953,7 @@ module.exports = {
                             "keys": [
                                 "USB débranché"
                             ],
-                            "desc": "Proposer de continuer la session en Wi‑Fi ou de déconnecter."
+                            "desc": "Proposer de continuer la session en Wi‑Fi ou de déconnecter. Flux WiFi par défaut (nouvelles sessions) : HD 720p · 30 fps · 8 Mbps ; USB : FULL HD · 60 fps · 8 Mbps."
                         },
                         {
                             "keys": [
@@ -929,7 +967,7 @@ module.exports = {
         },
         "wifi": {
             "title": "Connecter un appareil en WiFi",
-            "note": "Si le WiFi du téléphone change de réseau ou si son adresse IP change, reconnectez l'appareil via le toggle.",
+            "note": "Par défaut USB : FULL HD 1920×1080 · 60 fps · 8 Mbps. Par défaut WiFi : HD 720p · 30 fps · 8 Mbps (réglable dans le panneau Contrôle). Si le WiFi du téléphone change de réseau ou si son adresse IP change, reconnectez l'appareil via le toggle.",
             "steps": [
                 {
                     "chipLabel": "USB",
@@ -981,7 +1019,7 @@ module.exports = {
                         "Pour repasser en USB, reclique sur le toggle (la config reste enregistrée).",
                         "Retrouve USB et WiFi dans Paramètres → Appareils."
                     ],
-                    "tip": "Si l'IP change, reconnecte via le toggle WiFi."
+                    "tip": "Si l'IP change, reconnecte via le toggle WiFi. Flux WiFi par défaut : HD 720p · 30 fps · 8 Mbps (USB : FULL HD · 60 fps · 8 Mbps)."
                 }
             ]
         },
@@ -1084,7 +1122,7 @@ module.exports = {
             "sections": [
                 {
                     "title": "Mode performance",
-                    "body": "Un seul interrupteur désactive FPS, logos d’apps, aperçus Home et au survol, batteries live du dock, animations UI, et le basculement USB/Wi‑Fi tant que des sessions sont ouvertes."
+                    "body": "Un seul interrupteur désactive FPS, logos d’apps, aperçus Home et au survol, batteries live du dock, animations UI, et le basculement USB/Wi‑Fi tant que des sessions sont ouvertes. Il applique aussi le preset qHD (960×540) pour les prochaines sessions ; vous pouvez toujours changer résolution et paramètres ensuite."
                 },
                 {
                     "title": "Fonctions individuelles",
@@ -1107,7 +1145,7 @@ module.exports = {
                 "Clavier AZERTY : les caractères accentués, Shift (chiffres et ?./§%…), Alt Gr (@, #, {, }) et € sont transmis à l'appareil. Ctrl+Tab / Ctrl+Shift+Tab changent d'onglet session (pas de saisie).",
                 "Mode Stream Deck vide : lancez au moins une session (mirroring ou instance) depuis Appareils connectés ou Nouvelle instance.",
                 "Mode Duo incomplet : ouvrez le menu Duo (bouton Duo) et choisissez Appareil 1 et Appareil 2 dans la liste.",
-                "PC lent / saccades : activez Paramètres → Performances → Mode performance (coupe aperçus, FPS, logos et animations).",
+                "PC lent / saccades : activez Paramètres → Performances → Mode performance (coupe aperçus, FPS, logos et animations ; applique qHD 960×540).",
                 "Basculement USB/Wi‑Fi refusé : une session est ouverte et l’option est désactivée dans Paramètres → Performances."
             ]
         }

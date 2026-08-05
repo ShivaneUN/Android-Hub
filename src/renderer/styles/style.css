@@ -674,8 +674,15 @@ html.sidebar-initial-collapsed .sidebar-collapse-icon-closed {
 .usb-unplug-prompt-body {
   font-size: 12px;
   line-height: 1.4;
-  margin: 0 0 12px;
+  margin: 0 0 6px;
   color: var(--text-secondary, #c5cddc);
+}
+
+.usb-unplug-prompt-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 0 0 12px;
+  color: var(--text-muted, #9aa3b5);
 }
 
 .usb-unplug-prompt-actions {

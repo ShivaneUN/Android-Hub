@@ -3,6 +3,7 @@
  * Valeurs autorisées = celles du panneau de contrôle (boutons segmentés).
  */
 
+/** Défaut USB / preset seed — FULL HD 60 fps 8 Mbps. */
 const DEFAULT_STREAM_PARAMS = Object.freeze({
     width: 1920,
     height: 1080,
@@ -12,6 +13,28 @@ const DEFAULT_STREAM_PARAMS = Object.freeze({
     iFrameInterval: 1,
     videoCodec: "h264"
 });
+
+/** Défaut lancement WiFi — HD 720p 30 fps 8 Mbps (latence / bande passante). */
+const DEFAULT_WIFI_STREAM_PARAMS = Object.freeze({
+    width: 1280,
+    height: 720,
+    dpi: 240,
+    maxFps: 30,
+    bitRateMbps: 8,
+    iFrameInterval: 1,
+    videoCodec: "h264"
+});
+
+/** Résolution appliquée à l’activation du mode performance (modifiable ensuite). */
+const PERFORMANCE_STREAM_RESOLUTION = Object.freeze({
+    width: 960,
+    height: 540
+});
+
+/** Serial ADB WiFi (`ip:port`) ou hint transport. */
+function isWifiTransportSerial(serial) {
+    return /:\d+$/.test(String(serial || "").trim());
+}
 
 /** Options affichées dans le panneau de contrôle */
 const CONTROL_OPTIONS = Object.freeze({
@@ -133,6 +156,16 @@ function cloneParams(params = {}) {
         iFrameInterval: params.iFrameInterval ?? DEFAULT_STREAM_PARAMS.iFrameInterval,
         videoCodec: params.videoCodec ?? DEFAULT_STREAM_PARAMS.videoCodec
     };
+}
+
+/**
+ * Params d'usine selon le transport.
+ * @param {{ wifi?: boolean, serial?: string }} [opts]
+ */
+function getFactoryStreamParams(opts = {}) {
+    const wifi = opts.wifi === true
+        || (opts.wifi !== false && isWifiTransportSerial(opts.serial));
+    return cloneParams(wifi ? DEFAULT_WIFI_STREAM_PARAMS : DEFAULT_STREAM_PARAMS);
 }
 
 function snapResolution(width, height) {
@@ -293,11 +326,15 @@ function formatParamsSummary(params) {
 
 const streamParamsApi = {
     DEFAULT_STREAM_PARAMS,
+    DEFAULT_WIFI_STREAM_PARAMS,
+    PERFORMANCE_STREAM_RESOLUTION,
     CONTROL_OPTIONS,
     RESOLUTION_PRESETS,
     ORIENTATION_PORTRAIT,
     ORIENTATION_LANDSCAPE,
     DEFAULT_ORIENTATION,
+    isWifiTransportSerial,
+    getFactoryStreamParams,
     cloneParams,
     normalizeParams,
     snapResolution,

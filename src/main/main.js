@@ -1702,6 +1702,13 @@ app.whenReady().then(() => {
     global.uiPreferencesManager = new UiPreferencesManager(userDataPath);
     global.deviceColorsManager = new DeviceColorsManager(userDataPath);
     global.displayPresetsManager = new DisplayPresetsManager(userDataPath);
+    // Mode perf off : ne pas laisser qHD imposé / override actif.
+    if (!global.uiPreferencesManager.getPerformancePrefs?.()?.performanceMode) {
+        global.displayPresetsManager.restorePerformanceResolution?.({ healSeeds: true });
+    } else {
+        // Mode perf on : activer l'overlay sans écraser les presets.
+        global.displayPresetsManager.applyPerformanceResolution?.();
+    }
     deviceManager = new DeviceManager(adbPath);
     wifiDevicesManager = new WifiDevicesManager(userDataPath);
     global.wifiDevicesManager = wifiDevicesManager;
@@ -3602,6 +3609,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     registerUiPreferencesHandlers({
         getUiPreferencesManager: () => global.uiPreferencesManager,
         getHubWallpaperManager: () => global.hubWallpaperManager,
+        getDisplayPresetsManager: () => global.displayPresetsManager,
         getMainWindow: () => win,
         getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null
     });

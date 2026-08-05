@@ -214,6 +214,7 @@ function showUsbUnplugPrompt({ deviceId, deviceName } = {}) {
         <div class="usb-unplug-prompt-title">${dt("devicePanel.usbUnpluggedTitle")}</div>
         <div class="usb-unplug-prompt-name">${deviceName || deviceId}</div>
         <p class="usb-unplug-prompt-body">${dt("devicePanel.usbUnpluggedBody")}</p>
+        <p class="usb-unplug-prompt-hint">${dt("devicePanel.usbUnpluggedStreamHint")}</p>
         <div class="usb-unplug-prompt-actions">
             <button type="button" class="usb-unplug-prompt-btn primary" data-action="continue-wifi">
                 ${dt("devicePanel.continueWifi")}

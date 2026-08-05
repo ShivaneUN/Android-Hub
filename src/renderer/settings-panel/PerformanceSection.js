@@ -135,6 +135,9 @@
                     const result = await writePrefs({ performanceMode: next });
                     if (!result) return;
                     applyPrefsToUi(result);
+                    window.dispatchEvent(new CustomEvent("performance-prefs-changed", {
+                        detail: result
+                    }));
                 })();
             });
 

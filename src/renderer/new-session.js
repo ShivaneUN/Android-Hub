@@ -73,10 +73,25 @@ function dismissHubModalPanel() {
     }
 }
 
-async function resolveDefaultLaunchStreamParams() {
+function isWifiLaunchContext({ serial, isWifi, device } = {}) {
+    if (typeof isWifi === "boolean") return isWifi;
+    if (device?.transport === "wifi") return true;
+    const label = String(device?.transportLabel || "").toLowerCase();
+    if (label.includes("wifi") || label.includes("wi-fi")) return true;
+    const candidate = serial || device?.serial || device?.wifiSerial || null;
+    if (typeof StreamParams !== "undefined" && StreamParams.isWifiTransportSerial) {
+        return StreamParams.isWifiTransportSerial(candidate);
+    }
+    return /:\d+$/.test(String(candidate || "").trim());
+}
+
+async function resolveDefaultLaunchStreamParams(context = {}) {
+    const wifi = isWifiLaunchContext(context);
+    const transport = wifi ? "wifi" : "usb";
+
     try {
         if (window.displayPresetsAPI?.getDefault) {
-            const result = await window.displayPresetsAPI.getDefault();
+            const result = await window.displayPresetsAPI.getDefault(transport);
             if (result?.success && result.params) {
                 return result.params;
             }
@@ -91,24 +106,45 @@ async function resolveDefaultLaunchStreamParams() {
         console.warn("[NewSession] displayPresetsAPI indisponible:", err.message);
     }
 
+    if (typeof StreamParams !== "undefined" && StreamParams.getFactoryStreamParams) {
+        return StreamParams.getFactoryStreamParams({ wifi });
+    }
+
+    if (wifi && typeof StreamParams !== "undefined" && StreamParams.DEFAULT_WIFI_STREAM_PARAMS) {
+        return StreamParams.cloneParams
+            ? StreamParams.cloneParams(StreamParams.DEFAULT_WIFI_STREAM_PARAMS)
+            : { ...StreamParams.DEFAULT_WIFI_STREAM_PARAMS };
+    }
+
     if (typeof StreamParams !== "undefined" && StreamParams.DEFAULT_STREAM_PARAMS) {
         return StreamParams.cloneParams
             ? StreamParams.cloneParams(StreamParams.DEFAULT_STREAM_PARAMS)
             : { ...StreamParams.DEFAULT_STREAM_PARAMS };
     }
 
-    return {
-        width: 1920,
-        height: 1080,
-        dpi: 240,
-        maxFps: 60,
-        bitRateMbps: 8,
-        iFrameInterval: 1
-    };
+    return wifi
+        ? {
+            width: 1280,
+            height: 720,
+            dpi: 240,
+            maxFps: 30,
+            bitRateMbps: 8,
+            iFrameInterval: 1,
+            videoCodec: "h264"
+        }
+        : {
+            width: 1920,
+            height: 1080,
+            dpi: 240,
+            maxFps: 60,
+            bitRateMbps: 8,
+            iFrameInterval: 1,
+            videoCodec: "h264"
+        };
 }
 
-async function buildDefaultScrcpyOptions(sessionType) {
-    const params = await resolveDefaultLaunchStreamParams();
+async function buildDefaultScrcpyOptions(sessionType, context = {}) {
+    const params = await resolveDefaultLaunchStreamParams(context);
     if (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions) {
         return StreamParams.toScrcpyOptions(params, sessionType);
     }
@@ -1247,7 +1283,10 @@ function formatTypeBLaunchCommand(packageName, params) {
 async function updateCommandPreview() {
     const { commandPreview } = getNewInstanceElements();
     if (!commandPreview) return;
-    const params = await resolveDefaultLaunchStreamParams();
+    const params = await resolveDefaultLaunchStreamParams({
+        serial: selectedDevice?.serial,
+        device: selectedDevice
+    });
     commandPreview.textContent = formatTypeBLaunchCommand(selectedApp?.package || "", params);
 }
 
@@ -1674,10 +1713,15 @@ async function launchTypeBSession({
 
         // Lire le preset default AVANT le bootstrap externe pour que --new-display
         // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
-        const launchParams = await resolveDefaultLaunchStreamParams();
+        const launchContext = {
+            serial,
+            device: selectedDevice,
+            isWifi: isWifiLaunchContext({ serial, device: selectedDevice })
+        };
+        const launchParams = await resolveDefaultLaunchStreamParams(launchContext);
         const presetScrcpyOpts = (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions)
             ? StreamParams.toScrcpyOptions(launchParams, "B")
-            : await buildDefaultScrcpyOptions("B");
+            : await buildDefaultScrcpyOptions("B", launchContext);
         const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
         setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName, launchParams)}`);
 
@@ -1984,7 +2028,15 @@ async function launchMirrorSession(options = {}) {
             latencyTraceId = started.traceId;
         }
 
-        const scrcpyOpts = await buildDefaultScrcpyOptions("A");
+        const scrcpyOpts = await buildDefaultScrcpyOptions("A", {
+            serial,
+            device: selectedDevice || { serial, transport: options.transport },
+            isWifi: isWifiLaunchContext({
+                serial,
+                device: selectedDevice,
+                isWifi: options.isWifi
+            })
+        });
 
         await createInstance(serial, deviceName, null, {
             tabLabel: mirrorLabel,

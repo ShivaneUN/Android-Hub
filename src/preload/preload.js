@@ -252,14 +252,17 @@ contextBridge.exposeInMainWorld("deviceColorsAPI", {
 
 contextBridge.exposeInMainWorld("displayPresetsAPI", {
     list: () => ipcRenderer.invoke("display-presets:list"),
-    getDefault: () => ipcRenderer.invoke("display-presets:get-default"),
+    getDefault: (transport = "usb") => ipcRenderer.invoke("display-presets:get-default", { transport }),
     resolveParams: (presetId) => ipcRenderer.invoke("display-presets:resolve-params", { presetId }),
     getAllowedOptions: () => ipcRenderer.invoke("display-presets:get-allowed-options"),
     save: (payload) => ipcRenderer.invoke("display-presets:save", payload),
-    setDefault: (presetId) => ipcRenderer.invoke("display-presets:set-default", { presetId }),
-    updateDefaultFromParams: (params) =>
-        ipcRenderer.invoke("display-presets:update-default-from-params", { params }),
+    setDefault: (presetId, transport = "usb") =>
+        ipcRenderer.invoke("display-presets:set-default", { presetId, transport }),
+    updateDefaultFromParams: (params, transport = "usb") =>
+        ipcRenderer.invoke("display-presets:update-default-from-params", { params, transport }),
     delete: (presetId) => ipcRenderer.invoke("display-presets:delete", { presetId }),
+    resetTransportToFactory: (transport = "usb") =>
+        ipcRenderer.invoke("display-presets:reset-transport-factory", { transport }),
     onUpdated: (callback) => ipcRenderer.on("display-presets:updated", () => callback())
 });
 

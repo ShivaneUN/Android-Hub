@@ -2,10 +2,15 @@ const fs = require("fs");
 const path = require("path");
 const {
     DEFAULT_STREAM_PARAMS,
+    DEFAULT_WIFI_STREAM_PARAMS,
     CONTROL_OPTIONS,
+    PERFORMANCE_STREAM_RESOLUTION,
     normalizeParams,
     cloneParams
 } = require("../../shared/stream-params");
+
+const TRANSPORT_USB = "usb";
+const TRANSPORT_WIFI = "wifi";
 
 const SEED_PRESETS = Object.freeze([
     {
@@ -15,11 +20,22 @@ const SEED_PRESETS = Object.freeze([
         height: 1080,
         maxFps: 60,
         bitRateMbps: 8
+    },
+    {
+        id: "wifi-hd",
+        name: "Wi‑Fi HD",
+        width: DEFAULT_WIFI_STREAM_PARAMS.width,
+        height: DEFAULT_WIFI_STREAM_PARAMS.height,
+        maxFps: DEFAULT_WIFI_STREAM_PARAMS.maxFps,
+        bitRateMbps: DEFAULT_WIFI_STREAM_PARAMS.bitRateMbps
     }
 ]);
 
 const DEFAULT_SEED = Object.freeze({
-    defaultPreset: "full-hd",
+    defaultPresetUsb: "full-hd",
+    defaultPresetWifi: "wifi-hd",
+    prePerformanceDefaults: null,
+    performanceResolutionActive: false,
     presets: SEED_PRESETS
 });
 
@@ -68,6 +84,18 @@ function sanitizePresetInput(input = {}) {
     };
 }
 
+function normalizeTransport(value) {
+    return value === TRANSPORT_WIFI ? TRANSPORT_WIFI : TRANSPORT_USB;
+}
+
+function isPerformanceResolution(preset) {
+    return Boolean(
+        preset
+        && preset.width === PERFORMANCE_STREAM_RESOLUTION.width
+        && preset.height === PERFORMANCE_STREAM_RESOLUTION.height
+    );
+}
+
 class DisplayPresetsManager {
     constructor(userDataPath) {
         this.filePath = path.join(userDataPath, "display-presets.json");
@@ -84,7 +112,7 @@ class DisplayPresetsManager {
 
             const parsed = JSON.parse(fs.readFileSync(this.filePath, "utf-8"));
             const presets = Array.isArray(parsed?.presets)
-                ? parsed.presets.filter(isValidPresetShape)
+                ? parsed.presets.filter(isValidPresetShape).map((preset) => ({ ...preset }))
                 : [];
 
             if (presets.length === 0) {
@@ -93,12 +121,19 @@ class DisplayPresetsManager {
                 return;
             }
 
-            const defaultPreset = typeof parsed?.defaultPreset === "string"
-                && presets.some((preset) => preset.id === parsed.defaultPreset)
-                ? parsed.defaultPreset
-                : presets[0].id;
-
-            this.data = { defaultPreset, presets };
+            this.data = {
+                presets,
+                defaultPresetUsb: null,
+                defaultPresetWifi: null,
+                prePerformanceDefaults: parsed?.prePerformanceDefaults && typeof parsed.prePerformanceDefaults === "object"
+                    ? parsed.prePerformanceDefaults
+                    : null,
+                performanceResolutionActive: parsed?.performanceResolutionActive === true
+            };
+            this._ensureWifiSeedPreset();
+            this._migrateDefaults(parsed);
+            this._ensureDefaultPresets();
+            this.save();
         } catch (err) {
             console.error("[DisplayPresetsManager] Erreur lecture:", err.message);
             this.data = structuredClone(DEFAULT_SEED);
@@ -118,13 +153,53 @@ class DisplayPresetsManager {
         return this.data.presets.find((preset) => preset.id === presetId) || null;
     }
 
-    _ensureDefaultPreset() {
+    _defaultKey(transport) {
+        return normalizeTransport(transport) === TRANSPORT_WIFI
+            ? "defaultPresetWifi"
+            : "defaultPresetUsb";
+    }
+
+    _ensureWifiSeedPreset() {
+        if (this._findPreset("wifi-hd")) return;
+        const seedWifi = SEED_PRESETS.find((preset) => preset.id === "wifi-hd");
+        if (seedWifi) {
+            this.data.presets.push({ ...seedWifi });
+        }
+    }
+
+    _migrateDefaults(parsed = {}) {
+        const usbId = typeof parsed.defaultPresetUsb === "string"
+            ? parsed.defaultPresetUsb
+            : (typeof parsed.defaultPreset === "string" ? parsed.defaultPreset : null);
+        const wifiId = typeof parsed.defaultPresetWifi === "string"
+            ? parsed.defaultPresetWifi
+            : null;
+
+        this.data.defaultPresetUsb = usbId && this._findPreset(usbId)
+            ? usbId
+            : (this._findPreset("full-hd")?.id || this.data.presets[0].id);
+
+        this.data.defaultPresetWifi = wifiId && this._findPreset(wifiId)
+            ? wifiId
+            : (this._findPreset("wifi-hd")?.id || this.data.presets[0].id);
+    }
+
+    _ensureDefaultPresets() {
         if (!this.data.presets.length) {
             this.data = structuredClone(DEFAULT_SEED);
+            return;
         }
-        if (!this._findPreset(this.data.defaultPreset)) {
-            this.data.defaultPreset = this.data.presets[0].id;
+        if (!this._findPreset(this.data.defaultPresetUsb)) {
+            this.data.defaultPresetUsb = this.data.presets[0].id;
         }
+        if (!this._findPreset(this.data.defaultPresetWifi)) {
+            this.data.defaultPresetWifi = this._findPreset("wifi-hd")?.id || this.data.presets[0].id;
+        }
+    }
+
+    _ensureDefaultPreset() {
+        this._ensureWifiSeedPreset();
+        this._ensureDefaultPresets();
     }
 
     _makeUniqueId(baseId, excludeId = null) {
@@ -138,29 +213,56 @@ class DisplayPresetsManager {
     }
 
     list() {
+        this._ensureDefaultPreset();
         return {
             success: true,
-            defaultPreset: this.data.defaultPreset,
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: this.data.performanceResolutionActive === true,
             presets: this.data.presets.map((preset) => ({ ...preset }))
         };
     }
 
-    getDefault() {
-        const preset = this._findPreset(this.data.defaultPreset) || this.data.presets[0] || null;
+    _withPerformanceOverlay(params) {
+        if (this.data.performanceResolutionActive !== true) return params;
+        return normalizeParams({
+            ...params,
+            width: PERFORMANCE_STREAM_RESOLUTION.width,
+            height: PERFORMANCE_STREAM_RESOLUTION.height
+        });
+    }
+
+    _clearPerformanceOverride() {
+        this.data.performanceResolutionActive = false;
+        this.data.prePerformanceDefaults = null;
+    }
+
+    getDefault(transport = TRANSPORT_USB) {
+        this._ensureDefaultPreset();
+        const key = this._defaultKey(transport);
+        const presetId = this.data[key];
+        const preset = this._findPreset(presetId) || this.data.presets[0] || null;
         if (!preset) {
             return { success: false, error: "Aucun preset disponible" };
         }
 
+        const rawParams = this.resolveParams(preset.id);
         return {
             success: true,
+            transport: normalizeTransport(transport),
             defaultPreset: preset.id,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: this.data.performanceResolutionActive === true,
             preset: { ...preset },
-            params: this.resolveParams(preset.id)
+            params: this._withPerformanceOverlay(rawParams)
         };
     }
 
     resolveParams(presetId = null) {
-        const id = presetId || this.data.defaultPreset;
+        this._ensureDefaultPreset();
+        const id = presetId || this.data.defaultPresetUsb;
         const preset = this._findPreset(id);
         if (!preset) {
             return cloneParams(DEFAULT_STREAM_PARAMS);
@@ -177,12 +279,17 @@ class DisplayPresetsManager {
     }
 
     savePreset({ name, params, id = null } = {}) {
+        this._ensureDefaultPreset();
+        if (!Array.isArray(this.data.presets)) {
+            this.data.presets = [];
+        }
+
         const trimmedName = String(name || "").trim();
         if (!trimmedName) {
             return { success: false, error: "Nom du preset requis" };
         }
 
-        const sanitized = sanitizePresetInput(params);
+        const sanitized = sanitizePresetInput(params || {});
         const baseId = id ? slugifyId(id) : slugifyId(trimmedName);
         const presetId = this._makeUniqueId(baseId);
         const preset = {
@@ -197,43 +304,197 @@ class DisplayPresetsManager {
         return {
             success: true,
             preset: { ...preset },
-            defaultPreset: this.data.defaultPreset
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            presets: this.data.presets.map((item) => ({ ...item }))
         };
     }
 
-    setDefaultPreset(presetId) {
+    setDefaultPreset(presetId, transport = TRANSPORT_USB) {
         if (!this._findPreset(presetId)) {
             return { success: false, error: "Preset introuvable" };
         }
 
-        this.data.defaultPreset = presetId;
+        const key = this._defaultKey(transport);
+        this.data[key] = presetId;
+        // Choix explicite utilisateur : ne plus forcer qHD au lancement.
+        this._clearPerformanceOverride();
         this.save();
 
         return {
             success: true,
-            defaultPreset: presetId,
+            transport: normalizeTransport(transport),
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: false,
             params: this.resolveParams(presetId)
         };
     }
 
-    updateDefaultFromParams(params = {}) {
+    updateDefaultFromParams(params = {}, transport = TRANSPORT_USB) {
         this._ensureDefaultPreset();
 
-        const preset = this._findPreset(this.data.defaultPreset);
+        const key = this._defaultKey(transport);
+        const preset = this._findPreset(this.data[key]);
         if (!preset) {
             return { success: false, error: "Preset par défaut introuvable" };
         }
 
         const sanitized = sanitizePresetInput(params);
         Object.assign(preset, sanitized);
+        this._clearPerformanceOverride();
         this.save();
 
         return {
             success: true,
-            defaultPreset: preset.id,
+            transport: normalizeTransport(transport),
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: false,
             preset: { ...preset },
             params: this.resolveParams(preset.id),
             message: "Paramètres enregistrés pour les prochains lancements."
+        };
+    }
+
+    /**
+     * Mode performance : overlay qHD au lancement sans écraser les presets sauvegardés.
+     * Soigne aussi les seeds déjà corrompus en qHD.
+     */
+    applyPerformanceResolution() {
+        this._ensureDefaultPreset();
+        this._healSeedPresetsFromPerformance();
+        // Annuler d'anciennes mutations directes via snapshot si présent.
+        if (this.data.prePerformanceDefaults) {
+            const snapshot = this.data.prePerformanceDefaults;
+            const usbPreset = this._findPreset(snapshot.usbPresetId || this.data.defaultPresetUsb);
+            const wifiPreset = this._findPreset(snapshot.wifiPresetId || this.data.defaultPresetWifi);
+            if (usbPreset && snapshot.usb) Object.assign(usbPreset, sanitizePresetInput(snapshot.usb));
+            if (wifiPreset && snapshot.wifi) Object.assign(wifiPreset, sanitizePresetInput(snapshot.wifi));
+            this.data.prePerformanceDefaults = null;
+        }
+        this.data.performanceResolutionActive = true;
+        this.save();
+
+        const defaultPreset = this._findPreset(this.data.defaultPresetUsb);
+        return {
+            success: true,
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: true,
+            preset: defaultPreset ? { ...defaultPreset } : null,
+            params: this.getDefault(TRANSPORT_USB).params,
+            message: "Mode performance : qHD au lancement (presets inchangés)."
+        };
+    }
+
+    /**
+     * Restaure après sortie du mode performance.
+     * @param {{ healSeeds?: boolean }} [opts]
+     */
+    restorePerformanceResolution(opts = {}) {
+        this._ensureDefaultPreset();
+        let restored = false;
+        const snapshot = this.data.prePerformanceDefaults;
+
+        if (snapshot && typeof snapshot === "object") {
+            const usbPreset = this._findPreset(snapshot.usbPresetId || this.data.defaultPresetUsb);
+            const wifiPreset = this._findPreset(snapshot.wifiPresetId || this.data.defaultPresetWifi);
+            if (usbPreset && snapshot.usb) {
+                Object.assign(usbPreset, sanitizePresetInput(snapshot.usb));
+                restored = true;
+            }
+            if (wifiPreset && snapshot.wifi) {
+                Object.assign(wifiPreset, sanitizePresetInput(snapshot.wifi));
+                restored = true;
+            }
+        }
+
+        if (this.data.performanceResolutionActive) {
+            this.data.performanceResolutionActive = false;
+            restored = true;
+        }
+        this.data.prePerformanceDefaults = null;
+
+        if (opts.healSeeds !== false) {
+            restored = this._healSeedPresetsFromPerformance() || restored;
+        }
+
+        if (restored) this.save();
+
+        const defaultPreset = this._findPreset(this.data.defaultPresetUsb);
+        return {
+            success: true,
+            restored,
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: false,
+            preset: defaultPreset ? { ...defaultPreset } : null,
+            params: this.resolveParams(),
+            message: restored
+                ? "Presets USB / Wi‑Fi restaurés hors mode performance."
+                : "Aucun preset performance à restaurer."
+        };
+    }
+
+    /** Remet Full HD / Wi‑Fi HD d'usine s'ils sont restés bloqués en qHD. */
+    _healSeedPresetsFromPerformance() {
+        let changed = false;
+        for (const seed of SEED_PRESETS) {
+            const preset = this._findPreset(seed.id);
+            if (!preset || !isPerformanceResolution(preset)) continue;
+            Object.assign(preset, {
+                name: seed.name,
+                ...sanitizePresetInput(seed)
+            });
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** Remet le preset d'usine USB ou Wi‑Fi et le définit par défaut. */
+    resetTransportToFactory(transport = TRANSPORT_USB) {
+        this._ensureDefaultPreset();
+        const normalized = normalizeTransport(transport);
+        const seed = SEED_PRESETS.find((item) => (
+            normalized === TRANSPORT_WIFI ? item.id === "wifi-hd" : item.id === "full-hd"
+        ));
+        if (!seed) {
+            return { success: false, error: "Preset d'usine introuvable" };
+        }
+
+        let preset = this._findPreset(seed.id);
+        if (!preset) {
+            preset = { ...seed };
+            this.data.presets.push(preset);
+        } else {
+            Object.assign(preset, {
+                name: seed.name,
+                ...sanitizePresetInput(seed)
+            });
+        }
+
+        this.data[this._defaultKey(normalized)] = seed.id;
+        this._clearPerformanceOverride();
+        this.save();
+
+        return {
+            success: true,
+            transport: normalized,
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
+            performanceResolutionActive: false,
+            preset: { ...preset },
+            params: this.resolveParams(seed.id),
+            message: normalized === TRANSPORT_WIFI
+                ? "Preset Wi‑Fi réinitialisé (HD 720p)."
+                : "Preset USB réinitialisé (Full HD)."
         };
     }
 
@@ -248,15 +509,20 @@ class DisplayPresetsManager {
 
         this.data.presets = this.data.presets.filter((preset) => preset.id !== presetId);
 
-        if (this.data.defaultPreset === presetId) {
-            this.data.defaultPreset = this.data.presets[0].id;
+        if (this.data.defaultPresetUsb === presetId) {
+            this.data.defaultPresetUsb = this.data.presets[0].id;
+        }
+        if (this.data.defaultPresetWifi === presetId) {
+            this.data.defaultPresetWifi = this._findPreset("wifi-hd")?.id || this.data.presets[0].id;
         }
 
         this.save();
 
         return {
             success: true,
-            defaultPreset: this.data.defaultPreset,
+            defaultPreset: this.data.defaultPresetUsb,
+            defaultPresetUsb: this.data.defaultPresetUsb,
+            defaultPresetWifi: this.data.defaultPresetWifi,
             presets: this.data.presets.map((preset) => ({ ...preset }))
         };
     }
@@ -274,4 +540,10 @@ class DisplayPresetsManager {
     }
 }
 
-module.exports = { DisplayPresetsManager, SEED_PRESETS, DEFAULT_SEED };
+module.exports = {
+    DisplayPresetsManager,
+    SEED_PRESETS,
+    DEFAULT_SEED,
+    TRANSPORT_USB,
+    TRANSPORT_WIFI
+};

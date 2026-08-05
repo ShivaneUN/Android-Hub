@@ -101,8 +101,12 @@
         isApplying: false,
         uiReady: false,
         presets: [],
+        presetTransport: "usb",
+        defaultPresetUsbId: null,
+        defaultPresetWifiId: null,
         defaultPresetId: null,
-        selectedPresetId: null
+        selectedPresetId: null,
+        ignorePresetUpdatedDraftReload: false
     };
 
     const els = {};
@@ -110,6 +114,62 @@
 
     function $(id) {
         return document.getElementById(id);
+    }
+
+    function getActiveDefaultPresetId() {
+        return state.presetTransport === "wifi"
+            ? state.defaultPresetWifiId
+            : state.defaultPresetUsbId;
+    }
+
+    function syncTransportUi() {
+        const wifi = state.presetTransport === "wifi";
+        document.querySelectorAll("[data-preset-transport]").forEach((btn) => {
+            const active = btn.getAttribute("data-preset-transport") === state.presetTransport;
+            btn.classList.toggle("is-active", active);
+            btn.setAttribute("aria-pressed", active ? "true" : "false");
+            btn.disabled = state.isApplying;
+        });
+        if (els.presetSetDefaultLabel) {
+            els.presetSetDefaultLabel.setAttribute(
+                "data-i18n",
+                wifi ? "controlPanel.presets.setDefaultWifi" : "controlPanel.presets.setDefaultUsb"
+            );
+            els.presetSetDefaultLabel.textContent = wifi
+                ? t("controlPanel.presets.setDefaultWifi")
+                : t("controlPanel.presets.setDefaultUsb");
+        }
+        if (els.presetApplyAllHint) {
+            els.presetApplyAllHint.setAttribute(
+                "data-i18n",
+                wifi ? "controlPanel.presets.applyAllHintWifi" : "controlPanel.presets.applyAllHintUsb"
+            );
+            els.presetApplyAllHint.textContent = wifi
+                ? t("controlPanel.presets.applyAllHintWifi")
+                : t("controlPanel.presets.applyAllHintUsb");
+        }
+        if (els.btnResetFactory) {
+            els.btnResetFactory.setAttribute(
+                "data-i18n",
+                wifi ? "controlPanel.presets.resetFactoryWifi" : "controlPanel.presets.resetFactoryUsb"
+            );
+            els.btnResetFactory.textContent = wifi
+                ? t("controlPanel.presets.resetFactoryWifi")
+                : t("controlPanel.presets.resetFactoryUsb");
+        }
+    }
+
+    async function setPresetTransport(transport) {
+        const next = transport === "wifi" ? "wifi" : "usb";
+        if (state.presetTransport === next) return;
+        state.presetTransport = next;
+        state.defaultPresetId = getActiveDefaultPresetId();
+        syncTransportUi();
+        renderPresetSelect();
+        syncPresetControls();
+        if (!state.selectedSessionId) {
+            await loadDefaultDraftFromPreset();
+        }
     }
 
     function readDraftParams() {
@@ -132,6 +192,7 @@
         state.draftParams = SP.normalizeParams(state.draftParams);
         syncSegmentUI();
         updateDirtyState();
+        if (isPerformanceModeOn()) updateCurrentPresetLabel();
     }
 
     function syncSegmentUI() {
@@ -173,7 +234,6 @@
         const hasChanges = !SP.paramsEqual(draft, reference);
         els.btnApply.disabled = !hasChanges || state.isApplying;
         els.btnCancel.disabled = !hasChanges || state.isApplying;
-        els.btnReset.disabled = state.isApplying;
     }
 
     function setStatus(message, type = "info") {
@@ -194,7 +254,6 @@
         } else {
             if (els.btnApply) els.btnApply.disabled = true;
             if (els.btnCancel) els.btnCancel.disabled = true;
-            if (els.btnReset) els.btnReset.disabled = true;
         }
         syncPresetControls();
     }
@@ -208,21 +267,120 @@
             els.btnApplyAll.disabled = busy
                 || typeof window.displayPresetsAPI?.updateDefaultFromParams !== "function";
         }
+        if (els.btnResetFactory) {
+            els.btnResetFactory.disabled = busy
+                || typeof window.displayPresetsAPI?.resetTransportToFactory !== "function";
+        }
+        if (els.btnDeletePreset) {
+            const presetId = els.presetSelect?.value || "";
+            const canDelete = Boolean(presetId)
+                && state.presets.length > 1
+                && typeof window.displayPresetsAPI?.delete === "function";
+            els.btnDeletePreset.disabled = busy || !canDelete;
+        }
         syncPresetDefaultCheckbox();
+        updateCurrentPresetLabel();
     }
 
     function syncPresetDefaultCheckbox() {
         if (!els.presetSetDefault) return;
         const presetId = els.presetSelect?.value || "";
-        const isDefault = Boolean(presetId) && presetId === state.defaultPresetId;
+        const activeDefaultId = getActiveDefaultPresetId();
+        const isDefault = Boolean(presetId) && presetId === activeDefaultId;
         els.presetSetDefault.checked = isDefault;
         els.presetSetDefault.disabled = !presetId || state.isApplying || isDefault;
+    }
+
+    function getDefaultPreset(transport = state.presetTransport) {
+        const id = transport === "wifi" ? state.defaultPresetWifiId : state.defaultPresetUsbId;
+        return state.presets.find((preset) => preset.id === id) || null;
+    }
+
+    function getPerformanceResolution() {
+        const res = SP.PERFORMANCE_STREAM_RESOLUTION;
+        if (res?.width && res?.height) return { width: res.width, height: res.height };
+        return { width: 960, height: 540 };
+    }
+
+    function isPerformanceModeOn() {
+        return window.HubPerformance?.getPrefs?.()?.performanceMode === true;
+    }
+
+    function applyPerformanceResolutionToDraft({ markApplied = false } = {}) {
+        const res = getPerformanceResolution();
+        state.draftParams = SP.normalizeParams({
+            ...readDraftParams(),
+            width: res.width,
+            height: res.height
+        });
+        if (markApplied || !state.selectedSessionId) {
+            state.appliedParams = SP.cloneParams(state.draftParams);
+        }
+        syncSegmentUI();
+        updateDirtyState();
+        updateAppliedDisplay();
+        updateCurrentPresetLabel();
+    }
+
+    function updateCurrentPresetLabel(prefsOverride = null) {
+        if (!els.presetCurrent) return;
+        const modeOn = prefsOverride
+            ? prefsOverride.performanceMode === true
+            : isPerformanceModeOn();
+        if (modeOn) {
+            const res = getPerformanceResolution();
+            const draft = readDraftParams();
+            const resolution = `${draft.width || res.width}×${draft.height || res.height}`;
+            els.presetCurrent.textContent = t("controlPanel.presets.performanceActive", {
+                resolution
+            });
+            els.presetCurrent.classList.add("is-perf-mode");
+            return;
+        }
+        els.presetCurrent.classList.remove("is-perf-mode");
+        const usbPreset = getDefaultPreset("usb");
+        const wifiPreset = getDefaultPreset("wifi");
+        const usbName = usbPreset?.name || "—";
+        const wifiName = wifiPreset?.name || "—";
+        els.presetCurrent.textContent = t("controlPanel.presets.currentBoth", {
+            usb: usbName,
+            wifi: wifiName
+        });
+    }
+
+    async function onPerformancePrefsChanged(prefs = {}) {
+        const modeOn = prefs.performanceMode === true;
+        if (!modeOn) {
+            await loadPresets();
+            if (!state.selectedSessionId) {
+                await loadDefaultDraftFromPreset();
+            }
+            updateCurrentPresetLabel(prefs);
+            if (els.statusMessage?.dataset?.perfMode === "1") {
+                setStatus("");
+                if (els.statusMessage) delete els.statusMessage.dataset.perfMode;
+            }
+            return;
+        }
+
+        await loadPresets();
+        applyPerformanceResolutionToDraft({ markApplied: !state.selectedSessionId });
+        updateCurrentPresetLabel(prefs);
+        const res = getPerformanceResolution();
+        setStatus(
+            t("controlPanel.presets.performanceActive", {
+                resolution: `${res.width}×${res.height}`
+            }),
+            "success"
+        );
+        if (els.statusMessage) els.statusMessage.dataset.perfMode = "1";
     }
 
     function renderPresetSelect() {
         if (!els.presetSelect) return;
 
         const previous = els.presetSelect.value;
+        const keepSelectedId = state.selectedPresetId;
         els.presetSelect.innerHTML = "";
 
         const emptyOption = document.createElement("option");
@@ -230,24 +388,39 @@
         emptyOption.textContent = t("controlPanel.presets.none");
         els.presetSelect.appendChild(emptyOption);
 
+        const activeDefaultId = getActiveDefaultPresetId();
         state.presets.forEach((preset) => {
             const option = document.createElement("option");
             option.value = preset.id;
-            const defaultMark = preset.id === state.defaultPresetId ? " ★" : "";
-            option.textContent = `${preset.name}${defaultMark}`;
+            const marks = [];
+            if (preset.id === state.defaultPresetUsbId) marks.push("USB");
+            if (preset.id === state.defaultPresetWifiId) marks.push("Wi‑Fi");
+            const defaultMark = marks.length ? ` ★${marks.join("/")}` : "";
+            const activeMark = preset.id === activeDefaultId && !marks.length ? " ★" : "";
+            option.textContent = `${preset.name}${defaultMark || activeMark}`;
             els.presetSelect.appendChild(option);
         });
 
-        const targetId = (previous && state.presets.some((preset) => preset.id === previous))
-            ? previous
-            : (state.selectedPresetId || "");
+        let targetId = "";
+        if (keepSelectedId && state.presets.some((preset) => preset.id === keepSelectedId)) {
+            targetId = keepSelectedId;
+        } else if (previous && state.presets.some((preset) => preset.id === previous)) {
+            targetId = previous;
+        } else if (activeDefaultId && state.presets.some((preset) => preset.id === activeDefaultId)) {
+            targetId = activeDefaultId;
+        }
+
         els.presetSelect.value = targetId;
+        state.selectedPresetId = targetId || null;
+        syncTransportUi();
         syncPresetControls();
     }
 
     async function loadPresets() {
         if (!window.displayPresetsAPI?.list) {
             state.presets = [];
+            state.defaultPresetUsbId = null;
+            state.defaultPresetWifiId = null;
             state.defaultPresetId = null;
             renderPresetSelect();
             return;
@@ -260,7 +433,9 @@
                 return;
             }
             state.presets = result.presets || [];
-            state.defaultPresetId = result.defaultPreset || null;
+            state.defaultPresetUsbId = result.defaultPresetUsb || result.defaultPreset || null;
+            state.defaultPresetWifiId = result.defaultPresetWifi || null;
+            state.defaultPresetId = getActiveDefaultPresetId();
             renderPresetSelect();
         } catch (err) {
             setStatus(err.message || t("controlPanel.presets.loadFailed"), "error");
@@ -276,9 +451,23 @@
             return;
         }
 
-        state.draftParams = SP.cloneParams(result.params);
+        // Toujours les valeurs brutes du preset sauvegardé (jamais l'overlay perf).
+        const params = SP.normalizeParams(result.params);
+        state.draftParams = SP.cloneParams(params);
+        if (!state.selectedSessionId) {
+            state.appliedParams = SP.cloneParams(params);
+        }
         syncSegmentUI();
         updateDirtyState();
+        updateAppliedDisplay();
+        updateCurrentPresetLabel();
+        setStatus(
+            t("controlPanel.presets.loaded", {
+                name: state.presets.find((item) => item.id === presetId)?.name || presetId,
+                resolution: `${params.width}×${params.height}`
+            }),
+            "info"
+        );
     }
 
     async function onPresetSelectChange() {
@@ -290,6 +479,7 @@
     }
 
     async function saveCurrentPreset() {
+        if (state.isApplying) return;
         if (!window.displayPresetsAPI?.save) {
             setStatus(t("controlPanel.validation.apiUnavailable"), "error");
             return;
@@ -304,6 +494,7 @@
 
         const draft = readDraftParams();
 
+        state.ignorePresetUpdatedDraftReload = true;
         setLoading(true);
         setStatus(t("controlPanel.validation.applying"));
 
@@ -324,11 +515,16 @@
                 return;
             }
 
+            const newId = result.preset?.id || null;
             if (els.presetNameInput) els.presetNameInput.value = "";
-            state.selectedPresetId = result.preset?.id || null;
+            state.selectedPresetId = newId;
             await loadPresets();
-            if (state.selectedPresetId && els.presetSelect) {
-                els.presetSelect.value = state.selectedPresetId;
+            if (newId && els.presetSelect) {
+                els.presetSelect.value = newId;
+                state.selectedPresetId = newId;
+            }
+            if (newId) {
+                await applyPresetToDraft(newId);
             }
             syncPresetControls();
             setStatus(
@@ -339,12 +535,16 @@
             setStatus(err.message || t("controlPanel.presets.saveFailed"), "error");
         } finally {
             setLoading(false);
+            window.setTimeout(() => {
+                state.ignorePresetUpdatedDraftReload = false;
+            }, 250);
         }
     }
 
     async function setSelectedPresetAsDefault() {
         const presetId = els.presetSelect?.value;
-        if (!presetId || presetId === state.defaultPresetId) return;
+        const activeDefaultId = getActiveDefaultPresetId();
+        if (!presetId || presetId === activeDefaultId) return;
         if (!window.displayPresetsAPI?.setDefault) {
             setStatus(t("controlPanel.validation.apiUnavailable"), "error");
             return;
@@ -353,22 +553,130 @@
         setLoading(true);
 
         try {
-            const result = await window.displayPresetsAPI.setDefault(presetId);
+            const result = await window.displayPresetsAPI.setDefault(presetId, state.presetTransport);
             if (!result?.success) {
                 setStatus(result?.error || t("controlPanel.presets.defaultSetFailed"), "error");
                 return;
             }
 
-            state.defaultPresetId = result.defaultPreset;
+            state.defaultPresetUsbId = result.defaultPresetUsb || state.defaultPresetUsbId;
+            state.defaultPresetWifiId = result.defaultPresetWifi || state.defaultPresetWifiId;
+            state.defaultPresetId = getActiveDefaultPresetId();
             const preset = state.presets.find((item) => item.id === presetId);
             await loadPresets();
             if (els.presetSelect) els.presetSelect.value = presetId;
             setStatus(
-                t("controlPanel.presets.defaultSet", { name: preset?.name || presetId }),
+                t(
+                    state.presetTransport === "wifi"
+                        ? "controlPanel.presets.defaultSetWifi"
+                        : "controlPanel.presets.defaultSetUsb",
+                    { name: preset?.name || presetId }
+                ),
                 "success"
             );
         } catch (err) {
             setStatus(err.message || t("controlPanel.presets.defaultSetFailed"), "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function deleteSelectedPreset() {
+        const presetId = els.presetSelect?.value || state.selectedPresetId || "";
+        if (!presetId) {
+            setStatus(t("controlPanel.presets.deleteNone"), "error");
+            return;
+        }
+        if (!window.displayPresetsAPI?.delete) {
+            setStatus(t("controlPanel.validation.apiUnavailable"), "error");
+            return;
+        }
+        if (state.presets.length <= 1) {
+            setStatus(t("controlPanel.presets.deleteLast"), "error");
+            return;
+        }
+
+        const preset = state.presets.find((item) => item.id === presetId);
+        const name = preset?.name || presetId;
+        if (!window.confirm(t("controlPanel.presets.deleteConfirm", { name }))) {
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const result = await window.displayPresetsAPI.delete(presetId);
+            if (!result?.success) {
+                setStatus(result?.error || t("controlPanel.presets.deleteFailed"), "error");
+                return;
+            }
+
+            state.defaultPresetUsbId = result.defaultPresetUsb || state.defaultPresetUsbId;
+            state.defaultPresetWifiId = result.defaultPresetWifi || state.defaultPresetWifiId;
+            state.defaultPresetId = getActiveDefaultPresetId();
+            state.selectedPresetId = getActiveDefaultPresetId() || null;
+            await loadPresets();
+            if (els.presetSelect && state.selectedPresetId) {
+                els.presetSelect.value = state.selectedPresetId;
+                await applyPresetToDraft(state.selectedPresetId);
+            }
+            syncPresetControls();
+            if (!state.selectedSessionId) {
+                await loadDefaultDraftFromPreset();
+            }
+            setStatus(t("controlPanel.presets.deleted", { name }), "success");
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.deleteFailed"), "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function resetTransportFactory() {
+        if (!window.displayPresetsAPI?.resetTransportToFactory) {
+            setStatus(t("controlPanel.presets.resetFactoryUnavailable"), "error");
+            return;
+        }
+
+        const wifi = state.presetTransport === "wifi";
+        const confirmed = window.confirm(
+            wifi
+                ? t("controlPanel.presets.resetFactoryConfirmWifi")
+                : t("controlPanel.presets.resetFactoryConfirmUsb")
+        );
+        if (!confirmed) return;
+
+        setLoading(true);
+        try {
+            const result = await window.displayPresetsAPI.resetTransportToFactory(state.presetTransport);
+            if (!result?.success) {
+                setStatus(result?.error || t("controlPanel.presets.resetFactoryFailed"), "error");
+                return;
+            }
+
+            state.defaultPresetUsbId = result.defaultPresetUsb || state.defaultPresetUsbId;
+            state.defaultPresetWifiId = result.defaultPresetWifi || state.defaultPresetWifiId;
+            state.defaultPresetId = getActiveDefaultPresetId();
+            state.selectedPresetId = result.preset?.id || getActiveDefaultPresetId();
+            await loadPresets();
+            if (els.presetSelect && state.selectedPresetId) {
+                els.presetSelect.value = state.selectedPresetId;
+            }
+            if (!state.selectedSessionId) {
+                await loadDefaultDraftFromPreset();
+            } else if (state.selectedPresetId) {
+                await applyPresetToDraft(state.selectedPresetId);
+            }
+            syncPresetControls();
+            setStatus(
+                result.message || (
+                    wifi
+                        ? t("controlPanel.presets.resetFactoryDoneWifi")
+                        : t("controlPanel.presets.resetFactoryDoneUsb")
+                ),
+                "success"
+            );
+        } catch (err) {
+            setStatus(err.message || t("controlPanel.presets.resetFactoryFailed"), "error");
         } finally {
             setLoading(false);
         }
@@ -388,23 +696,29 @@
 
         const draft = validation.params;
         const selectedId = els.presetSelect?.value || state.selectedPresetId || "";
+        const activeDefaultId = getActiveDefaultPresetId();
         setStatus(t("controlPanel.presets.applyingAll"));
 
         try {
-            // updateDefaultFromParams mute TOUJOURS le preset déjà marqué défaut.
+            // updateDefaultFromParams mute TOUJOURS le preset déjà marqué défaut (USB ou Wi‑Fi).
             // Si un autre preset est sélectionné, le promouvoir d'abord — sinon on
             // écrase le mauvais preset (ex. "Full HD" reçoit les valeurs H265).
-            if (selectedId && selectedId !== state.defaultPresetId) {
+            if (selectedId && selectedId !== activeDefaultId) {
                 if (!window.displayPresetsAPI?.setDefault) {
                     setStatus(t("controlPanel.validation.apiUnavailable"), "error");
                     return;
                 }
-                const setResult = await window.displayPresetsAPI.setDefault(selectedId);
+                const setResult = await window.displayPresetsAPI.setDefault(
+                    selectedId,
+                    state.presetTransport
+                );
                 if (!setResult?.success) {
                     setStatus(setResult?.error || t("controlPanel.presets.defaultSetFailed"), "error");
                     return;
                 }
-                state.defaultPresetId = setResult.defaultPreset || selectedId;
+                state.defaultPresetUsbId = setResult.defaultPresetUsb || state.defaultPresetUsbId;
+                state.defaultPresetWifiId = setResult.defaultPresetWifi || state.defaultPresetWifiId;
+                state.defaultPresetId = getActiveDefaultPresetId();
             }
 
             const result = await window.displayPresetsAPI.updateDefaultFromParams({
@@ -413,15 +727,17 @@
                 maxFps: draft.maxFps,
                 bitRateMbps: draft.bitRateMbps,
                 videoCodec: draft.videoCodec
-            });
+            }, state.presetTransport);
 
             if (!result?.success) {
                 setStatus(result?.error || t("controlPanel.presets.applyAllFailed"), "error");
                 return;
             }
 
-            const focusId = selectedId || result.defaultPreset || state.defaultPresetId;
-            state.defaultPresetId = result.defaultPreset || state.defaultPresetId;
+            const focusId = selectedId || result.defaultPreset || getActiveDefaultPresetId();
+            state.defaultPresetUsbId = result.defaultPresetUsb || state.defaultPresetUsbId;
+            state.defaultPresetWifiId = result.defaultPresetWifi || state.defaultPresetWifiId;
+            state.defaultPresetId = getActiveDefaultPresetId();
             state.selectedPresetId = focusId || null;
             await loadPresets();
             if (els.presetSelect && focusId) {
@@ -689,17 +1005,30 @@
     async function loadDefaultDraftFromPreset() {
         try {
             if (!window.displayPresetsAPI?.getDefault) return false;
-            const result = await window.displayPresetsAPI.getDefault();
-            if (!result?.success || !result.params) return false;
+            const result = await window.displayPresetsAPI.getDefault(state.presetTransport);
+            if (!result?.success) return false;
 
-            const params = SP.normalizeParams(result.params);
+            // Valeurs brutes du preset (sans overlay perf) pour l'éditeur.
+            let params = result.params;
+            const presetId = result.defaultPreset || getActiveDefaultPresetId();
+            if (presetId && window.displayPresetsAPI.resolveParams) {
+                const raw = await window.displayPresetsAPI.resolveParams(presetId);
+                if (raw?.success && raw.params) params = raw.params;
+            }
+            if (!params) return false;
+
+            params = SP.normalizeParams(params);
             state.draftParams = SP.cloneParams(params);
             // Référence = preset défaut pour que H265 validé ne paraisse pas « dirty » vs H264.
             state.appliedParams = SP.cloneParams(params);
-            state.selectedPresetId = result.defaultPreset || state.selectedPresetId;
-            if (els.presetSelect && result.defaultPreset) {
-                els.presetSelect.value = result.defaultPreset;
+            state.defaultPresetUsbId = result.defaultPresetUsb || state.defaultPresetUsbId;
+            state.defaultPresetWifiId = result.defaultPresetWifi || state.defaultPresetWifiId;
+            state.defaultPresetId = getActiveDefaultPresetId();
+            state.selectedPresetId = presetId || state.selectedPresetId;
+            if (els.presetSelect && presetId) {
+                els.presetSelect.value = presetId;
             }
+            syncTransportUi();
             syncPresetControls();
             syncSegmentUI();
             updateDirtyState();
@@ -835,34 +1164,6 @@
         }).catch(console.error);
     }
 
-    async function resetToOriginal() {
-        if (!state.selectedSessionId) {
-            setStatus(t("controlPanel.validation.selectBeforeReset"), "error");
-            return;
-        }
-
-        const confirmed = window.confirm(t("controlPanel.validation.resetConfirm"));
-        if (!confirmed) return;
-
-        setLoading(true);
-        setStatus(t("controlPanel.validation.resetting"));
-
-        try {
-            const result = await window.sessionAPI.resetStreamParams(state.selectedSessionId);
-            if (!result?.success) {
-                setStatus(result?.error || t("controlPanel.validation.resetFailed"), "error");
-                return;
-            }
-
-            await loadSessionParams(state.selectedSessionId);
-            setStatus(t("controlPanel.validation.resetDone"), "success");
-        } catch (err) {
-            setStatus(err.message || t("controlPanel.validation.unexpectedError"), "error");
-        } finally {
-            setLoading(false);
-        }
-    }
-
     function bindEvents() {
         if (els.btnApply && !els.btnApply._bound) {
             els.btnApply._bound = true;
@@ -872,14 +1173,18 @@
             els.btnCancel._bound = true;
             els.btnCancel.addEventListener("click", cancelChanges);
         }
-        if (els.btnReset && !els.btnReset._bound) {
-            els.btnReset._bound = true;
-            els.btnReset.addEventListener("click", () => resetToOriginal().catch(console.error));
-        }
         if (els.presetSelect && !els.presetSelect._bound) {
             els.presetSelect._bound = true;
             els.presetSelect.addEventListener("change", () => {
                 onPresetSelectChange().catch(console.error);
+            });
+        }
+        if (els.presetTransport && !els.presetTransport._bound) {
+            els.presetTransport._bound = true;
+            els.presetTransport.addEventListener("click", (event) => {
+                const btn = event.target?.closest?.("[data-preset-transport]");
+                if (!btn || btn.disabled) return;
+                setPresetTransport(btn.getAttribute("data-preset-transport")).catch(console.error);
             });
         }
         if (els.presetSetDefault && !els.presetSetDefault._bound) {
@@ -909,6 +1214,14 @@
             els.btnApplyAll._bound = true;
             els.btnApplyAll.addEventListener("click", () => applyToAllInstances().catch(console.error));
         }
+        if (els.btnResetFactory && !els.btnResetFactory._bound) {
+            els.btnResetFactory._bound = true;
+            els.btnResetFactory.addEventListener("click", () => resetTransportFactory().catch(console.error));
+        }
+        if (els.btnDeletePreset && !els.btnDeletePreset._bound) {
+            els.btnDeletePreset._bound = true;
+            els.btnDeletePreset.addEventListener("click", () => deleteSelectedPreset().catch(console.error));
+        }
 
         if (!window.__controlPanelEventsBound) {
             window.__controlPanelEventsBound = true;
@@ -923,13 +1236,39 @@
             });
             window.displayPresetsAPI?.onUpdated?.(() => {
                 loadPresets()
-                    .then(() => {
+                    .then(async () => {
+                        if (state.ignorePresetUpdatedDraftReload) {
+                            if (state.selectedPresetId && els.presetSelect) {
+                                els.presetSelect.value = state.selectedPresetId;
+                            }
+                            updateCurrentPresetLabel();
+                            return null;
+                        }
+                        if (state.selectedPresetId
+                            && state.presets.some((preset) => preset.id === state.selectedPresetId)) {
+                            if (els.presetSelect) els.presetSelect.value = state.selectedPresetId;
+                            if (!state.selectedSessionId) {
+                                await applyPresetToDraft(state.selectedPresetId);
+                            }
+                            updateCurrentPresetLabel();
+                            return null;
+                        }
                         if (!state.selectedSessionId) {
                             return loadDefaultDraftFromPreset();
                         }
+                        updateCurrentPresetLabel();
                         return null;
                     })
                     .catch(console.error);
+            });
+            window.uiPreferencesAPI?.onPerformanceChanged?.((payload) => {
+                if (payload?.performance) {
+                    onPerformancePrefsChanged(payload.performance).catch(console.error);
+                }
+            });
+            window.addEventListener("performance-prefs-changed", (event) => {
+                const prefs = event?.detail || window.HubPerformance?.getPrefs?.() || {};
+                onPerformancePrefsChanged(prefs).catch(console.error);
             });
         }
     }
@@ -941,12 +1280,17 @@
         els.currentValues = $("control-current-values");
         els.btnApply = $("control-btn-apply");
         els.btnCancel = $("control-btn-cancel");
-        els.btnReset = $("control-btn-reset");
         els.presetSelect = $("control-preset-select");
         els.presetNameInput = $("control-preset-name-input");
         els.presetSetDefault = $("control-preset-set-default");
+        els.presetSetDefaultLabel = $("control-preset-set-default-label");
         els.btnSavePreset = $("control-btn-save-preset");
+        els.btnDeletePreset = $("control-btn-delete-preset");
         els.btnApplyAll = $("control-btn-apply-all");
+        els.btnResetFactory = $("control-btn-reset-factory");
+        els.presetApplyAllHint = $("control-preset-apply-all-hint");
+        els.presetCurrent = $("control-preset-current");
+        els.presetTransport = $("control-preset-transport");
         els.statusMessage = $("control-status-message");
         els.loadingOverlay = $("control-loading-overlay");
     }
@@ -961,6 +1305,7 @@
         }
         buildParamGroups();
         bindEvents();
+        syncTransportUi();
         state.uiReady = true;
         updateSessionMeta();
         updateAppliedDisplay();
@@ -973,6 +1318,8 @@
         await loadPresets();
         if (!state.selectedSessionId) {
             await loadDefaultDraftFromPreset();
+        } else {
+            updateCurrentPresetLabel();
         }
         return true;
     }
@@ -993,6 +1340,17 @@
         }
 
         await refreshSessions();
+        updateCurrentPresetLabel();
+        if (isPerformanceModeOn()) {
+            const res = getPerformanceResolution();
+            setStatus(
+                t("controlPanel.presets.performanceActive", {
+                    resolution: `${res.width}×${res.height}`
+                }),
+                "info"
+            );
+            if (els.statusMessage) els.statusMessage.dataset.perfMode = "1";
+        }
     };
 
     window.refreshControlPanel = refreshSessions;
@@ -1015,10 +1373,12 @@
         OPT = SP.CONTROL_OPTIONS || getFallbackOptions();
         buildParamGroups();
         renderPresetSelect();
+        syncTransportUi();
         updateSessionMeta();
         updateAppliedDisplay();
         renderSessionList();
         globalThis.HubI18n?.applyDomI18n?.(document.getElementById("panel-settings") || document);
+        updateCurrentPresetLabel();
     });
 
     if (document.readyState === "loading") {

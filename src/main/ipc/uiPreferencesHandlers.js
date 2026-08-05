@@ -24,9 +24,18 @@ function broadcastPerformanceChanged(getWindows, performance) {
     }
 }
 
+function broadcastDisplayPresetsUpdated(getWindows) {
+    for (const win of getWindows()) {
+        if (win && !win.isDestroyed()) {
+            win.webContents.send("display-presets:updated");
+        }
+    }
+}
+
 function registerUiPreferencesHandlers(deps) {
     const getUiPreferencesManager = deps.getUiPreferencesManager;
     const getHubWallpaperManager = deps.getHubWallpaperManager;
+    const getDisplayPresetsManager = deps.getDisplayPresetsManager;
     const getMainWindow = deps.getMainWindow;
     const getHubModalWindow = deps.getHubModalWindow;
 
@@ -100,9 +109,26 @@ function registerUiPreferencesHandlers(deps) {
         if (!manager?.setPerformancePrefs) {
             return { success: false, error: "manager-unavailable" };
         }
+        const before = manager.getPerformancePrefs?.() || {};
         const result = manager.setPerformancePrefs(payload || {});
         if (result.success) {
             broadcastPerformanceChanged(getWindows, result.performance);
+            const turnedOn = result.performance?.performanceMode === true
+                && before.performanceMode !== true;
+            const turnedOff = result.performance?.performanceMode !== true
+                && before.performanceMode === true;
+            const presets = getDisplayPresetsManager?.();
+            if (turnedOn) {
+                const presetResult = presets?.applyPerformanceResolution?.();
+                if (presetResult?.success) {
+                    broadcastDisplayPresetsUpdated(getWindows);
+                }
+            } else if (turnedOff) {
+                const presetResult = presets?.restorePerformanceResolution?.({ healSeeds: true });
+                if (presetResult?.success && presetResult.restored) {
+                    broadcastDisplayPresetsUpdated(getWindows);
+                }
+            }
         }
         return result;
     });

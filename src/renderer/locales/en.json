@@ -4,8 +4,8 @@
     "connectedDevices": "Connected devices",
     "screen": "Screen",
     "portrait": "Portrait",
-    "deviceSpeaker": "Speaker",
     "audio": "Audio",
+    "deviceSpeaker": "Speaker",
     "devices": "Devices",
     "control": "Control",
     "settings": "Settings",
@@ -152,7 +152,7 @@
     "portraitTitle": "Enable or disable portrait mode",
     "portraitOn": "P",
     "portraitOff": "L",
-    "audioTitle": "Click: PC audio. Right-click: device speaker volume",
+    "audioTitle": "Mute or unmute audio for all sessions",
     "audioOn": "ON",
     "audioOff": "OFF",
     "deviceSpeakerTitle": "Devices audio",
@@ -181,7 +181,7 @@
     "homeShortcutsSaveFailed": "Could not save the Home shortcut.",
     "performanceLead": "Reduce CPU/GPU load on smaller PCs. Performance mode turns off the heaviest features at once.",
     "performanceModeTitle": "Performance mode",
-    "performanceModeDesc": "Disables FPS, app logos, Home/hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching with open sessions.",
+    "performanceModeDesc": "Disables FPS, app logos, Home/hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching with open sessions. Also applies qHD (960×540) for upcoming sessions — still editable.",
     "performanceFeaturesTitle": "Features",
     "performanceFeaturesHint": "In Performance mode, features stay off. Turn the mode off to toggle them one by one.",
     "performanceSaveFailed": "Could not save performance settings.",
@@ -251,7 +251,7 @@
     "aboutFeat2Title": "New instance",
     "aboutFeat2Desc": "Launch an app on a virtual display (clones & profiles), with device/app picker and recents. A USB ↔ Wi‑Fi switch relaunches the session to reattach the display.",
     "aboutFeat3Title": "Mirroring & presets",
-    "aboutFeat3Desc": "Controllable scrcpy stream with resolution, DPI, FPS, bitrate, GOP, and codec presets. In mirroring, USB ↔ Wi‑Fi stays seamless: only the connection ID is refreshed.",
+    "aboutFeat3Desc": "Controllable scrcpy stream with resolution, DPI, FPS, bitrate, GOP, and codec presets. USB default: FULL HD · 60 fps · 8 Mbps; WiFi default: HD 720p · 30 fps · 8 Mbps. In mirroring, USB ↔ Wi‑Fi stays seamless: only the connection ID is refreshed.",
     "aboutFeat4Title": "Stream Deck mode",
     "aboutFeat4Desc": "Show multiple sessions in grid, focus or duo, with an active tile for control.",
     "aboutFeat5Title": "Dock & batteries",
@@ -272,7 +272,7 @@
     "aboutFeat12Title": "Home shortcuts",
     "aboutFeat12Desc": "Enable Home FABs (New instance, Stream Deck, Wi‑Fi, Devices, Appearance, Control, Cleanup, Performance) in Settings → Home shortcuts. Ctrl+click to move / lock; left of the dock they stay visible off Home.",
     "aboutFeat13Title": "Performance",
-    "aboutFeat13Desc": "Performance mode and per-feature toggles: FPS, app logos, Home/hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching with open sessions. Ideal for smaller PCs."
+    "aboutFeat13Desc": "Performance mode and per-feature toggles: FPS, app logos, Home/hover previews, live dock batteries, UI animations, USB/Wi‑Fi switching with open sessions, and qHD (960×540) preset on enable. Ideal for smaller PCs."
   },
   "devicePanel": {
     "wifiEnabled": "WiFi enabled",
@@ -295,6 +295,7 @@
     },
     "usbUnpluggedTitle": "USB disconnected",
     "usbUnpluggedBody": "Continue the session over WiFi, or disconnect?",
+    "usbUnpluggedStreamHint": "WiFi default (new sessions): HD 720p · 30 fps · 8 Mbps",
     "continueWifi": "Continue on WiFi",
     "playOnDevice": "Disconnect",
     "disconnectedToast": "Session disconnected",
@@ -328,6 +329,8 @@
     "discoverNoNew": "No new devices ({connected} connected)",
     "discoverNone": "No devices detected — check USB or WiFi",
     "discoverFailed": "Device search failed",
+    "usbDefaultHint": "Default: FULL HD 1920×1080 · 60 fps · 8 Mbps",
+    "wifiDefaultHint": "Default: HD 720p · 30 fps · 8 Mbps",
     "maintenanceHint": "Auto cache: {days} days. Manual: cache and history with no delay.",
     "autoCleanup": "Automatic cleanup",
     "autoCleanupEnabled": "Enable auto cleanup ({days} days)",
@@ -445,21 +448,48 @@
       "label": "Display presets",
       "none": "— No preset —",
       "setDefault": "Set as default",
+      "setDefaultUsb": "Set as USB default",
+      "setDefaultWifi": "Set as Wi‑Fi default",
+      "transportUsb": "USB",
+      "transportWifi": "Wi‑Fi",
       "saveCurrent": "Save current settings",
       "applyAll": "Apply to all instances",
       "applyAllHint": "Updates the default preset for future launches. Open sessions are not restarted.",
+      "applyAllHintUsb": "Updates the USB default preset for future launches. Open sessions are not restarted.",
+      "applyAllHintWifi": "Updates the Wi‑Fi default preset for future launches. Open sessions are not restarted.",
       "namePlaceholder": "Preset name",
       "nameEmpty": "Enter a preset name.",
       "namePrompt": "Preset name:",
       "saved": "Preset \"{name}\" saved.",
       "saveFailed": "Could not save preset.",
       "defaultSet": "Preset \"{name}\" set as default for new sessions.",
+      "defaultSetUsb": "Preset \"{name}\" set as default for USB sessions.",
+      "defaultSetWifi": "Preset \"{name}\" set as default for Wi‑Fi sessions.",
       "defaultSetFailed": "Could not set default preset.",
       "loadFailed": "Could not load presets.",
       "applyAllUnavailable": "Default preset update is unavailable.",
       "applyingAll": "Saving for future launches…",
       "appliedAll": "Settings saved for future launches. Active sessions are unchanged.",
-      "applyAllFailed": "Could not save settings for future launches."
+      "applyAllFailed": "Could not save settings for future launches.",
+      "delete": "Delete",
+      "deleteConfirm": "Delete preset \"{name}\"?",
+      "deleted": "Preset \"{name}\" deleted.",
+      "deleteFailed": "Could not delete preset.",
+      "deleteNone": "Select a preset to delete.",
+      "deleteLast": "Cannot delete the last remaining preset.",
+      "current": "Current preset: {name} ★",
+      "currentBoth": "USB: {usb} ★ · Wi‑Fi: {wifi} ★",
+      "currentNone": "Current preset: —",
+      "performanceActive": "Performance mode on · {resolution}",
+      "loaded": "Preset \"{name}\" · {resolution}",
+      "resetFactoryUsb": "Reset USB default",
+      "resetFactoryWifi": "Reset Wi‑Fi default",
+      "resetFactoryConfirmUsb": "Restore the factory USB preset (Full HD 1920×1080)?",
+      "resetFactoryConfirmWifi": "Restore the factory Wi‑Fi preset (HD 1280×720)?",
+      "resetFactoryDoneUsb": "USB preset reset (Full HD).",
+      "resetFactoryDoneWifi": "Wi‑Fi preset reset (HD 720p).",
+      "resetFactoryFailed": "Could not reset the preset.",
+      "resetFactoryUnavailable": "Reset unavailable."
     },
     "resolution": {
       "label": "Resolution",
@@ -835,7 +865,7 @@
                 "Settings",
                 "Performance"
               ],
-              "desc": "Performance mode and individual features (FPS, logos, previews, dock batteries, animations, USB/Wi‑Fi with sessions)."
+              "desc": "Performance mode and individual features (FPS, logos, previews, dock batteries, animations, USB/Wi‑Fi with sessions). Applies qHD (960×540) on enable."
             },
             {
               "keys": [
@@ -923,7 +953,7 @@
               "keys": [
                 "USB unplugged"
               ],
-              "desc": "Offer to continue the session over Wi‑Fi or disconnect."
+              "desc": "Offer to continue the session over Wi‑Fi or disconnect. WiFi stream default (new sessions): HD 720p · 30 fps · 8 Mbps; USB: FULL HD · 60 fps · 8 Mbps."
             },
             {
               "keys": [
@@ -937,7 +967,7 @@
     },
     "wifi": {
       "title": "Connect a device over WiFi",
-      "note": "If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
+      "note": "USB default: FULL HD 1920×1080 · 60 fps · 8 Mbps. WiFi default: HD 720p · 30 fps · 8 Mbps (adjustable in the Control panel). If the phone switches WiFi networks or its IP address changes, reconnect the device using the toggle.",
       "steps": [
         {
           "chipLabel": "USB",
@@ -989,7 +1019,7 @@
             "To switch back to USB, click the toggle again (settings stay saved).",
             "Find USB and WiFi devices in Settings → Devices."
           ],
-          "tip": "If the IP changes, reconnect with the WiFi toggle."
+          "tip": "If the IP changes, reconnect with the WiFi toggle. WiFi stream default: HD 720p · 30 fps · 8 Mbps (USB: FULL HD · 60 fps · 8 Mbps)."
         }
       ]
     },
@@ -1092,7 +1122,7 @@
       "sections": [
         {
           "title": "Performance mode",
-          "body": "One switch disables FPS, app logos, Home and hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching while sessions are open."
+          "body": "One switch disables FPS, app logos, Home and hover previews, live dock batteries, UI animations, and USB/Wi‑Fi switching while sessions are open. It also applies the qHD (960×540) preset for upcoming sessions; you can still change resolution and other settings afterward."
         },
         {
           "title": "Individual features",
@@ -1115,7 +1145,7 @@
         "AZERTY keyboard: accented letters, Shift (digits and ?./§%…), Alt Gr (@, #, {, }), and € are sent to the device. Ctrl+Tab / Ctrl+Shift+Tab switch session tabs (not typing).",
         "Empty Stream Deck mode: start at least one session (mirroring or instance) from Connected devices or New instance.",
         "Incomplete Duo mode: open the Duo menu (Duo button) and pick Device 1 and Device 2 from the list.",
-        "Slow PC / stuttering: enable Settings → Performance → Performance mode (cuts previews, FPS, logos, and animations).",
+        "Slow PC / stuttering: enable Settings → Performance → Performance mode (cuts previews, FPS, logos, and animations; applies qHD 960×540).",
         "USB/Wi‑Fi switch refused: a session is open and the option is disabled in Settings → Performance."
       ]
     }

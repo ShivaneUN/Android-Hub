@@ -36,10 +36,10 @@ function registerDisplayPresetsHandlers(deps) {
         return manager.list();
     });
 
-    ipcMain.handle("display-presets:get-default", () => {
+    ipcMain.handle("display-presets:get-default", (_event, { transport } = {}) => {
         const { manager, error } = requireManager();
         if (error) return error;
-        return manager.getDefault();
+        return manager.getDefault(transport || "usb");
     });
 
     ipcMain.handle("display-presets:resolve-params", (_event, { presetId } = {}) => {
@@ -47,7 +47,7 @@ function registerDisplayPresetsHandlers(deps) {
         if (error) return error;
         return {
             success: true,
-            presetId: presetId || manager.list().defaultPreset,
+            presetId: presetId || manager.list().defaultPresetUsb,
             params: manager.resolveParams(presetId || null)
         };
     });
@@ -78,11 +78,11 @@ function registerDisplayPresetsHandlers(deps) {
         return result;
     });
 
-    ipcMain.handle("display-presets:set-default", (_event, { presetId } = {}) => {
+    ipcMain.handle("display-presets:set-default", (_event, { presetId, transport } = {}) => {
         const { manager, error } = requireManager();
         if (error) return error;
 
-        const result = manager.setDefaultPreset(presetId);
+        const result = manager.setDefaultPreset(presetId, transport || "usb");
         if (result.success) {
             notifyDisplayPresetsUpdated(getWindows);
         }
@@ -90,11 +90,11 @@ function registerDisplayPresetsHandlers(deps) {
         return result;
     });
 
-    ipcMain.handle("display-presets:update-default-from-params", (_event, { params } = {}) => {
+    ipcMain.handle("display-presets:update-default-from-params", (_event, { params, transport } = {}) => {
         const { manager, error } = requireManager();
         if (error) return error;
 
-        const result = manager.updateDefaultFromParams(params);
+        const result = manager.updateDefaultFromParams(params, transport || "usb");
         if (result.success) {
             notifyDisplayPresetsUpdated(getWindows);
         }
@@ -107,6 +107,18 @@ function registerDisplayPresetsHandlers(deps) {
         if (error) return error;
 
         const result = manager.deletePreset(presetId);
+        if (result.success) {
+            notifyDisplayPresetsUpdated(getWindows);
+        }
+
+        return result;
+    });
+
+    ipcMain.handle("display-presets:reset-transport-factory", (_event, { transport } = {}) => {
+        const { manager, error } = requireManager();
+        if (error) return error;
+
+        const result = manager.resetTransportToFactory(transport || "usb");
         if (result.success) {
             notifyDisplayPresetsUpdated(getWindows);
         }
