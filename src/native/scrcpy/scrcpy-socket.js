@@ -267,46 +267,53 @@ class ScrcpySocketClient extends EventEmitter {
 
     _startServerProcess(options = {}) {
         const audioEnabled = this._isAudioEnabled(options);
-        const args = [
-            "-s", this.serial,
-            "shell",
-            `CLASSPATH=${DEVICE_SERVER_PATH}`,
-            "app_process",
-            "/",
-            "com.genymobile.scrcpy.Server",
-            "4.0",                          // version, doit matcher le jar poussé
-            `scid=${this.scid}`,
-            "log_level=info",
-            `audio=${audioEnabled}`,
-            "send_device_meta=true",
-            "send_frame_meta=true",
-            "send_dummy_byte=true",
-            "send_stream_meta=true",
-            "tunnel_forward=false",
-            `video_bit_rate=${options.bitRate || 8000000}`,
-            `max_fps=${options.maxFps || 60}`,
-            `max_size=${options.maxSize || 1920}`,
-            `video_codec_options=i-frame-interval=${options.iFrameInterval || 1}`
-        ];
-        if (options.videoCodec === "h265") args.push("video_codec=h265");
+        const bitRate = Number(options.bitRate) > 0 ? Math.round(Number(options.bitRate)) : 8000000;
+        const maxFps = Number(options.maxFps) > 0 ? Math.round(Number(options.maxFps)) : 60;
+        const maxSize = Number(options.maxSize) > 0 ? Math.round(Number(options.maxSize)) : 1920;
+        const iFrameInterval = Number(options.iFrameInterval) > 0
+            ? Math.round(Number(options.iFrameInterval))
+            : 0;
+        const hasNewDisplay = Boolean(options.newDisplay)
+            && (options.displayId === undefined || options.displayId === null);
+        const hasDisplayId = options.displayId !== undefined && options.displayId !== null;
 
-        if (options.control === false) {
-            args.push("control=false");
+        // Args serveur : garder court. Sur beaucoup d'appareils, `adb shell app_process …`
+        // est plafonné à ~255 caractères → sinon "Aborted" / exit 134 (stack protector).
+        const serverArgs = [
+            `scid=${this.scid}`,
+            `audio=${audioEnabled}`,
+            `video_bit_rate=${bitRate}`,
+            `max_fps=${maxFps}`
+        ];
+
+        // max_size inutile avec new_display (le VD fixe déjà la taille).
+        if (!hasNewDisplay) {
+            serverArgs.push(`max_size=${maxSize}`);
         }
 
-        if (options.displayId !== undefined && options.displayId !== null) {
-            args.push(`display_id=${options.displayId}`);
-        } else if (options.newDisplay) {
-            args.push(`new_display=${options.newDisplay}`);
+        if (iFrameInterval > 0) {
+            serverArgs.push(`video_codec_options=i-frame-interval=${iFrameInterval}`);
+        }
+        if (options.videoCodec === "h265") {
+            serverArgs.push("video_codec=h265");
+        }
+        if (options.control === false) {
+            serverArgs.push("control=false");
+        }
+
+        if (hasDisplayId) {
+            serverArgs.push(`display_id=${options.displayId}`);
+        } else if (hasNewDisplay) {
+            serverArgs.push(`new_display=${options.newDisplay}`);
             // false = apps déplacées vers l'écran principal au lieu d'être détruites.
             if (options.vdDestroyContent === false) {
-                args.push("vd_destroy_content=false");
+                serverArgs.push("vd_destroy_content=false");
             }
             if (options.vdSystemDecorations === false) {
-                args.push("vd_system_decorations=false");
+                serverArgs.push("vd_system_decorations=false");
             }
             if (options.flexDisplay === true) {
-                args.push("flex_display=true");
+                serverArgs.push("flex_display=true");
             }
         }
 
@@ -324,19 +331,72 @@ class ScrcpySocketClient extends EventEmitter {
             );
         }
         if (lock) {
-            args.push(`capture_orientation=${lock}`);
+            serverArgs.push(`capture_orientation=${lock}`);
         }
 
         if (options.stayAwake) {
-            args.push("stay_awake=true");
+            serverArgs.push("stay_awake=true");
         }
+
+        // Priorité de drop si commande trop longue (plafond app_process ~255).
+        const dropOrder = [
+            (list) => {
+                const i = list.findIndex((a) => a.startsWith("video_codec_options="));
+                return i >= 0 ? i : -1;
+            },
+            (list) => {
+                const i = list.findIndex((a) => a.startsWith("vd_system_decorations="));
+                return i >= 0 ? i : -1;
+            },
+            (list) => {
+                const i = list.findIndex((a) => a === "vd_destroy_content=false");
+                return i >= 0 ? i : -1;
+            }
+        ];
+
+        const buildShellParts = (srvArgs) => ([
+            `CLASSPATH=${DEVICE_SERVER_PATH}`,
+            "app_process",
+            "/",
+            "com.genymobile.scrcpy.Server",
+            "4.0",
+            ...srvArgs
+        ]);
+
+        let shellParts = buildShellParts(serverArgs);
+        let shellCmdLen = shellParts.join(" ").length;
+        for (const findDrop of dropOrder) {
+            if (shellCmdLen <= 250) break;
+            const idx = findDrop(serverArgs);
+            if (idx < 0) continue;
+            const removed = serverArgs.splice(idx, 1)[0];
+            console.warn(
+                `[ScrcpySocketClient ${this.serial}] drop arg serveur (len ${shellCmdLen}): ${removed}`
+            );
+            shellParts = buildShellParts(serverArgs);
+            shellCmdLen = shellParts.join(" ").length;
+        }
+        if (shellCmdLen > 250) {
+            console.warn(
+                `[ScrcpySocketClient ${this.serial}] commande serveur encore longue (${shellCmdLen} chars) — risque Aborted/134`
+            );
+        }
+
+        const args = [
+            "-s", this.serial,
+            "shell",
+            ...shellParts
+        ];
 
         const spawnOptions = { windowsHide: true };
         if (process.platform === "win32") {
             spawnOptions.creationFlags = 0x08000000;
         }
         this.serverProcess = spawn(this.adbPath, args, spawnOptions);
-        console.log(`[ScrcpySocketClient ${this.serial}] scrcpy-server args: audio=${audioEnabled}`, args.join(" "));
+        console.log(
+            `[ScrcpySocketClient ${this.serial}] scrcpy-server args: audio=${audioEnabled} len=${shellCmdLen}`,
+            serverArgs.join(" ")
+        );
         this._serverStderr = "";
         this._serverStdout = "";
 

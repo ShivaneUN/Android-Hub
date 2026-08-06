@@ -414,6 +414,16 @@ class NewInstanceManager extends EventEmitter {
                 }
                 return;
             }
+
+            // Type B vivant (cette session ou une autre) : jamais KEYCODE_SLEEP.
+            // Sur Wi‑Fi, sleep coupe souvent ADB → scrcpy-server exit (code null) → session fermée.
+            if (session.client || this._hasLiveTypeBOnDevice(session.serial, session.stableDeviceId, session.sessionId)) {
+                console.warn(
+                    `[NewInstanceManager] skip keyevent 223 — Type B actif, setDisplayPower indisponible (${session.sessionId})`
+                );
+                return;
+            }
+
             try {
                 await execPromise(`"${this.adbPath}" -s ${adbSerialArg(session.serial)} shell input keyevent 223`);
                 session.physicalScreenOff = true;
@@ -501,6 +511,24 @@ class NewInstanceManager extends EventEmitter {
     /** True si une session Type A existe encore sur ce device (quel que soit screenOff). */
     _hasTypeAOnDevice(serial, stableDeviceId = null, excludeSessionId = null) {
         return this._listTypeAOnDevice(serial, stableDeviceId, excludeSessionId).length > 0;
+    }
+
+    /** True si une session Type B (Hub) est encore vivante sur le device. */
+    _hasLiveTypeBOnDevice(serial, stableDeviceId = null, excludeSessionId = null) {
+        for (const [sessionId, session] of this.sessions.entries()) {
+            if (excludeSessionId && sessionId === excludeSessionId) continue;
+            if (!session?.client) continue;
+            if (session.state === "stopped" || session.state === "stopping" || session.state === "error") {
+                continue;
+            }
+            if (stableDeviceId && session.stableDeviceId && session.stableDeviceId === stableDeviceId) {
+                return true;
+            }
+            if (serial && (session.serial === serial || session.client?.shellSerial === serial)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** True si une session Type A sur le même device veut encore l'écran allumé. */
@@ -1433,18 +1461,6 @@ class NewInstanceManager extends EventEmitter {
             await this._ensureDeviceStayAwake(session.serial);
         }
 
-        // Scrcpy peut rallumer le panneau au start — réappliquer OFF si le bouton est OFF.
-        const desiredOff = typeof global.getDesiredScreenOff === "function"
-            ? global.getDesiredScreenOff(session.serial, session.stableDeviceId)
-            : null;
-        if (desiredOff === true) {
-            const settleMs = session._transportRebindActive ? 0 : 120;
-            if (settleMs > 0) {
-                await new Promise((resolve) => setTimeout(resolve, settleMs));
-            }
-            await this._applyDesiredPhysicalScreen(session);
-        }
-
         session.state = "started";
         this.emit("state", {
             sessionId,
@@ -1458,6 +1474,27 @@ class NewInstanceManager extends EventEmitter {
 
         if (session.externalLaunchId && typeof global.handoffExternalScrcpyLaunch === "function") {
             global.handoffExternalScrcpyLaunch(session.externalLaunchId);
+        }
+
+        // Scrcpy peut rallumer le panneau au start — réappliquer OFF après stabilisation.
+        // Ne pas bloquer le start : un KEYCODE_SLEEP / re-OFF trop tôt tue le flux Wi‑Fi Type B.
+        const desiredOff = typeof global.getDesiredScreenOff === "function"
+            ? global.getDesiredScreenOff(session.serial, session.stableDeviceId)
+            : null;
+        if (desiredOff === true) {
+            const settleMs = session._transportRebindActive ? 80 : 400;
+            const applySessionId = session.sessionId;
+            setTimeout(() => {
+                const live = this.sessions.get(applySessionId);
+                if (!live || live !== session || !live.client) return;
+                if (live.state !== "started" && live.state !== "display-ready") return;
+                void this._applyDesiredPhysicalScreen(live).catch((err) => {
+                    console.warn(
+                        `[NewInstanceManager] re-OFF différé échoué (${applySessionId}):`,
+                        err?.message || err
+                    );
+                });
+            }, settleMs);
         }
 
         return session;
