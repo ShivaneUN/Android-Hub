@@ -27,6 +27,8 @@ class AppsWorkerBridge {
         this.fallbackPrefetchAppMetadata = null;
         /** @type {((payload: { serial?: string, updates?: unknown[] }) => void)|null} */
         this.metadataUpdatedRelay = null;
+        /** @type {(() => void)|null} */
+        this.historyMutatedRelay = null;
         /** @type {(() => Set<string>)|null} */
         this.getActiveTypeBKeys = null;
         /** @type {LaunchHistoryManager|null} */
@@ -155,6 +157,21 @@ class AppsWorkerBridge {
         this.metadataUpdatedRelay = typeof handler === "function" ? handler : null;
     }
 
+    setHistoryMutatedRelay(handler) {
+        this.historyMutatedRelay = typeof handler === "function" ? handler : null;
+    }
+
+    _emitHistoryMutated(result) {
+        if (result && result.success === false) return;
+        if (typeof this.historyMutatedRelay === "function") {
+            try {
+                this.historyMutatedRelay();
+            } catch (_err) {
+                /* ignore */
+            }
+        }
+    }
+
     async start({ userDataPath, adbPath, getActiveTypeBKeys }) {
         if (this.started) return;
 
@@ -249,31 +266,47 @@ class AppsWorkerBridge {
 
     async recordLaunch(payload) {
         await this.ensureReady();
+        let result;
         if (this.useFallback) {
-            return this.fallbackManager?.recordLaunch(payload) || { success: false, error: "Historique indisponible." };
+            result = this.fallbackManager?.recordLaunch(payload)
+                || { success: false, error: "Historique indisponible." };
+        } else {
+            result = await this.request("ADD_HISTORY_ENTRY", payload);
         }
-        return this.request("ADD_HISTORY_ENTRY", payload);
+        this._emitHistoryMutated(result);
+        return result;
     }
 
     async remove(payload) {
         await this.ensureReady();
+        let result;
         if (this.useFallback) {
-            return this.fallbackManager?.remove(payload) || { success: false, error: "Historique indisponible." };
+            result = this.fallbackManager?.remove(payload)
+                || { success: false, error: "Historique indisponible." };
+        } else {
+            result = await this.request("REMOVE_HISTORY_ENTRY", payload);
         }
-        return this.request("REMOVE_HISTORY_ENTRY", payload);
+        this._emitHistoryMutated(result);
+        return result;
     }
 
     async purgeOlderThan(cutoff, { dryRun = false } = {}) {
         await this.ensureReady();
+        let result;
         if (this.useFallback) {
-            return this.fallbackManager?.purgeOlderThan(cutoff, { dryRun })
+            result = this.fallbackManager?.purgeOlderThan(cutoff, { dryRun })
                 || { entriesEligible: 0, entriesRemoved: 0 };
+        } else {
+            result = await this.request("PURGE_HISTORY_OLDER_THAN", {
+                cutoff,
+                dryRun,
+                activeKeys: this.getActiveKeysArray()
+            });
         }
-        return this.request("PURGE_HISTORY_OLDER_THAN", {
-            cutoff,
-            dryRun,
-            activeKeys: this.getActiveKeysArray()
-        });
+        if (!dryRun && (result?.entriesRemoved > 0 || result?.success)) {
+            this._emitHistoryMutated({ success: true });
+        }
+        return result;
     }
 
     async getAppList({ transportSerial, cacheDeviceId, adbSerial }) {

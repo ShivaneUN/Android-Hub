@@ -2204,7 +2204,7 @@ body.theme-tablet .home-module[data-orientation="vertical"].home-apps-section .h
   width: max-content;
   max-width: 100%;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 body.theme-tablet .home-module[data-orientation="vertical"].home-apps-section .home-apps-strip.is-height-capped {

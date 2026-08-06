@@ -1,5 +1,16 @@
 const { ipcMain } = require("electron");
 
+/** @type {Promise<{ success: boolean, entries?: Array, error?: string }>|null} */
+let listInFlight = null;
+let listEpoch = 0;
+let listInFlightEpoch = -1;
+
+/** Après record/remove : ne plus rejoindre un list IPC stale. */
+function invalidateLaunchHistoryListCoalesce() {
+    listEpoch += 1;
+    listInFlight = null;
+}
+
 function applyCustomInstanceAppNames(entries, namesManager) {
     if (!namesManager || !Array.isArray(entries)) return entries;
     return entries.map((entry) => {
@@ -15,15 +26,6 @@ function applyCustomInstanceAppNames(entries, namesManager) {
 function registerLaunchHistoryHandlers(deps) {
     const getBridge = deps.getAppsWorkerBridge;
     const getFacade = deps.getLaunchHistoryManager;
-    /** @type {Promise<{ success: boolean, entries?: Array, error?: string }>|null} */
-    let listInFlight = null;
-    /** @type {{ at: number, result: { success: boolean, entries?: Array, error?: string } }|null} */
-    let listCache = null;
-    const LIST_TTL_MS = 1500;
-
-    function invalidateListCache() {
-        listCache = null;
-    }
 
     async function resolveHistoryEntries() {
         const bridge = getBridge?.();
@@ -35,11 +37,12 @@ function registerLaunchHistoryHandlers(deps) {
     }
 
     ipcMain.handle("launch-history:list", async () => {
-        if (listInFlight) return listInFlight;
-        if (listCache && (Date.now() - listCache.at) < LIST_TTL_MS) {
-            return listCache.result;
+        if (listInFlight && listInFlightEpoch === listEpoch) {
+            return listInFlight;
         }
 
+        const epoch = listEpoch;
+        listInFlightEpoch = epoch;
         listInFlight = (async () => {
             try {
                 const entries = await resolveHistoryEntries();
@@ -52,14 +55,14 @@ function registerLaunchHistoryHandlers(deps) {
                     deps.getCustomNamesManager?.()
                 );
                 console.log("[LaunchHistory] list IPC", namedEntries.length, "entrée(s)");
-                const result = { success: true, entries: namedEntries };
-                listCache = { at: Date.now(), result };
-                return result;
+                return { success: true, entries: namedEntries };
             } catch (err) {
                 console.warn("[LaunchHistory] list IPC:", err.message);
                 return { success: false, error: err.message, entries: [] };
             } finally {
-                listInFlight = null;
+                if (listInFlightEpoch === epoch) {
+                    listInFlight = null;
+                }
             }
         })();
 
@@ -68,7 +71,6 @@ function registerLaunchHistoryHandlers(deps) {
 
     ipcMain.handle("launch-history:record", async (_event, payload = {}) => {
         try {
-            invalidateListCache();
             const bridge = getBridge?.();
             if (bridge) {
                 return await bridge.recordLaunch(payload);
@@ -85,7 +87,6 @@ function registerLaunchHistoryHandlers(deps) {
 
     ipcMain.handle("launch-history:remove", async (_event, payload = {}) => {
         try {
-            invalidateListCache();
             const bridge = getBridge?.();
             if (bridge) {
                 return await bridge.remove(payload);
@@ -101,4 +102,7 @@ function registerLaunchHistoryHandlers(deps) {
     });
 }
 
-module.exports = { registerLaunchHistoryHandlers };
+module.exports = {
+    registerLaunchHistoryHandlers,
+    invalidateLaunchHistoryListCoalesce
+};

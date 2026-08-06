@@ -5,7 +5,11 @@
   const HOME_PINNED_APPS_STORAGE_KEY = "android-hub.home-pinned-apps.v1";
   const HOME_PINNED_APPS_MAX = 16;
   const HOME_APPS_STRIP_VISIBLE = 3;
+  /** Vertical plafonné : ~2 tuiles (aligné CSS max-height 2×78px). */
+  const HOME_APPS_VERTICAL_VISIBLE = 2;
   const HOME_RECENT_APPS_MAX = 24;
+  /** Nombre de tuiles rendues dans la strip (le reste passe dans +). */
+  let homeAppsVisibleCap = HOME_APPS_STRIP_VISIBLE;
   /** Nombre max de pastilles compactes visibles ; le reste passe dans +N. */
   const DOCK_BATTERY_VISIBLE_MAX = 5;
   let dockMoreOpen = false;
@@ -4704,6 +4708,56 @@
     return `${deviceId}::${packageName}::${Number.isFinite(userId) ? userId : 0}`;
   }
 
+  /** Récentes : 1× plus récente par appareil connecté, puis remplissage chrono. */
+  function pickHomeRecentEntries(entries, max) {
+    if (!Array.isArray(entries) || max <= 0) return [];
+
+    const list = entries.filter((entry) => entry?.deviceId && (entry.packageName || entry.package));
+    if (!list.length) return [];
+    if (list.length <= max) return list.slice();
+
+    const devices = typeof window.getCurrentDevices === "function"
+      ? window.getCurrentDevices()
+      : [];
+    const connectedKeys = new Set();
+    for (const device of (Array.isArray(devices) ? devices : [])) {
+      if (device?.connected === false) continue;
+      for (const key of [device.deviceId, device.serial, device.usbSerial, device.wifiSerial]) {
+        if (key) connectedKeys.add(String(key));
+      }
+    }
+
+    const matchesConnected = (deviceId) => connectedKeys.has(String(deviceId || ""));
+    const used = new Set();
+    const picked = [];
+
+    const pushEntry = (entry) => {
+      if (!entry || picked.length >= max) return false;
+      const key = buildHomeAppKey(entry);
+      if (used.has(key)) return false;
+      used.add(key);
+      picked.push(entry);
+      return true;
+    };
+
+    // Appareils connectés présents dans l’historique (ordre = plus récente globale).
+    const seenDevices = new Set();
+    for (const entry of list) {
+      const id = String(entry.deviceId);
+      if (!matchesConnected(id) || seenDevices.has(id)) continue;
+      seenDevices.add(id);
+      pushEntry(entry);
+      if (picked.length >= max) return picked;
+    }
+
+    // Compléter avec le vrai ordre chronologique.
+    for (const entry of list) {
+      if (picked.length >= max) break;
+      pushEntry(entry);
+    }
+    return picked;
+  }
+
   function loadPinnedApps() {
     try {
       const raw = localStorage.getItem(HOME_PINNED_APPS_STORAGE_KEY);
@@ -4936,7 +4990,8 @@
 
     const pinned = kind === "pinned";
     const entries = pinned ? pinnedEntries : recentEntries;
-    const overflow = entries.slice(HOME_APPS_STRIP_VISIBLE);
+    const visibleCap = Math.max(1, homeAppsVisibleCap || HOME_APPS_STRIP_VISIBLE);
+    const overflow = entries.slice(visibleCap);
     if (!overflow.length) {
       closeHomeAppsMorePopup();
       return;
@@ -4959,7 +5014,7 @@
     positionHomeAppsMorePopup(getHomeAppsMoreAnchor(kind) || anchorEl);
 
     const tiles = await Promise.all(
-      overflow.map((entry, index) => buildHomeAppTileHtml(entry, HOME_APPS_STRIP_VISIBLE + index, {
+      overflow.map((entry, index) => buildHomeAppTileHtml(entry, visibleCap + index, {
         pinned,
         indexAttr: pinned ? "data-pinned-index" : "data-recent-index"
       }))
@@ -5038,14 +5093,12 @@
 
     try {
       loadPinnedApps();
-      const pinnedKeys = new Set(pinnedEntries.map((entry) => entry.key));
 
       if (window.launchHistoryAPI?.list) {
         const response = await window.launchHistoryAPI.list();
         const entries = Array.isArray(response?.entries) ? response.entries : [];
-        recentEntries = entries
-          .filter((entry) => !pinnedKeys.has(buildHomeAppKey(entry)))
-          .slice(0, HOME_RECENT_APPS_MAX);
+        // Garder les épinglées aussi dans Récentes (historique de lancement Accueil).
+        recentEntries = pickHomeRecentEntries(entries, HOME_RECENT_APPS_MAX);
       } else {
         recentEntries = [];
       }
@@ -5056,19 +5109,24 @@
       await applyInstanceCustomNamesToHomeEntries(recentEntries);
 
       const vertical = appsSection?.dataset?.orientation === "vertical";
-      // Budget voisin : en horizontal plafonné → 3 visibles ; libre → autant que possible.
-      // En vertical → colonnes (toutes les apps, scroll ↓).
+      // Plafond layout : horizontal 3 / vertical 2 ; libre → toutes.
+      // Le reste passe dans « + » (aussi en vertical — avant : apps coupées sans bouton).
       const appsFree = !homeModuleHasNeighborBelow("apps");
-      const stripLimit = vertical
-        ? Math.max(pinnedEntries.length, recentEntries.length, HOME_APPS_STRIP_VISIBLE)
-        : (appsFree
-          ? Math.max(HOME_APPS_STRIP_VISIBLE, HOME_PINNED_APPS_MAX, HOME_RECENT_APPS_MAX)
-          : HOME_APPS_STRIP_VISIBLE);
+      homeAppsVisibleCap = appsFree
+        ? Math.max(
+          HOME_APPS_STRIP_VISIBLE,
+          HOME_APPS_VERTICAL_VISIBLE,
+          pinnedEntries.length,
+          recentEntries.length,
+          HOME_PINNED_APPS_MAX,
+          HOME_RECENT_APPS_MAX
+        )
+        : (vertical ? HOME_APPS_VERTICAL_VISIBLE : HOME_APPS_STRIP_VISIBLE);
 
-      const pinnedVisible = pinnedEntries.slice(0, stripLimit);
-      const recentVisible = recentEntries.slice(0, stripLimit);
-      const pinnedHasMore = !vertical && pinnedEntries.length > stripLimit;
-      const recentHasMore = !vertical && recentEntries.length > stripLimit;
+      const pinnedVisible = pinnedEntries.slice(0, homeAppsVisibleCap);
+      const recentVisible = recentEntries.slice(0, homeAppsVisibleCap);
+      const pinnedHasMore = pinnedEntries.length > homeAppsVisibleCap;
+      const recentHasMore = recentEntries.length > homeAppsVisibleCap;
 
       const pinnedTiles = await Promise.all(
         pinnedVisible.map((entry, index) => buildHomeAppTileHtml(entry, index, {

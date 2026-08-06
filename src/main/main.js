@@ -64,7 +64,7 @@ const { registerStreamDeckDuoPopupHandlers } = require("./ipc/streamDeckDuoPopup
 const { registerContextMenuHandlers } = require("./ipc/contextMenuHandlers");
 const { LaunchHistoryManager } = require("./managers/launch-history-manager");
 const { AppsWorkerBridge } = require("./managers/apps-worker-bridge");
-const { registerLaunchHistoryHandlers } = require("./ipc/launchHistoryHandlers");
+const { registerLaunchHistoryHandlers, invalidateLaunchHistoryListCoalesce } = require("./ipc/launchHistoryHandlers");
 const { DeviceColorsManager } = require("./managers/device-colors-manager");
 const { registerDeviceColorsHandlers } = require("./ipc/deviceColorsHandlers");
 const { AppMetadataManager } = require("./managers/app-metadata-manager");
@@ -3655,6 +3655,10 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getLaunchHistoryManager: () => launchHistoryManager,
         getAppMetadataManager: () => appMetadataManager,
         getCustomNamesManager: () => global.customNamesManager
+    });
+    appsWorkerBridge.setHistoryMutatedRelay(() => {
+        invalidateLaunchHistoryListCoalesce();
+        requestLaunchHistoryRefresh();
     });
 
     registerAppMetadataHandlers({
