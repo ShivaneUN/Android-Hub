@@ -21,21 +21,33 @@ class DevicePowerManager {
     constructor(adbPath) {
         this.adbPath = adbPath;
         this.appliedSerials = new Set();
+        /** @type {Map<string, Promise<void>>} */
+        this.inFlight = new Map();
     }
 
     async applyStayAwake(serial) {
         if (!serial) return;
+        if (this.appliedSerials.has(serial)) return;
 
-        const quoted = adbSerialArg(serial);
+        const pending = this.inFlight.get(serial);
+        if (pending) return pending;
 
-        try {
-            await execPromise(`"${this.adbPath}" -s ${quoted} shell svc power stayon true`);
-        } catch (err) {
-            console.warn(`[DevicePower] stayon ${serial}:`, err.message);
-        }
+        const work = (async () => {
+            const quoted = adbSerialArg(serial);
+            try {
+                await execPromise(`"${this.adbPath}" -s ${quoted} shell svc power stayon true`);
+            } catch (err) {
+                console.warn(`[DevicePower] stayon ${serial}:`, err.message);
+            }
 
-        this.appliedSerials.add(serial);
-        console.log(`[DevicePower] stay-awake applique a ${serial}`);
+            this.appliedSerials.add(serial);
+            console.log(`[DevicePower] stay-awake applique a ${serial}`);
+        })().finally(() => {
+            this.inFlight.delete(serial);
+        });
+
+        this.inFlight.set(serial, work);
+        return work;
     }
 
     /** @deprecated alias interne — ecran off reserve au « Lancer instance » */
@@ -54,7 +66,7 @@ class DevicePowerManager {
 
         const pending = [];
         for (const serial of current) {
-            if (!this.appliedSerials.has(serial)) {
+            if (!this.appliedSerials.has(serial) && !this.inFlight.has(serial)) {
                 pending.push(this.applyStayAwake(serial));
             }
         }

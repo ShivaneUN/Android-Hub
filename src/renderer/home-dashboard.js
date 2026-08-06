@@ -5337,12 +5337,30 @@
   window.electronAPI?.onAppMetadataUpdated?.(() => {
     void syncHomeApps();
   });
+  /** Évite list IPC à chaque poll devices — seulement si la topologie change. */
+  let lastHomeAppsDeviceTopologyKey = "";
+  function homeAppsDeviceTopologyKey(devices) {
+    return (Array.isArray(devices) ? devices : [])
+      .map((d) => `${d?.deviceId || d?.serial || ""}:${d?.connected === false ? 0 : 1}`)
+      .filter((k) => k && k !== ":1" && k !== ":0")
+      .sort()
+      .join("|");
+  }
   window.addEventListener("devices-refreshed", () => {
     if (!window.HubPerformance || window.HubPerformance.isEnabled("dockBatteryLive")) {
       void syncDockBatteries();
     }
     syncEmptyStateIntro();
-    void syncHomeApps();
+    const devices = typeof window.getCurrentDevices === "function"
+      ? window.getCurrentDevices()
+      : [];
+    const topoKey = homeAppsDeviceTopologyKey(devices);
+    if (topoKey !== lastHomeAppsDeviceTopologyKey) {
+      lastHomeAppsDeviceTopologyKey = topoKey;
+      void syncHomeApps();
+    } else {
+      void refreshHomeAppDevicePills();
+    }
   });
 
   window.addEventListener("home-app-pin", (event) => {

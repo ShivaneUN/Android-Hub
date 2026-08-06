@@ -121,6 +121,9 @@ class BrowserViewManager {
     }
 
     restoreActiveView() {
+        // Déjà visible : plusieurs UI appellent restoreView en rafale (layout/sidebar/home).
+        if (!this.viewSuppressed) return;
+
         console.log("[BrowserViewManager] restoreActiveView", this.activeSessionId, this.layoutMode);
         this.viewSuppressed = false;
         if (this.layoutMode === "multi" && this.multiSessionBounds.size > 0) {

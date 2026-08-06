@@ -1961,27 +1961,53 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     return [...connected, ...global.customNamesManager.applyDeviceNames(historicalOnly)];
 }
 
+    /** @type {Map<string, Promise<Array>>} */
+    const getDevicesInFlight = new Map();
+    /** @type {Map<string, { at: number, devices: Array }>} */
+    const getDevicesRecent = new Map();
+    const GET_DEVICES_TTL_MS = 800;
+
     ipcMain.handle("get-devices", async (_event, options = {}) => {
+        const lightweight = options?.lightweight === true;
+        const forceFresh = options?.forceFresh === true;
+        const key = `${lightweight ? 1 : 0}:${forceFresh ? 1 : 0}`;
+
+        const existing = getDevicesInFlight.get(key);
+        if (existing) return existing;
+
+        // Burst UI sans forceFresh : renvoyer le dernier résultat récent (poll forceFresh inchangé).
+        if (!forceFresh) {
+            const recent = getDevicesRecent.get(key);
+            if (recent && (Date.now() - recent.at) < GET_DEVICES_TTL_MS) {
+                return recent.devices;
+            }
+        }
+
         global.getDevicesPollState = {
             inProgress: true,
             startedAt: Date.now(),
             lastEndedAt: global.getDevicesPollState?.lastEndedAt ?? null
         };
-        try {
-            const devices = await listDevicesForUI({
-                lightweight: options?.lightweight === true,
-                forceFresh: options?.forceFresh === true
-            });
-            const connectedCount = devices.filter((d) => d.connected !== false).length;
-            console.log(`[get-devices] connected count=${connectedCount}`);
-            return devices;
-        } finally {
-            global.getDevicesPollState = {
-                inProgress: false,
-                startedAt: global.getDevicesPollState?.startedAt ?? null,
-                lastEndedAt: Date.now()
-            };
-        }
+
+        const work = (async () => {
+            try {
+                const devices = await listDevicesForUI({ lightweight, forceFresh });
+                const connectedCount = devices.filter((d) => d.connected !== false).length;
+                console.log(`[get-devices] connected count=${connectedCount}`);
+                getDevicesRecent.set(key, { at: Date.now(), devices });
+                return devices;
+            } finally {
+                global.getDevicesPollState = {
+                    inProgress: false,
+                    startedAt: global.getDevicesPollState?.startedAt ?? null,
+                    lastEndedAt: Date.now()
+                };
+                getDevicesInFlight.delete(key);
+            }
+        })();
+
+        getDevicesInFlight.set(key, work);
+        return work;
     });
 
     ipcMain.handle("device:list", async () => listDevicesForUI());

@@ -15,6 +15,15 @@ function applyCustomInstanceAppNames(entries, namesManager) {
 function registerLaunchHistoryHandlers(deps) {
     const getBridge = deps.getAppsWorkerBridge;
     const getFacade = deps.getLaunchHistoryManager;
+    /** @type {Promise<{ success: boolean, entries?: Array, error?: string }>|null} */
+    let listInFlight = null;
+    /** @type {{ at: number, result: { success: boolean, entries?: Array, error?: string } }|null} */
+    let listCache = null;
+    const LIST_TTL_MS = 1500;
+
+    function invalidateListCache() {
+        listCache = null;
+    }
 
     async function resolveHistoryEntries() {
         const bridge = getBridge?.();
@@ -26,26 +35,40 @@ function registerLaunchHistoryHandlers(deps) {
     }
 
     ipcMain.handle("launch-history:list", async () => {
-        try {
-            const entries = await resolveHistoryEntries();
-            const metadataManager = deps.getAppMetadataManager?.();
-            const enrichedEntries = metadataManager
-                ? await metadataManager.enrichHistoryEntries(entries)
-                : entries;
-            const namedEntries = applyCustomInstanceAppNames(
-                enrichedEntries,
-                deps.getCustomNamesManager?.()
-            );
-            console.log("[LaunchHistory] list IPC", namedEntries.length, "entrée(s)");
-            return { success: true, entries: namedEntries };
-        } catch (err) {
-            console.warn("[LaunchHistory] list IPC:", err.message);
-            return { success: false, error: err.message, entries: [] };
+        if (listInFlight) return listInFlight;
+        if (listCache && (Date.now() - listCache.at) < LIST_TTL_MS) {
+            return listCache.result;
         }
+
+        listInFlight = (async () => {
+            try {
+                const entries = await resolveHistoryEntries();
+                const metadataManager = deps.getAppMetadataManager?.();
+                const enrichedEntries = metadataManager
+                    ? await metadataManager.enrichHistoryEntries(entries)
+                    : entries;
+                const namedEntries = applyCustomInstanceAppNames(
+                    enrichedEntries,
+                    deps.getCustomNamesManager?.()
+                );
+                console.log("[LaunchHistory] list IPC", namedEntries.length, "entrée(s)");
+                const result = { success: true, entries: namedEntries };
+                listCache = { at: Date.now(), result };
+                return result;
+            } catch (err) {
+                console.warn("[LaunchHistory] list IPC:", err.message);
+                return { success: false, error: err.message, entries: [] };
+            } finally {
+                listInFlight = null;
+            }
+        })();
+
+        return listInFlight;
     });
 
     ipcMain.handle("launch-history:record", async (_event, payload = {}) => {
         try {
+            invalidateListCache();
             const bridge = getBridge?.();
             if (bridge) {
                 return await bridge.recordLaunch(payload);
@@ -62,6 +85,7 @@ function registerLaunchHistoryHandlers(deps) {
 
     ipcMain.handle("launch-history:remove", async (_event, payload = {}) => {
         try {
+            invalidateListCache();
             const bridge = getBridge?.();
             if (bridge) {
                 return await bridge.remove(payload);
