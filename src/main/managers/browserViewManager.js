@@ -111,6 +111,9 @@ class BrowserViewManager {
     }
 
     suppressActiveView() {
+        // Déjà masqué : Accueil / close / layout / sidebar rappellent suppress en rafale.
+        if (this.viewSuppressed) return;
+
         console.log("[BrowserViewManager] suppressActiveView", this.activeSessionId);
         this.viewSuppressed = true;
         this.views.forEach(({ view }) => {
