@@ -146,7 +146,7 @@ module.exports = {
         "unpinFromHome": "Unpin from Home"
     },
     "toggles": {
-        "screenTitle": "Turn the device screen on or off (active mirroring session)",
+        "screenTitle": "Turn the device screen on or off (works without a session — guides launches)",
         "screenOn": "ON",
         "screenOff": "OFF",
         "portraitTitle": "Enable or disable portrait mode",
@@ -158,6 +158,8 @@ module.exports = {
         "deviceSpeakerTitle": "Devices audio",
         "deviceSpeakerOn": "ON",
         "deviceSpeakerOff": "OFF",
+        "screenPowerTitle": "Device screens",
+        "screenPowerGlobal": "All devices",
         "devicesTitle": "USB and WiFi devices",
         "helpTitle": "Help and keyboard shortcuts",
         "settingsTitle": "Devices, control and cleanup"
@@ -664,7 +666,7 @@ module.exports = {
                             "keys": [
                                 "Screen"
                             ],
-                            "desc": "Turn the active mirroring session's device screen off or on."
+                            "desc": "Turn the device screen off or on, even without a session. This choice applies to upcoming launches."
                         },
                         {
                             "keys": [

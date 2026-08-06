@@ -105,6 +105,11 @@ contextBridge.exposeInMainWorld("deviceSpeakerOverlayAPI", {
     toggleDeviceAudio: (payload = {}) => ipcRenderer.invoke("deviceSpeakerOverlay:toggleDeviceAudio", payload)
 });
 
+contextBridge.exposeInMainWorld("screenPowerOverlayAPI", {
+    show: (payload = {}) => ipcRenderer.invoke("screenPowerOverlay:show", payload),
+    hide: () => ipcRenderer.invoke("screenPowerOverlay:hide")
+});
+
 contextBridge.exposeInMainWorld("sessionAPI", {
     switchTo: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId),
     cycleTab: (direction) => ipcRenderer.invoke("session:cycleTab", { direction }),
@@ -134,6 +139,9 @@ contextBridge.exposeInMainWorld("sessionAPI", {
     getActiveTypeA: () => ipcRenderer.invoke("session:getActiveTypeA"),
     getScreenToggleState: (hint = {}) => ipcRenderer.invoke("session:getScreenToggleState", hint),
     toggleScreen: (sessionIdOrPayload) => ipcRenderer.invoke("session:toggleScreen", sessionIdOrPayload),
+    toggleScreenGlobal: () => ipcRenderer.invoke("session:toggleScreenGlobal"),
+    getScreenPowerPanel: () => ipcRenderer.invoke("session:getScreenPowerPanel"),
+    setScreenPower: (payload = {}) => ipcRenderer.invoke("session:setScreenPower", payload),
     onScreenPowerChanged: (callback) =>
         ipcRenderer.on("session:screen-power-changed", (_event, data) => callback(data)),
     getActiveOrientation: () => ipcRenderer.invoke("session:getActiveOrientation"),
@@ -182,6 +190,13 @@ contextBridge.exposeInMainWorld("dockChipFlyoutAPI", {
     show: (payload) => ipcRenderer.invoke("dock-chip-flyout:show", payload),
     update: (payload) => ipcRenderer.invoke("dock-chip-flyout:update", payload),
     hide: () => ipcRenderer.invoke("dock-chip-flyout:hide")
+});
+
+contextBridge.exposeInMainWorld("wifiReconnectOverlayAPI", {
+    show: (payload) => ipcRenderer.invoke("wifi-reconnect-overlay:show", payload),
+    update: (payload) => ipcRenderer.invoke("wifi-reconnect-overlay:update", payload),
+    hide: () => ipcRenderer.invoke("wifi-reconnect-overlay:hide"),
+    isOpen: () => ipcRenderer.invoke("wifi-reconnect-overlay:is-open")
 });
 
 contextBridge.exposeInMainWorld("namesAPI", {

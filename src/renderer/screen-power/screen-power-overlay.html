@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #panel {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 12px 12px 10px;
+    border-radius: 14px;
+    background: rgba(22, 27, 36, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    color: #e8edf5;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #aeb8c9;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 10px;
+    min-height: 34px;
+  }
+  .row.global {
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .name {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #e8edf5;
+  }
+  .name.global-label {
+    color: #aeb8c9;
+    font-size: 11px;
+  }
+  .power-btn {
+    width: 40px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8edf5;
+    cursor: pointer;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .power-btn.on {
+    background: rgba(62, 207, 111, 0.16);
+    border-color: rgba(62, 207, 111, 0.35);
+    color: #3ecf6f;
+  }
+  .power-btn.off {
+    background: rgba(229, 72, 77, 0.16);
+    border-color: rgba(229, 72, 77, 0.35);
+    color: #e5484d;
+  }
+  .power-btn:disabled,
+  .power-btn.pending {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .empty {
+    font-size: 12px;
+    color: #8b95a8;
+    padding: 8px 0;
+  }
+  #list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    max-height: 280px;
+  }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <div id="title">Écran appareil</div>
+    <div class="row global">
+      <div class="name global-label" id="global-label">Tous les appareils</div>
+      <button type="button" class="power-btn on" id="global-btn" data-action="global">ON</button>
+    </div>
+    <div id="list"></div>
+  </div>
+<script>
+(function () {
+  const titleEl = document.getElementById("title");
+  const listEl = document.getElementById("list");
+  const globalBtn = document.getElementById("global-btn");
+  let panelState = null;
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function setPowerButton(btn, screenOff) {
+    if (!btn) return;
+    btn.classList.toggle("on", !screenOff);
+    btn.classList.toggle("off", screenOff);
+    btn.textContent = screenOff ? "OFF" : "ON";
+  }
+
+  function applyPanel(panel) {
+    panelState = panel || null;
+    const devices = Array.isArray(panel?.devices) ? panel.devices : [];
+    const globalOff = Boolean(panel?.globalScreenOff)
+      || (devices.length > 0 && devices.every((d) => d.screenOff));
+    setPowerButton(globalBtn, globalOff);
+    globalBtn.disabled = !devices.length;
+
+    if (!devices.length) {
+      listEl.innerHTML = `<div class="empty">Aucun appareil connecté</div>`;
+      return;
+    }
+
+    listEl.innerHTML = devices.map((d) => {
+      const key = escapeHtml(d.key || d.serial || "");
+      const name = escapeHtml(d.name || d.serial || "Device");
+      const off = Boolean(d.screenOff);
+      return (
+        `<div class="row" data-key="${key}">` +
+        `<div class="name" title="${name}">${name}</div>` +
+        `<button type="button" class="power-btn ${off ? "off" : "on"}" data-action="device" ` +
+        `data-key="${key}" data-serial="${escapeHtml(d.serial || "")}" ` +
+        `data-device-id="${escapeHtml(d.deviceId || "")}" ` +
+        `data-stable="${escapeHtml(d.stableDeviceId || "")}">${off ? "OFF" : "ON"}</button>` +
+        `</div>`
+      );
+    }).join("");
+  }
+
+  window.screenPowerOverlayAPI?.onRender?.((payload) => {
+    if (payload?.title) titleEl.textContent = payload.title;
+    applyPanel(payload?.panel);
+  });
+
+  window.screenPowerOverlayAPI?.onPanel?.((payload) => {
+    applyPanel(payload?.panel);
+  });
+
+  globalBtn.addEventListener("click", () => {
+    if (globalBtn.disabled || globalBtn.classList.contains("pending")) return;
+    globalBtn.classList.add("pending");
+    const nextOff = !globalBtn.classList.contains("off");
+    setPowerButton(globalBtn, nextOff);
+    listEl.querySelectorAll("[data-action='device']").forEach((btn) => setPowerButton(btn, nextOff));
+    void window.screenPowerOverlayAPI?.toggleGlobal?.()
+      .catch((err) => console.error("[screen-power] toggleGlobal:", err))
+      .finally(() => globalBtn.classList.remove("pending"));
+  });
+
+  listEl.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-action='device']");
+    if (!btn || btn.disabled || btn.classList.contains("pending")) return;
+    btn.classList.add("pending");
+    const nextOff = !btn.classList.contains("off");
+    setPowerButton(btn, nextOff);
+    const deviceBtns = [...listEl.querySelectorAll("[data-action='device']")];
+    const effectiveAllOff = deviceBtns.every((b) => (b === btn ? nextOff : b.classList.contains("off")));
+    setPowerButton(globalBtn, effectiveAllOff);
+    void window.screenPowerOverlayAPI?.toggleDevice?.({
+      key: btn.getAttribute("data-key"),
+      serial: btn.getAttribute("data-serial"),
+      deviceId: btn.getAttribute("data-device-id"),
+      stableDeviceId: btn.getAttribute("data-stable") || null,
+      screenOff: nextOff
+    })
+      .catch((err) => console.error("[screen-power] toggleDevice:", err))
+      .finally(() => btn.classList.remove("pending"));
+  });
+})();
+</script>
+</body>
+</html>

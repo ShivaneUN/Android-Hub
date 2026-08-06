@@ -146,7 +146,7 @@ module.exports = {
         "unpinFromHome": "Retirer de l'Accueil"
     },
     "toggles": {
-        "screenTitle": "Éteindre ou rallumer l'écran de l'appareil (session mirroring active)",
+        "screenTitle": "Éteindre ou rallumer l'écran de l'appareil (aussi sans session — guide les lancements)",
         "screenOn": "ON",
         "screenOff": "OFF",
         "portraitTitle": "Activer ou désactiver le mode portrait",
@@ -158,6 +158,8 @@ module.exports = {
         "deviceSpeakerTitle": "Audio appareils",
         "deviceSpeakerOn": "ON",
         "deviceSpeakerOff": "OFF",
+        "screenPowerTitle": "Écran appareils",
+        "screenPowerGlobal": "Tous les appareils",
         "devicesTitle": "Appareils USB et WiFi",
         "helpTitle": "Aide et raccourcis clavier",
         "settingsTitle": "Appareils, contrôle et nettoyage"
@@ -664,7 +666,7 @@ module.exports = {
                             "keys": [
                                 "Écran"
                             ],
-                            "desc": "Éteindre ou rallumer l'écran de l'appareil de la session mirroring active."
+                            "desc": "Éteindre ou rallumer l'écran de l'appareil, même sans session. Ce choix s'applique aux prochains lancements."
                         },
                         {
                             "keys": [

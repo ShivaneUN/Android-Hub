@@ -592,6 +592,7 @@
         if (!window.dockHoverAPI?.show) return;
         // Panneau volume ouvert : ne pas recouvrir le slider avec l'overlay dock.
         if (window.__deviceSpeakerPopoverOpen) return;
+        if (window.__screenPowerPopoverOpen) return;
 
         const rect = dock.getBoundingClientRect();
         const height = Math.round(BASE_H * SCALE) + TIP_SPACE;

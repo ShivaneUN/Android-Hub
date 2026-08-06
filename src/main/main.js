@@ -53,6 +53,8 @@ const { DockHoverOverlayManager } = require("./managers/dock-hover-overlay-manag
 const { HubBubbleOverlayManager } = require("./managers/hub-bubble-overlay-manager");
 const { DockChipFlyoutOverlayManager } = require("./managers/dock-chip-flyout-overlay-manager");
 const { DeviceSpeakerOverlayManager } = require("./managers/device-speaker-overlay-manager");
+const { ScreenPowerOverlayManager } = require("./managers/screen-power-overlay-manager");
+const { WifiReconnectOverlayManager } = require("./managers/wifi-reconnect-overlay-manager");
 const { registerVideoPreviewHandlers } = require("./ipc/videoPreviewHandlers");
 const { CustomNamesManager } = require("./managers/custom-names-manager");
 const { registerNamesHandlers } = require("./ipc/namesHandlers");
@@ -3091,7 +3093,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
     /**
      * Après démarrage flux Type A : si l'intention device est OFF, re-éteint le panneau
-     * via setDisplayPower (sans KEYCODE_SLEEP) pour ne pas laisser l'écran rallumé.
+     * uniquement si scrcpy l'a rallumé (évite double apply si déjà OFF via le bouton).
      */
     async function reassertDesiredScreenOffAfterStreamStart(tabId, serial) {
         const entry = global.browserViewManager?.getSessionEntry?.(tabId);
@@ -3105,6 +3107,21 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         try {
             // Court settle : laisser le contrôle scrcpy stable après le 1er paquet.
             await new Promise((resolve) => setTimeout(resolve, 120));
+
+            if (typeof global.probePhysicalScreenOff === "function") {
+                const alreadyOff = await global.probePhysicalScreenOff(serial);
+                if (alreadyOff === true) {
+                    if (typeof global.syncDeviceScreenOffState === "function") {
+                        global.syncDeviceScreenOffState(serial, true, {
+                            stableDeviceId,
+                            preferSerial: entry?.deviceId || serial,
+                            mode: "already-off"
+                        });
+                    }
+                    console.log(`[Video] skip re-OFF apres start Type A — deja eteint (${tabId})`);
+                    return;
+                }
+            }
 
             if (liveClient?.controlSocket && typeof liveClient.setDisplayPower === "function") {
                 try {
@@ -3556,6 +3573,8 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     global.dockHoverOverlayManager = new DockHoverOverlayManager(win);
     global.dockChipFlyoutOverlayManager = new DockChipFlyoutOverlayManager(win);
     global.deviceSpeakerOverlayManager = new DeviceSpeakerOverlayManager(win);
+    global.screenPowerOverlayManager = new ScreenPowerOverlayManager(win);
+    global.wifiReconnectOverlayManager = new WifiReconnectOverlayManager(win);
     global.renameDialogManager = new RenameDialogManager(win);
     global.streamDeckDuoPopupManager = new StreamDeckDuoPopupManager(win);
     global.hubModalOverlayManager = new HubModalOverlayManager(win);

@@ -27,48 +27,6 @@
         return Boolean(window.__hubShowingHome);
     }
 
-    async function resolveDeviceHint() {
-        const selected = typeof window.getSelectedLauncherDevice === "function"
-            ? window.getSelectedLauncherDevice()
-            : null;
-        if (selected?.serial) {
-            return {
-                serial: selected.serial,
-                stableDeviceId: selected.deviceId || null
-            };
-        }
-
-        const devices = typeof window.getConnectedDevices === "function"
-            ? window.getConnectedDevices()
-            : [];
-        const connected = (devices || []).filter((d) => d && d.connected !== false);
-        if (connected.length === 1) {
-            return {
-                serial: connected[0].serial,
-                stableDeviceId: connected[0].deviceId || null
-            };
-        }
-
-        // Accueil avec sessions : reprendre le device de la session active / première.
-        if (window.sessionAPI?.list) {
-            try {
-                const sessions = await window.sessionAPI.list();
-                const pick = (sessions || []).find((s) => s?.active && s.deviceId)
-                    || (sessions || []).find((s) => s?.deviceId);
-                if (pick?.deviceId) {
-                    return {
-                        serial: pick.deviceId,
-                        stableDeviceId: pick.stableDeviceId || null
-                    };
-                }
-            } catch (_err) {
-                // ignore
-            }
-        }
-
-        return { serial: null, stableDeviceId: null };
-    }
-
     function setScreenToggleDisabled() {
         const { button, badge } = getScreenToggleElements();
         if (!button || !badge) return;
@@ -85,66 +43,53 @@
         const { button, badge } = getScreenToggleElements();
         if (!button || !badge) return;
 
-        activeTarget = target || null;
+        activeTarget = target || { global: true };
         button.classList.remove("disabled", "screen-on", "screen-off");
         button.classList.add(screenOff ? "screen-off" : "screen-on");
 
         badge.textContent = screenOff ? t("toggles.screenOff") : t("toggles.screenOn");
         badge.classList.toggle("on", !screenOff);
         badge.classList.toggle("off", screenOff);
-
         button.removeAttribute("title");
     }
 
-    async function updateScreenToggle() {
-        if (!window.sessionAPI?.getScreenToggleState && !window.sessionAPI?.getActiveTypeA) {
+    async function updateScreenToggle(quickState = null) {
+        if (!window.sessionAPI?.getScreenPowerPanel && !window.sessionAPI?.getScreenToggleState) {
             setScreenToggleDisabled();
             return;
         }
 
-        const seq = ++updateSeq;
-        const home = isHomeVisible();
-        const deviceHint = await resolveDeviceHint();
+        if (quickState && typeof quickState.screenOff === "boolean") {
+            setScreenToggleState(Boolean(quickState.screenOff), { global: true, home: isHomeVisible() });
+            return;
+        }
 
+        const seq = ++updateSeq;
         try {
-            let state = null;
-            if (window.sessionAPI.getScreenToggleState) {
-                state = await window.sessionAPI.getScreenToggleState({
-                    home,
-                    serial: deviceHint.serial,
-                    stableDeviceId: deviceHint.stableDeviceId
-                });
+            let screenOff = false;
+            let enabled = false;
+
+            if (window.sessionAPI.getScreenPowerPanel) {
+                const panel = await window.sessionAPI.getScreenPowerPanel();
+                if (seq !== updateSeq) return;
+                enabled = Boolean(panel?.enabled && panel?.devices?.length);
+                // Badge global : OFF seulement si tous éteints.
+                screenOff = Boolean(panel?.globalScreenOff)
+                    || (enabled && (panel.devices || []).every((d) => d.screenOff));
             } else {
-                // Fallback legacy Type A only
-                const { session } = await window.sessionAPI.getActiveTypeA();
-                if (session?.sessionId && session.deviceId) {
-                    state = {
-                        success: true,
-                        enabled: true,
-                        mode: "typeA",
-                        sessionId: session.sessionId,
-                        deviceId: session.deviceId,
-                        screenOff: Boolean(session.screenOff)
-                    };
-                } else {
-                    state = { success: true, enabled: false };
-                }
+                const home = isHomeVisible();
+                const state = await window.sessionAPI.getScreenToggleState({ home });
+                if (seq !== updateSeq) return;
+                enabled = Boolean(state?.success && state.enabled);
+                screenOff = Boolean(state?.screenOff);
             }
 
-            if (seq !== updateSeq) return;
-
-            if (!state?.success || !state.enabled) {
+            if (!enabled) {
                 setScreenToggleDisabled();
                 return;
             }
 
-            setScreenToggleState(Boolean(state.screenOff), {
-                mode: state.mode || "adb",
-                sessionId: state.sessionId || null,
-                deviceId: state.deviceId || deviceHint.serial || null,
-                stableDeviceId: state.stableDeviceId || deviceHint.stableDeviceId || null,
-                home
-            });
+            setScreenToggleState(screenOff, { global: true, home: isHomeVisible() });
         } catch (err) {
             if (seq !== updateSeq) return;
             console.error("[ScreenToggle] Erreur mise a jour:", err);
@@ -154,47 +99,64 @@
 
     async function onScreenToggleClick() {
         const { button } = getScreenToggleElements();
-        if (!button || button.classList.contains("disabled") || !window.sessionAPI?.toggleScreen) {
-            return;
-        }
+        if (!button || button.classList.contains("disabled")) return;
+        if (!window.sessionAPI?.toggleScreenGlobal && !window.sessionAPI?.toggleScreen) return;
 
-        if (!activeTarget) {
-            await updateScreenToggle();
-            if (!activeTarget || button.classList.contains("disabled")) {
-                return;
-            }
-        }
-
+        const nextOff = !button.classList.contains("screen-off");
+        setScreenToggleState(nextOff, { global: true, home: isHomeVisible() });
         button.classList.add("pending");
-
         try {
-            const home = isHomeVisible();
-            const payload = {
-                sessionId: activeTarget.sessionId || null,
-                serial: activeTarget.deviceId || null,
-                stableDeviceId: activeTarget.stableDeviceId || null,
-                home
-            };
-
-            const result = await window.sessionAPI.toggleScreen(payload);
+            const result = window.sessionAPI.toggleScreenGlobal
+                ? await window.sessionAPI.toggleScreenGlobal()
+                : await window.sessionAPI.toggleScreen({ global: true, home: isHomeVisible() });
             if (!result?.success) {
-                console.error("[ScreenToggle] Echec toggle:", result?.error);
+                console.error("[ScreenToggle] Echec toggle global:", result?.error);
                 await updateScreenToggle();
                 return;
             }
-            setScreenToggleState(Boolean(result.screenOff), {
-                mode: result.mode || activeTarget.mode || "adb",
-                sessionId: result.sessionId || activeTarget.sessionId || null,
-                deviceId: result.deviceId || activeTarget.deviceId || null,
-                stableDeviceId: activeTarget.stableDeviceId || null,
-                home
-            });
+            setScreenToggleState(Boolean(result.screenOff), { global: true, home: isHomeVisible() });
         } catch (err) {
             console.error("[ScreenToggle] Erreur toggle:", err);
             await updateScreenToggle();
         } finally {
             button.classList.remove("pending");
         }
+    }
+
+    async function openScreenPowerPopover() {
+        const { button } = getScreenToggleElements();
+        if (!button || !window.screenPowerOverlayAPI?.show) {
+            return { ok: false };
+        }
+
+        try {
+            window.dockHoverAPI?.hide?.();
+        } catch (_err) {
+            // noop
+        }
+        document.getElementById("quick-actions-dock")?.classList.remove("dock-covered");
+
+        const rect = button.getBoundingClientRect();
+        button.classList.add("screen-power-open");
+        window.__screenPowerPopoverOpen = true;
+
+        await window.screenPowerOverlayAPI.show({
+            title: t("toggles.screenPowerTitle") || t("settingsPanel.screenPowerTitle") || "Écran appareil",
+            anchor: {
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height
+            }
+        });
+
+        return { ok: true };
+    }
+
+    function onScreenContextMenu(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        void openScreenPowerPopover();
     }
 
     function scheduleUpdateScreenToggle() {
@@ -208,6 +170,7 @@
         button.addEventListener("click", () => {
             onScreenToggleClick();
         });
+        button.addEventListener("contextmenu", onScreenContextMenu);
 
         if (window.sessionAPI?.onSessionActivated) {
             window.sessionAPI.onSessionActivated(() => scheduleUpdateScreenToggle());
@@ -217,38 +180,32 @@
         }
         if (window.sessionAPI?.onScreenPowerChanged) {
             window.sessionAPI.onScreenPowerChanged((data) => {
-                // Détection device / apply : toujours resync le badge.
-                if (!data || typeof data.screenOff !== "boolean" || !activeTarget) {
-                    scheduleUpdateScreenToggle();
-                    return;
+                if (data && typeof data.screenOff === "boolean") {
+                    if (data.mode === "global" || data.panel) {
+                        const off = data.panel
+                            ? Boolean(data.panel.globalScreenOff)
+                            : Boolean(data.screenOff);
+                        setScreenToggleState(off, { global: true, home: isHomeVisible() });
+                        return;
+                    }
                 }
-                const sameSession = data.sessionId && activeTarget.sessionId === data.sessionId;
-                const sameDevice = data.deviceId && (
-                    activeTarget.deviceId === data.deviceId
-                    || activeTarget.stableDeviceId === data.deviceId
-                );
-                const sameStable = data.stableDeviceId && activeTarget.stableDeviceId === data.stableDeviceId;
-                if (sameSession || sameDevice || sameStable || data.mode?.startsWith?.("applied")) {
-                    setScreenToggleState(Boolean(data.screenOff), {
-                        ...activeTarget,
-                        deviceId: data.deviceId || activeTarget.deviceId,
-                        stableDeviceId: data.stableDeviceId || activeTarget.stableDeviceId,
-                        mode: data.mode || activeTarget.mode
-                    });
-                } else {
-                    scheduleUpdateScreenToggle();
-                }
+                scheduleUpdateScreenToggle();
             });
         }
 
         window.addEventListener("devices-refreshed", scheduleUpdateScreenToggle);
         window.addEventListener("launcher-device-selected", scheduleUpdateScreenToggle);
-        window.addEventListener("hub-home-visibility", scheduleUpdateScreenToggle);
+        window.addEventListener("hub-home-visibility", () => {
+            window.screenPowerOverlayAPI?.hide?.();
+            scheduleUpdateScreenToggle();
+        });
 
         updateScreenToggle();
     }
 
     window.updateScreenToggle = updateScreenToggle;
+    window.openScreenPowerPopover = openScreenPowerPopover;
+    window.__screenPowerPopoverOpen = false;
 
     globalThis.HubI18n?.onChange?.(() => {
         updateScreenToggle();

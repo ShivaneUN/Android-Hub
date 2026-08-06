@@ -784,7 +784,32 @@
     }
   }
 
+  function wifiReconnectStrings() {
+    return {
+      title: tHome("homeDashboard.wifiReconnectTitle", "Appareils Wi‑Fi connus"),
+      loading: tHome("homeDashboard.wifiReconnectLoading", "Chargement…"),
+      empty: tHome("homeDashboard.wifiReconnectEmpty", "Aucun appareil Wi‑Fi enregistré"),
+      error: tHome("homeDashboard.wifiReconnectError", "Impossible de charger la liste"),
+      action: tHome("homeDashboard.wifiReconnectAction", "Reconnecter"),
+      online: tHome("devicesPanel.online", "En ligne"),
+      offline: tHome("devicesPanel.offline", "Hors ligne")
+    };
+  }
+
+  function wifiReconnectAnchor() {
+    const btn = getHomeFabEl("wifi") || document.getElementById("home-wifi-reconnect-btn");
+    if (!btn) return { x: 0, y: 0, width: 40, height: 40 };
+    const rect = btn.getBoundingClientRect();
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+  }
+
   function hideWifiReconnectPopup() {
+    window.wifiReconnectOverlayAPI?.hide?.();
     const popup = document.getElementById("home-wifi-reconnect-popup");
     if (!popup) return;
     popup.classList.add("hidden");
@@ -833,43 +858,90 @@
   }
 
   async function openWifiReconnectPopup() {
+    const strings = wifiReconnectStrings();
+    const anchor = wifiReconnectAnchor();
+
+    // Fenêtre overlay : passe au-dessus des BrowserView (flux).
+    if (window.wifiReconnectOverlayAPI?.show) {
+      const popup = document.getElementById("home-wifi-reconnect-popup");
+      if (popup) {
+        popup.classList.add("hidden");
+        popup.setAttribute("hidden", "");
+      }
+
+      await window.wifiReconnectOverlayAPI.show({
+        ...anchor,
+        strings,
+        loading: true
+      });
+
+      try {
+        const response = await window.wifiAPI?.getPanelData?.();
+        if (!response?.success) {
+          await window.wifiReconnectOverlayAPI.update({
+            ...anchor,
+            strings,
+            error: true,
+            loading: false
+          });
+          return;
+        }
+        await window.wifiReconnectOverlayAPI.update({
+          ...anchor,
+          strings,
+          loading: false,
+          entries: Array.isArray(response.wifi) ? response.wifi : []
+        });
+      } catch (_err) {
+        await window.wifiReconnectOverlayAPI.update({
+          ...anchor,
+          strings,
+          error: true,
+          loading: false
+        });
+      }
+      return;
+    }
+
     const popup = document.getElementById("home-wifi-reconnect-popup");
     const list = document.getElementById("home-wifi-reconnect-list");
     if (!popup || !list) return;
 
     popup.classList.remove("hidden");
     popup.removeAttribute("hidden");
-    list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(tHome("homeDashboard.wifiReconnectLoading", "Chargement…"))}</p>`;
+    list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(strings.loading)}</p>`;
     positionWifiReconnectPopupNearFab();
 
     try {
       const response = await window.wifiAPI?.getPanelData?.();
       if (!response?.success) {
-        list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(tHome("homeDashboard.wifiReconnectError", "Impossible de charger la liste"))}</p>`;
+        list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(strings.error)}</p>`;
         positionWifiReconnectPopupNearFab();
         return;
       }
       renderWifiReconnectList(Array.isArray(response.wifi) ? response.wifi : []);
       positionWifiReconnectPopupNearFab();
     } catch (_err) {
-      list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(tHome("homeDashboard.wifiReconnectError", "Impossible de charger la liste"))}</p>`;
+      list.innerHTML = `<p class="home-wifi-reconnect-status">${escapeHtml(strings.error)}</p>`;
       positionWifiReconnectPopupNearFab();
     }
   }
 
-  async function reconnectWifiDevice(deviceId, button) {
-    if (!deviceId || !window.wifiAPI?.reconnect) return;
+  async function reconnectWifiDevice(deviceId, button, { refresh = true } = {}) {
+    if (!deviceId || !window.wifiAPI?.reconnect) return { ok: false };
     if (button) button.disabled = true;
     try {
       const result = await window.wifiAPI.reconnect({ deviceId });
       if (result?.success) {
         window.showHubToast?.(result.message || tHome("devicesPanel.toastReconnected", "Reconnecté en WiFi"), "success");
-        await openWifiReconnectPopup();
-      } else {
-        window.showHubToast?.(result?.error || tHome("devicesPanel.toastReconnectFailed", "Échec de la reconnexion"), "error");
+        if (refresh) await openWifiReconnectPopup();
+        return { ok: true };
       }
+      window.showHubToast?.(result?.error || tHome("devicesPanel.toastReconnectFailed", "Échec de la reconnexion"), "error");
+      return { ok: false };
     } catch (_err) {
       window.showHubToast?.(tHome("devicesPanel.toastReconnectFailed", "Échec de la reconnexion"), "error");
+      return { ok: false };
     } finally {
       if (button) button.disabled = false;
     }
@@ -880,16 +952,24 @@
     if (!btn || btn.dataset.wifiReconnectBound === "1") return;
     btn.dataset.wifiReconnectBound = "1";
 
-    btn.addEventListener("click", (event) => {
+    btn.addEventListener("click", async (event) => {
       event.stopPropagation();
       if (btn.dataset.fabDidDrag === "1") {
         btn.dataset.fabDidDrag = "0";
         return;
       }
-      const popup = document.getElementById("home-wifi-reconnect-popup");
-      if (popup && !popup.classList.contains("hidden") && !popup.hasAttribute("hidden")) {
-        hideWifiReconnectPopup();
-        return;
+      if (window.wifiReconnectOverlayAPI?.isOpen) {
+        const open = await window.wifiReconnectOverlayAPI.isOpen();
+        if (open) {
+          hideWifiReconnectPopup();
+          return;
+        }
+      } else {
+        const popup = document.getElementById("home-wifi-reconnect-popup");
+        if (popup && !popup.classList.contains("hidden") && !popup.hasAttribute("hidden")) {
+          hideWifiReconnectPopup();
+          return;
+        }
       }
       void openWifiReconnectPopup();
     });
@@ -905,6 +985,28 @@
       void reconnectWifiDevice(deviceId, actionBtn);
     });
   }
+
+  window.__wifiReconnectHost = {
+    async reconnect(payload = {}) {
+      const deviceId = String(payload.deviceId || "");
+      if (!deviceId) return { ok: false };
+      const result = await reconnectWifiDevice(deviceId, null, { refresh: false });
+      if (!result?.ok) return { ok: false };
+      try {
+        const response = await window.wifiAPI?.getPanelData?.();
+        return {
+          ok: true,
+          strings: wifiReconnectStrings(),
+          entries: response?.success && Array.isArray(response.wifi) ? response.wifi : []
+        };
+      } catch (_err) {
+        return { ok: true };
+      }
+    },
+    onOverlayHidden() {
+      // noop — état géré par l'overlay
+    }
+  };
 
   function bindHomeActions() {
     const root = document.querySelector(".empty-state");
@@ -2114,9 +2216,24 @@
   }
 
   function positionWifiReconnectPopupNearFab() {
-    const popup = document.getElementById("home-wifi-reconnect-popup");
     const btn = getHomeFabEl("wifi");
-    if (!popup || !btn || popup.classList.contains("hidden") || popup.hasAttribute("hidden")) return;
+    if (!btn) return;
+
+    if (window.wifiReconnectOverlayAPI?.update) {
+      void window.wifiReconnectOverlayAPI.isOpen?.().then((open) => {
+        if (!open) return;
+        const rect = btn.getBoundingClientRect();
+        void window.wifiReconnectOverlayAPI.update({
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }).catch(() => {});
+    }
+
+    const popup = document.getElementById("home-wifi-reconnect-popup");
+    if (!popup || popup.classList.contains("hidden") || popup.hasAttribute("hidden")) return;
     const rect = btn.getBoundingClientRect();
     const popupW = popup.offsetWidth || 280;
     const popupH = popup.offsetHeight || 200;
@@ -5561,11 +5678,19 @@
   });
 
   document.addEventListener("pointerdown", (event) => {
-    const popup = document.getElementById("home-wifi-reconnect-popup");
-    if (!popup || popup.classList.contains("hidden") || popup.hasAttribute("hidden")) return;
     const btn = document.getElementById("home-wifi-reconnect-btn");
     const bar = document.getElementById("home-fab-bar");
-    if (popup.contains(event.target) || btn?.contains(event.target) || bar?.contains(event.target)) return;
+    if (btn?.contains(event.target) || bar?.contains(event.target)) return;
+
+    if (window.wifiReconnectOverlayAPI?.hide) {
+      void window.wifiReconnectOverlayAPI.isOpen?.().then((open) => {
+        if (open) hideWifiReconnectPopup();
+      }).catch(() => {});
+    }
+
+    const popup = document.getElementById("home-wifi-reconnect-popup");
+    if (!popup || popup.classList.contains("hidden") || popup.hasAttribute("hidden")) return;
+    if (popup.contains(event.target)) return;
     hideWifiReconnectPopup();
   });
 

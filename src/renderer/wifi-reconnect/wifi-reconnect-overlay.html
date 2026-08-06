@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+
+  #panel {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(22, 27, 36, 0.97);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    color: #e8ecf4;
+  }
+
+  #head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+
+  #title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #f5f7fb;
+  }
+
+  #close {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #9aa3b2;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  #close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+
+  #list {
+    overflow: auto;
+    padding: 10px 12px;
+    flex: 1;
+    min-height: 120px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  #list::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .status,
+  .empty {
+    margin: 0;
+    padding: 16px 10px;
+    text-align: center;
+    font-size: 12px;
+    color: #9aa3b2;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 10px;
+    border-radius: 10px;
+  }
+
+  .row:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .row-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .row-name {
+    font-size: 13.5px;
+    font-weight: 650;
+    color: #f5f7fb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row-sub {
+    margin-top: 3px;
+    font-size: 12px;
+    color: #9aa3b2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #9aa3b2;
+  }
+
+  .row-status.is-online {
+    color: #3ecf6f;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .action {
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8ecf4;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+
+  .action:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+  <div id="panel" hidden>
+    <div id="head">
+      <p id="title">Appareils Wi‑Fi connus</p>
+      <button type="button" id="close" aria-label="Fermer">&#10005;</button>
+    </div>
+    <div id="list"></div>
+  </div>
+<script>
+(function () {
+  const panel = document.getElementById("panel");
+  const titleEl = document.getElementById("title");
+  const listEl = document.getElementById("list");
+  const closeBtn = document.getElementById("close");
+  let strings = {};
+  let reportTimer = null;
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/'/g, "&#39;");
+  }
+
+  function subLine(entry) {
+    if (entry?.adbTarget) return String(entry.adbTarget);
+    const ip = entry?.ip;
+    if (!ip) return "";
+    return `${ip}:${entry.port || 5555}`;
+  }
+
+  function reportSize() {
+    if (!window.wifiReconnectOverlayAPI?.reportSize) return;
+    // Hauteur mini confortable même avec 1 appareil ; largeur fixe.
+    const contentH = Math.ceil(panel.scrollHeight || panel.getBoundingClientRect().height || 160);
+    const height = Math.max(200, contentH);
+    const width = 320;
+    void window.wifiReconnectOverlayAPI.reportSize({ width, height });
+  }
+
+  function scheduleReportSize() {
+    if (reportTimer) clearTimeout(reportTimer);
+    reportTimer = setTimeout(reportSize, 16);
+  }
+
+  function render(payload = {}) {
+    if (!payload.visible) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    strings = payload.strings || strings || {};
+    titleEl.textContent = payload.title || strings.title || "Appareils Wi‑Fi connus";
+
+    if (payload.loading) {
+      listEl.innerHTML = `<p class="status">${escapeHtml(payload.statusText || strings.loading || "Chargement…")}</p>`;
+      scheduleReportSize();
+      return;
+    }
+
+    if (payload.error) {
+      listEl.innerHTML = `<p class="status">${escapeHtml(payload.statusText || strings.error || "Impossible de charger la liste")}</p>`;
+      scheduleReportSize();
+      return;
+    }
+
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    if (!entries.length) {
+      listEl.innerHTML = `<p class="empty">${escapeHtml(strings.empty || "Aucun appareil Wi‑Fi enregistré")}</p>`;
+      scheduleReportSize();
+      return;
+    }
+
+    const onlineLabel = strings.online || "En ligne";
+    const offlineLabel = strings.offline || "Hors ligne";
+    const actionLabel = strings.action || "Reconnecter";
+
+    listEl.innerHTML = entries.map((entry) => {
+      const deviceId = entry.deviceId || entry.serial || "";
+      const name = entry.name || deviceId;
+      const sub = subLine(entry);
+      const online = entry.adbState === "connected";
+      const statusLabel = online ? onlineLabel : offlineLabel;
+      return (
+        `<div class="row" data-device-id="${escapeAttr(deviceId)}">` +
+        `<div class="row-main">` +
+        `<div class="row-name">${escapeHtml(name)}</div>` +
+        (sub ? `<div class="row-sub">${escapeHtml(sub)}</div>` : "") +
+        `<div class="row-status${online ? " is-online" : ""}">` +
+        `<span class="dot" aria-hidden="true"></span>${escapeHtml(statusLabel)}` +
+        `</div>` +
+        `</div>` +
+        `<button type="button" class="action" data-wifi-reconnect="${escapeAttr(deviceId)}">` +
+        `${escapeHtml(actionLabel)}` +
+        `</button>` +
+        `</div>`
+      );
+    }).join("");
+    scheduleReportSize();
+  }
+
+  closeBtn.addEventListener("click", () => {
+    window.wifiReconnectOverlayAPI?.hide?.();
+  });
+
+  listEl.addEventListener("click", async (event) => {
+    const btn = event.target?.closest?.("[data-wifi-reconnect]");
+    if (!btn || !window.wifiReconnectOverlayAPI?.reconnect) return;
+    const deviceId = btn.getAttribute("data-wifi-reconnect");
+    if (!deviceId) return;
+    btn.disabled = true;
+    try {
+      await window.wifiReconnectOverlayAPI.reconnect({ deviceId });
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  window.wifiReconnectOverlayAPI?.onRender?.(render);
+})();
+</script>
+</body>
+</html>

@@ -351,8 +351,30 @@ class NewInstanceManager extends EventEmitter {
         await this._ensureDeviceStayAwake(session.serial);
 
         const turnOff = typeof global.shouldPhysicalScreenBeOff === "function"
-            ? global.shouldPhysicalScreenBeOff(session.serial, session.stableDeviceId, { typeBDefault: true })
-            : true;
+            ? global.shouldPhysicalScreenBeOff(session.serial, session.stableDeviceId, { typeBDefault: false })
+            : false;
+
+        // Bouton déjà OFF et panneau déjà éteint → ne pas renvoyer sleep/setDisplayPower.
+        if (turnOff && typeof global.probePhysicalScreenOff === "function") {
+            try {
+                const alreadyOff = await global.probePhysicalScreenOff(session.serial);
+                if (alreadyOff === true) {
+                    session.physicalScreenOff = true;
+                    console.log(
+                        `[NewInstanceManager] skip re-OFF — deja eteint via bouton (${session.sessionId})`
+                    );
+                    if (typeof global.syncDeviceScreenOffState === "function") {
+                        global.syncDeviceScreenOffState(session.serial, true, {
+                            stableDeviceId: session.stableDeviceId || null,
+                            mode: "already-off"
+                        });
+                    }
+                    return;
+                }
+            } catch (_err) {
+                // continuer vers apply
+            }
+        }
 
         const client = session.client;
         if (client?.controlSocket && typeof client.setDisplayPower === "function") {

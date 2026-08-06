@@ -49,9 +49,8 @@ class DockHoverOverlayManager {
                         }
                         await new Promise((r) => setTimeout(r, 20));
 
-                        // Volume appareil : le panneau slider est sur la fenêtre principale —
-                        // ne pas re-afficher l'overlay dock par-dessus.
-                        if (window.__deviceSpeakerPopoverOpen) {
+                        // Volume / écran : panneaux sur fenêtre dédiée — ne pas re-afficher le dock.
+                        if (window.__deviceSpeakerPopoverOpen || window.__screenPowerPopoverOpen) {
                             return { ok: true, html: "", dismissOverlay: true };
                         }
 
@@ -89,12 +88,19 @@ class DockHoverOverlayManager {
                 return { ok: false };
             }
             const id = String(buttonId).replace(/[^a-zA-Z0-9_-]/g, "");
-            if (id !== "nav-toggle-global-audio") return { ok: false };
+            if (id !== "nav-toggle-global-audio" && id !== "nav-toggle-screen") {
+                return { ok: false };
+            }
             try {
                 const result = await this.mainWindow.webContents.executeJavaScript(`
                     (async () => {
-                        if (typeof window.openDeviceSpeakerVolumePopover === "function") {
+                        if (${JSON.stringify(id)} === "nav-toggle-global-audio"
+                            && typeof window.openDeviceSpeakerVolumePopover === "function") {
                             return await window.openDeviceSpeakerVolumePopover();
+                        }
+                        if (${JSON.stringify(id)} === "nav-toggle-screen"
+                            && typeof window.openScreenPowerPopover === "function") {
+                            return await window.openScreenPowerPopover();
                         }
                         return { ok: false };
                     })()

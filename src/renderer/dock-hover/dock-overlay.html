@@ -193,7 +193,7 @@
         el.addEventListener("contextmenu", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (el.id !== "nav-toggle-global-audio") return;
+          if (el.id !== "nav-toggle-global-audio" && el.id !== "nav-toggle-screen") return;
           if (el.classList.contains("disabled")) return;
           window.dockOverlayAPI?.hideTip?.();
           window.dockOverlayAPI?.invokeContextMenu?.(el.id);

@@ -19,10 +19,23 @@ class DockChipFlyoutOverlayManager {
         this._onMainResize = () => this.hide();
         this._onMainMinimize = () => this.hide();
         this._onMainClose = () => this.destroy();
+        this._onMainBlur = () => {
+            // Sans parent, hide si l'app perd le focus (évite de rester au-dessus des autres apps).
+            setTimeout(() => {
+                if (!this.visible) return;
+                const main = this.mainWindow;
+                const win = this.overlayWindow;
+                if (!main || main.isDestroyed()) return;
+                if (main.isFocused()) return;
+                if (win && !win.isDestroyed() && win.isFocused()) return;
+                this.hide();
+            }, 180);
+        };
 
         mainWindow.on("move", this._onMainMove);
         mainWindow.on("resize", this._onMainResize);
         mainWindow.on("minimize", this._onMainMinimize);
+        mainWindow.on("blur", this._onMainBlur);
         mainWindow.on("closed", this._onMainClose);
 
         ipcMain.removeHandler("dock-chip-flyout:show");
@@ -144,12 +157,38 @@ class DockChipFlyoutOverlayManager {
     _raiseAboveStreams(win) {
         if (!win || win.isDestroyed()) return;
         try {
-            if (!win.isVisible()) win.showInactive();
-            // Remonte au-dessus des BrowserView du parent (Windows).
+            // show()+focus() : même pattern que DeviceSpeaker / ScreenPower.
+            // showInactive laisse la fenêtre sous les BrowserView (zone flux).
+            if (!win.isVisible()) win.show();
+            try {
+                win.focus();
+            } catch (_err) {
+                // noop
+            }
+            try {
+                win.setAlwaysOnTop(true, "screen-saver");
+            } catch (_err) {
+                try {
+                    win.setAlwaysOnTop(true, "pop-up-menu");
+                } catch (_err2) {
+                    try {
+                        win.setAlwaysOnTop(true);
+                    } catch (_err3) {
+                        // noop
+                    }
+                }
+            }
+            if (typeof win.setVisibleOnAllWorkspaces === "function") {
+                try {
+                    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+                } catch (_err) {
+                    // noop
+                }
+            }
             if (typeof win.moveTop === "function") win.moveTop();
         } catch (_err) {
             try {
-                if (!win.isVisible()) win.showInactive();
+                if (!win.isVisible()) win.show();
             } catch (__err) {}
         }
     }
@@ -172,11 +211,14 @@ class DockChipFlyoutOverlayManager {
             focusable: true,
             skipTaskbar: true,
             show: false,
-            hasShadow: false,
+            hasShadow: true,
             thickFrame: false,
             backgroundColor: "#00000000",
-            parent: this.mainWindow,
+            // Pas de parent : sous Windows, une fenêtre enfant reste derrière les
+            // BrowserView qui couvrent la zone du flyout (contrairement au dock
+            // hover, qui reste hors flux). screen-saver + fenêtre libre = au-dessus.
             modal: false,
+            alwaysOnTop: true,
             webPreferences: {
                 preload: path.join(__dirname, "../../preload/dockChipFlyoutPreload.js"),
                 contextIsolation: true,
@@ -184,6 +226,28 @@ class DockChipFlyoutOverlayManager {
                 backgroundThrottling: false
             }
         });
+
+        // Même niveau z-order que le tooltip preview (au-dessus des BrowserView).
+        try {
+            this.overlayWindow.setAlwaysOnTop(true, "screen-saver");
+        } catch (_err) {
+            try {
+                this.overlayWindow.setAlwaysOnTop(true, "pop-up-menu");
+            } catch (_err2) {
+                try {
+                    this.overlayWindow.setAlwaysOnTop(true);
+                } catch (_err3) {
+                    // noop
+                }
+            }
+        }
+        if (typeof this.overlayWindow.setVisibleOnAllWorkspaces === "function") {
+            try {
+                this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+            } catch (_err) {
+                // noop
+            }
+        }
 
         this.readyPromise = this.overlayWindow.loadFile(
             path.join(__dirname, "../../renderer/dock-chip-flyout/dock-chip-flyout-overlay.html")
@@ -228,6 +292,8 @@ class DockChipFlyoutOverlayManager {
             width: Math.max(120, Math.round(this.bounds.width)),
             height: Math.max(48, Math.round(this.bounds.height))
         });
+        // setBounds peut faire retomber la fenêtre sous les BrowserView (Windows).
+        this._raiseAboveStreams(win);
     }
 
     async show(payload = {}) {
@@ -266,6 +332,8 @@ class DockChipFlyoutOverlayManager {
                 this._placeAboveAnchor(140);
             }
             this._syncBounds();
+        } else {
+            this._raiseAboveStreams(win);
         }
 
         win.webContents.send("dock-chip-flyout:render", {
@@ -276,7 +344,10 @@ class DockChipFlyoutOverlayManager {
             visible: true
         });
 
+        // Re-raise après le render (setBounds / IPC peuvent retomber sous le flux).
         this._raiseAboveStreams(win);
+        setTimeout(() => this._raiseAboveStreams(win), 0);
+        setTimeout(() => this._raiseAboveStreams(win), 50);
         return true;
     }
 
@@ -311,6 +382,18 @@ class DockChipFlyoutOverlayManager {
         const win = this.overlayWindow;
         if (win && !win.isDestroyed()) {
             win.webContents.send("dock-chip-flyout:render", { visible: false });
+            try {
+                win.setAlwaysOnTop(false);
+            } catch (_err) {
+                // noop
+            }
+            try {
+                if (typeof win.setVisibleOnAllWorkspaces === "function") {
+                    win.setVisibleOnAllWorkspaces(false);
+                }
+            } catch (_err) {
+                // noop
+            }
             win.hide();
         }
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -326,6 +409,7 @@ class DockChipFlyoutOverlayManager {
             this.mainWindow.removeListener("move", this._onMainMove);
             this.mainWindow.removeListener("resize", this._onMainResize);
             this.mainWindow.removeListener("minimize", this._onMainMinimize);
+            this.mainWindow.removeListener("blur", this._onMainBlur);
             this.mainWindow.removeListener("closed", this._onMainClose);
         }
         [
