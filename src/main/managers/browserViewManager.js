@@ -167,6 +167,8 @@ class BrowserViewManager {
             userId: Number.isInteger(extraQuery.userId) ? extraQuery.userId : null,
             screenOff: Boolean(extraQuery.screenOff),
             stayAwakeActive: Boolean(extraQuery.stayAwakeActive),
+            /** Ordre d'ouverture — propriétaire audio = plus ancien encore ouvert. */
+            openedAt: Date.now(),
             captureOrientation: type === "B"
                 ? normalizeOrientation("landscape")
                 : normalizeOrientation(extraQuery.captureOrientation || "landscape"),
@@ -747,6 +749,7 @@ class BrowserViewManager {
             screenOff: Boolean(entry.screenOff),
             captureOrientation: normalizeOrientation(entry.captureOrientation || "landscape"),
             active: sessionId === this.activeSessionId,
+            openedAt: Number.isFinite(entry.openedAt) ? entry.openedAt : null,
             streamParams: cloneParams(entry.streamParams)
         }));
     }

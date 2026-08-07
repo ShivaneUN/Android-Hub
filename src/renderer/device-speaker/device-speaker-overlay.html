@@ -43,9 +43,19 @@
     padding-bottom: 6px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
-  .mute-spacer {
-    width: 32px;
-    height: 26px;
+  .row.audio-locked {
+    opacity: 0.45;
+  }
+  .row.audio-locked .mute-btn,
+  .row.audio-locked .slider {
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+  .lock-hint {
+    font-size: 10px;
+    color: #8b95a8;
+    grid-column: 1 / -1;
+    margin-top: -4px;
   }
   .name {
     font-size: 12px;
@@ -207,11 +217,13 @@
       `<path d="m17 9 6 6"/>` +
       `</svg>`;
 
-    function muteButtonHtml(on, deviceKey) {
+    function muteButtonHtml(on, deviceKey, locked = false) {
       const state = on ? "on" : "off";
-      const label = on ? "Audio ON" : "Audio OFF";
+      const label = locked
+        ? "Audio : première session uniquement"
+        : (on ? "Audio ON" : "Audio OFF");
       return (
-        `<button type="button" class="mute-btn ${state}" data-action="mute" data-key="${deviceKey}" title="${label}" aria-label="${label}">` +
+        `<button type="button" class="mute-btn ${state}" data-action="mute" data-key="${deviceKey}" title="${label}" aria-label="${label}"${locked ? " disabled" : ""}>` +
         AUDIO_ICON_ON +
         AUDIO_ICON_OFF +
         `</button>`
@@ -313,8 +325,9 @@
         }
       }
       setMuteButtonState(globalMuteBtn, globalOn);
-      globalMuteBtn.disabled = !(panel.devices || []).length;
-      globalSlider.disabled = !(panel.devices || []).length;
+      const globalEnabled = panel.globalControlsEnabled !== false && (panel.devices || []).length > 0;
+      globalMuteBtn.disabled = !globalEnabled;
+      globalSlider.disabled = !globalEnabled;
 
       const devices = Array.isArray(panel.devices) ? panel.devices : [];
       if (!devices.length) {
@@ -330,12 +343,17 @@
           percent = Number(keepDeviceValue);
         }
         const on = percent > 0 && d.audioOn !== false;
+        const locked = d.audioControlsEnabled === false;
+        const lockHint = locked
+          ? `<div class="lock-hint">Son : première session uniquement</div>`
+          : "";
         return (
-          `<div class="row" data-key="${key}">` +
+          `<div class="row${locked ? " audio-locked" : ""}" data-key="${key}" data-locked="${locked ? "1" : "0"}">` +
           `<div class="name" title="${name}">${name}</div>` +
-          muteButtonHtml(on, key) +
-          `<input class="slider" data-action="volume" data-key="${key}" data-adb="${escapeHtml(d.adbSerial || "")}" type="range" min="0" max="100" step="1" value="${percent}">` +
+          muteButtonHtml(on, key, locked) +
+          `<input class="slider" data-action="volume" data-key="${key}" data-adb="${escapeHtml(d.adbSerial || "")}" type="range" min="0" max="100" step="1" value="${percent}"${locked ? " disabled" : ""}>` +
           `<div class="value">${percent}</div>` +
+          lockHint +
           `</div>`
         );
       }).join("");
@@ -371,6 +389,8 @@
     listEl.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-action='mute']");
       if (!btn || btn.disabled || btn.classList.contains("pending")) return;
+      const row = btn.closest(".row");
+      if (row?.getAttribute("data-locked") === "1") return;
       const deviceKey = btn.getAttribute("data-key");
       if (!deviceKey) return;
       btn.classList.add("pending");
@@ -380,7 +400,6 @@
       const next = wantOff ? 0 : 100;
       if (deviceKey) deviceVolumeLocal.set(deviceKey, next);
       setMuteButtonState(btn, !wantOff);
-      const row = btn.closest(".row");
       const slider = row?.querySelector("input[data-action='volume']");
       const valueEl = row?.querySelector(".value");
       if (slider) slider.value = String(next);
@@ -423,12 +442,13 @@
 
     listEl.addEventListener("input", (event) => {
       const slider = event.target.closest("input[data-action='volume']");
-      if (!slider) return;
+      if (!slider || slider.disabled) return;
+      const row = slider.closest(".row");
+      if (row?.getAttribute("data-locked") === "1") return;
       cancelPendingGlobal();
       const deviceKey = slider.getAttribute("data-key");
       const adbSerial = slider.getAttribute("data-adb") || "";
       const percent = Number(slider.value);
-      const row = slider.closest(".row");
       const valueEl = row?.querySelector(".value");
       if (valueEl) valueEl.textContent = String(percent);
       const wantOn = percent > 0;

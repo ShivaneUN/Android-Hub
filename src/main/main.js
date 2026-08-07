@@ -1353,6 +1353,21 @@ async function startSessionAudioPlayback(sessionId, {
     const muted = !pcPlayback;
     const overlay = global.deviceSpeakerOverlayManager;
 
+    // 1 device = 1 owner : seule la 1re session (A/B) spawn la capture.
+    const ownerId = global.sessionAudioProcessManager.claimAudioOwner?.(sessionId, key, effectiveSerial)
+        || sessionId;
+    if (ownerId !== sessionId) {
+        console.log(
+            `[SessionAudio ${sessionId}] pas owner (owner=${ownerId}) — pas de capture dupliquée`
+        );
+        try {
+            void overlay?.syncSlidersFromAudioState?.();
+        } catch (_err) {
+            /* ignore */
+        }
+        return;
+    }
+
     // 1) UI Hub : slider AUDIO → 0% si OFF / % si ON.
     overlay?.markLaunchAudioIntent?.({ deviceKey: key, muted });
     try {
@@ -1377,7 +1392,8 @@ async function startSessionAudioPlayback(sessionId, {
             serial: effectiveSerial,
             displayId,
             deviceKey: key,
-            pcPlayback
+            pcPlayback,
+            forceOwner: true
         });
     } catch (err) {
         console.warn(`[SessionAudio ${sessionId}] demarrage:`, err?.message || err);
@@ -1487,6 +1503,9 @@ async function ensureAllSessionsLaunchAudioPolicy({
 
     await Promise.allSettled([...byKey.values()].map(async (t) => {
         const key = t.deviceKey || t.serial;
+        const ownerId = sap.claimAudioOwner?.(t.sessionId, key, t.serial) || t.sessionId;
+        if (ownerId !== t.sessionId) return;
+
         const pcPlayback = Boolean(audio?.isDeviceAudioEnabled?.(key));
         const muted = !pcPlayback;
 
@@ -1501,7 +1520,8 @@ async function ensureAllSessionsLaunchAudioPolicy({
                 serial: t.serial,
                 displayId: t.displayId ?? null,
                 deviceKey: key,
-                pcPlayback
+                pcPlayback,
+                forceOwner: true
             });
         } catch (_err) {
             /* ignore */

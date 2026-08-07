@@ -56,6 +56,8 @@ class DeviceSpeakerOverlayManager {
         this._deviceToggleInFlight = false;
         /** true pendant un drag slider device (évite applyDesired qui écrase le %). */
         this._sliderInFlight = false;
+        /** Dernier hint d'ouverture overlay (home / device). */
+        this._lastShowHint = {};
         /** Volume PC Windows par PID scrcpy (1 slider Hub = 1 process scrcpy). */
         this._hostVolume = new WindowsProcessAudioVolume();
 
@@ -570,6 +572,9 @@ class DeviceSpeakerOverlayManager {
     async _buildPanel() {
         const devicesIn = await this._listConnectedDevices();
         const audio = this._audioManager();
+        const sap = global.sessionAudioProcessManager;
+        const activeSessionId = global.browserViewManager?.activeSessionId || null;
+        const home = Boolean(this._lastShowHint?.home);
         const devices = [];
 
         for (const entry of devicesIn) {
@@ -595,6 +600,19 @@ class DeviceSpeakerOverlayManager {
                 percent = 0;
             }
 
+            const openSessions = sap?.listOpenSessionsForDevice?.(deviceKey, adbSerial) || [];
+            let ownerSessionId = sap?.getAudioOwnerSessionId?.(deviceKey, adbSerial) || null;
+            if (!ownerSessionId && openSessions[0]) {
+                ownerSessionId = sap.claimAudioOwner?.(
+                    openSessions[0].sessionId,
+                    deviceKey,
+                    adbSerial
+                ) || openSessions[0].sessionId;
+            }
+            const audioControlsEnabled = sap?.canControlDeviceAudio
+                ? sap.canControlDeviceAudio(deviceKey, adbSerial, { activeSessionId, home })
+                : openSessions.length > 0;
+
             devices.push({
                 deviceKey,
                 deviceId: entry.deviceId || null,
@@ -604,7 +622,10 @@ class DeviceSpeakerOverlayManager {
                 volume: null,
                 max: DEFAULT_MAX_VOLUME,
                 percent,
-                audioOn
+                audioOn,
+                ownerSessionId,
+                audioControlsEnabled: Boolean(audioControlsEnabled),
+                sessionCount: openSessions.length
             });
         }
 
@@ -627,11 +648,15 @@ class DeviceSpeakerOverlayManager {
             globalVolume = this.defaultOnPercent;
         }
 
+        const anyControls = devices.some((d) => d.audioControlsEnabled);
         const panel = {
             success: true,
             globalMuted: Boolean(audio?.isGlobalMuted?.()),
             globalVolume,
             globalMax: UI_MAX_PERCENT,
+            activeSessionId,
+            home,
+            globalControlsEnabled: home || anyControls || devices.length > 0,
             devices
         };
         this.lastPanel = panel;
@@ -793,6 +818,17 @@ class DeviceSpeakerOverlayManager {
             const aliases = this._deviceAliasKeys({ ...device, adbSerial });
             if (!key) {
                 return { success: false, error: "deviceKey manquant" };
+            }
+
+            const gate = this._assertDeviceAudioControlsEnabled(key, adbSerial);
+            if (!gate.ok) {
+                const panel = await this._buildPanel();
+                return {
+                    success: false,
+                    error: gate.error,
+                    ownerSessionId: gate.ownerSessionId,
+                    panel
+                };
             }
 
             const audioOn = percent > 0;
@@ -1224,6 +1260,20 @@ class DeviceSpeakerOverlayManager {
      * et laisse les autres en OFF (indépendance locale).
      * Un prochain global OFF/ON reprendra le dessus sur tout le monde.
      */
+    _assertDeviceAudioControlsEnabled(deviceKey, adbSerial = null) {
+        const sap = global.sessionAudioProcessManager;
+        if (!sap?.canControlDeviceAudio) return { ok: true };
+        const activeSessionId = global.browserViewManager?.activeSessionId || null;
+        const home = Boolean(this._lastShowHint?.home);
+        const ok = sap.canControlDeviceAudio(deviceKey, adbSerial, { activeSessionId, home });
+        if (ok) return { ok: true };
+        return {
+            ok: false,
+            error: "Audio réservé à la première session de cet appareil",
+            ownerSessionId: sap.getAudioOwnerSessionId?.(deviceKey, adbSerial) || null
+        };
+    }
+
     async _toggleDeviceAudio(payload = {}) {
         const audio = this._audioManager();
         const key = String(
@@ -1231,6 +1281,15 @@ class DeviceSpeakerOverlayManager {
         ).trim();
         if (!audio || !key) {
             return { success: false, error: "deviceKey manquant" };
+        }
+
+        const gate = this._assertDeviceAudioControlsEnabled(
+            key,
+            payload.adbSerial || payload.serial || null
+        );
+        if (!gate.ok) {
+            const panel = await this._buildPanel();
+            return { success: false, error: gate.error, ownerSessionId: gate.ownerSessionId, panel };
         }
 
         const opId = ++this._volumeOpId;
@@ -1750,6 +1809,10 @@ class DeviceSpeakerOverlayManager {
 
     async show(payload = {}) {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return false;
+
+        this._lastShowHint = payload?.hint && typeof payload.hint === "object"
+            ? payload.hint
+            : {};
 
         // Ne pas reset le % global (sidebar centrale ON à 100 % doit rester visible).
         const panel = await this._buildPanel();

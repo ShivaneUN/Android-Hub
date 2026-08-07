@@ -26,6 +26,235 @@ class SessionAudioProcessManager {
         this._startLocks = new Map();
         /** @type {Promise<string>|null} */
         this._brandedPromise = null;
+        /**
+         * 1 device physique → 1 session propriétaire audio (Type A ou B).
+         * @type {Map<string, string>} canonicalDeviceKey → sessionId
+         */
+        this._audioOwners = new Map();
+    }
+
+    /** Clé stable pour le propriétaire audio (deviceId > serial). */
+    _ownerMapKey(deviceKey, serial = null) {
+        return String(deviceKey || serial || "").trim() || null;
+    }
+
+    /**
+     * Sessions Hub ouvertes sur CE device (plus ancienne d'abord).
+     * @returns {Array<{ sessionId: string, deviceKey: string|null, serial: string|null, displayId: number|null, openedAt: number }>}
+     */
+    listOpenSessionsForDevice(deviceKey, serial = null) {
+        const needles = new Set(
+            [deviceKey, serial]
+                .map((x) => String(x || "").trim())
+                .filter(Boolean)
+        );
+        if (!needles.size) return [];
+
+        const out = [];
+        for (const target of this._listActiveSessionTargets()) {
+            const ids = [
+                target.deviceKey,
+                target.serial,
+                target.entry?.stableDeviceId,
+                target.entry?.deviceId,
+                target.niSession?.stableDeviceId,
+                target.niSession?.serial
+            ].map((x) => String(x || "").trim()).filter(Boolean);
+
+            const hit = ids.some((id) => needles.has(id))
+                || [...needles].some((n) => this._matchesDeviceKey(target, n));
+            if (!hit) continue;
+
+            const openedAt = Number(target.entry?.openedAt);
+            out.push({
+                sessionId: target.sessionId,
+                deviceKey: target.deviceKey || deviceKey || serial || null,
+                serial: target.serial || serial || null,
+                displayId: target.displayId,
+                openedAt: Number.isFinite(openedAt) ? openedAt : Number.MAX_SAFE_INTEGER
+            });
+        }
+
+        out.sort((a, b) => a.openedAt - b.openedAt || String(a.sessionId).localeCompare(String(b.sessionId)));
+        return out;
+    }
+
+    /**
+     * Enrichit listOpenSessionsForDevice avec aliases USB/WiFi (async).
+     */
+    async listOpenSessionsForDeviceAsync(deviceKey, serial = null) {
+        const needles = new Set(
+            [deviceKey, serial]
+                .map((x) => String(x || "").trim())
+                .filter(Boolean)
+        );
+        if (!needles.size) return [];
+
+        let unified = [];
+        try {
+            unified = await global.deviceRegistry?.listUnifiedDevices?.({ forceFresh: false }) || [];
+        } catch (_err) {
+            unified = [];
+        }
+        for (const d of unified) {
+            const ids = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
+                .map((x) => String(x || "").trim())
+                .filter(Boolean);
+            if (!ids.some((id) => needles.has(id))) continue;
+            ids.forEach((id) => needles.add(id));
+            break;
+        }
+
+        const out = [];
+        for (const target of this._listActiveSessionTargets()) {
+            const tSerial = target.serial;
+            const ids = new Set([
+                target.deviceKey,
+                target.serial,
+                tSerial,
+                target.entry?.stableDeviceId,
+                target.entry?.deviceId,
+                target.niSession?.stableDeviceId,
+                target.niSession?.serial
+            ].map((x) => String(x || "").trim()).filter(Boolean));
+
+            for (const d of unified) {
+                const cand = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
+                    .map((x) => String(x || "").trim())
+                    .filter(Boolean);
+                if (!cand.some((id) => ids.has(id))) continue;
+                cand.forEach((id) => ids.add(id));
+            }
+
+            if (![...ids].some((id) => needles.has(id))
+                && ![...needles].some((n) => this._matchesDeviceKey(target, n))) {
+                continue;
+            }
+
+            const openedAt = Number(target.entry?.openedAt);
+            out.push({
+                sessionId: target.sessionId,
+                deviceKey: target.deviceKey || deviceKey || serial || null,
+                serial: tSerial || serial || null,
+                displayId: target.displayId,
+                openedAt: Number.isFinite(openedAt) ? openedAt : Number.MAX_SAFE_INTEGER
+            });
+        }
+
+        out.sort((a, b) => a.openedAt - b.openedAt || String(a.sessionId).localeCompare(String(b.sessionId)));
+        return out;
+    }
+
+    getAudioOwnerSessionId(deviceKey, serial = null) {
+        const mapKey = this._ownerMapKey(deviceKey, serial);
+        if (!mapKey) return null;
+        const owner = this._audioOwners.get(mapKey) || null;
+        if (!owner) return null;
+        // Owner encore ouvert ?
+        const stillOpen = this._listActiveSessionTargets().some((t) => t.sessionId === owner);
+        if (!stillOpen) {
+            this._audioOwners.delete(mapKey);
+            return null;
+        }
+        return owner;
+    }
+
+    /**
+     * Déclare / confirme le propriétaire : 1re session ouverte sur le device.
+     * @returns {string|null} sessionId propriétaire
+     */
+    claimAudioOwner(sessionId, deviceKey, serial = null) {
+        const mapKey = this._ownerMapKey(deviceKey, serial);
+        if (!mapKey || !sessionId) return null;
+
+        const current = this.getAudioOwnerSessionId(deviceKey, serial);
+        if (current) return current;
+
+        // Première session encore ouverte sur ce device (openedAt).
+        const open = this.listOpenSessionsForDevice(deviceKey, serial);
+        const first = open[0]?.sessionId || sessionId;
+        this._audioOwners.set(mapKey, first);
+        // Alias serial → même owner si clé différente
+        if (serial && this._ownerMapKey(serial) !== mapKey) {
+            this._audioOwners.set(this._ownerMapKey(serial), first);
+        }
+        if (first === sessionId) {
+            console.log(`[SessionAudio] owner ${mapKey} → ${sessionId}`);
+        }
+        return first;
+    }
+
+    isAudioOwnerSession(sessionId, deviceKey, serial = null) {
+        if (!sessionId) return false;
+        const owner = this.claimAudioOwner(sessionId, deviceKey, serial);
+        return owner === sessionId;
+    }
+
+    /**
+     * La session focus peut piloter le son de CE device ?
+     * - propriétaire = oui
+     * - autre session du même device = non
+     * - pas de session focus (home) = oui si un owner existe
+     */
+    canControlDeviceAudio(deviceKey, serial = null, { activeSessionId = null, home = false } = {}) {
+        const open = this.listOpenSessionsForDevice(deviceKey, serial);
+        if (!open.length) return false;
+
+        const owner = this.getAudioOwnerSessionId(deviceKey, serial)
+            || this.claimAudioOwner(open[0].sessionId, deviceKey || open[0].deviceKey, serial || open[0].serial);
+        if (!owner) return false;
+
+        if (home || !activeSessionId) return true;
+
+        const focusedOnDevice = open.some((s) => s.sessionId === activeSessionId);
+        if (!focusedOnDevice) return true;
+        return activeSessionId === owner;
+    }
+
+    /**
+     * Après fermeture d'une session : si elle était owner, la suivante prend la relève.
+     */
+    async handoffAudioOwner(closedSessionId, { deviceKey = null, serial = null } = {}) {
+        if (!closedSessionId) return null;
+
+        const ownedKeys = [];
+        for (const [mapKey, ownerId] of [...this._audioOwners.entries()]) {
+            if (ownerId === closedSessionId) ownedKeys.push(mapKey);
+        }
+        // Si pas encore dans la map, tenter via deviceKey fourni.
+        if (!ownedKeys.length && (deviceKey || serial)) {
+            const mapKey = this._ownerMapKey(deviceKey, serial);
+            if (mapKey) ownedKeys.push(mapKey);
+        }
+        if (!ownedKeys.length) return null;
+
+        let next = null;
+        for (const mapKey of ownedKeys) {
+            this._audioOwners.delete(mapKey);
+            const sessions = await this.listOpenSessionsForDeviceAsync(mapKey, serial);
+            if (!sessions.length) continue;
+            next = sessions[0];
+            this._audioOwners.set(mapKey, next.sessionId);
+            console.log(`[SessionAudio] handoff owner ${mapKey}: ${closedSessionId} → ${next.sessionId}`);
+        }
+
+        if (!next) return null;
+
+        const audio = global.globalAudioOutputManager;
+        const key = next.deviceKey || deviceKey || next.serial;
+        const pcPlayback = Boolean(audio?.isDeviceAudioEnabled?.(key));
+        try {
+            await this.start(next.sessionId, {
+                serial: next.serial,
+                displayId: next.displayId,
+                deviceKey: key,
+                pcPlayback,
+                forceOwner: true
+            });
+        } catch (err) {
+            console.warn(`[SessionAudio] handoff start:`, err?.message || err);
+        }
+        return next.sessionId;
     }
 
     _spawnHidden(command, args) {
@@ -505,11 +734,7 @@ class SessionAudioProcessManager {
         if (!needle && !key) return false;
         for (const [id, entry] of this.processes.entries()) {
             if (id === sessionId || !entry || !this.isRunning(id)) continue;
-            const sameSerial = needle && entry.serial && (
-                entry.serial === needle
-                || needle.startsWith(entry.serial)
-                || entry.serial.startsWith(needle)
-            );
+            const sameSerial = needle && entry.serial && entry.serial === needle;
             const sameKey = key && entry.deviceKey && entry.deviceKey === key;
             if (!sameSerial && !sameKey) continue;
             this.processes.delete(id);
@@ -614,14 +839,21 @@ class SessionAudioProcessManager {
         return null;
     }
 
-    async start(sessionId, { serial, displayId = null, deviceKey = null, pcPlayback = null } = {}) {
+    async start(sessionId, {
+        serial,
+        displayId = null,
+        deviceKey = null,
+        pcPlayback = null,
+        forceOwner = false
+    } = {}) {
         if (!sessionId || !serial) return { success: false, error: "sessionId ou serial manquant" };
 
         const run = () => this._startUnlocked(sessionId, {
             serial,
             displayId,
             deviceKey,
-            pcPlayback
+            pcPlayback,
+            forceOwner
         });
         const prev = this._startLocks.get(sessionId) || Promise.resolve();
         const next = prev.then(run, run);
@@ -635,7 +867,13 @@ class SessionAudioProcessManager {
         }
     }
 
-    async _startUnlocked(sessionId, { serial, displayId = null, deviceKey = null, pcPlayback = null } = {}) {
+    async _startUnlocked(sessionId, {
+        serial,
+        displayId = null,
+        deviceKey = null,
+        pcPlayback = null,
+        forceOwner = false
+    } = {}) {
         if (!this.scrcpyBinaryPath) return { success: false, error: "scrcpy introuvable" };
 
         const fs = require("fs");
@@ -644,6 +882,26 @@ class SessionAudioProcessManager {
         }
 
         const key = deviceKey || serial;
+        // 1 device = 1 session audio owner (évite captures dupliquées Type A/B).
+        const ownerId = this.claimAudioOwner(sessionId, key, serial);
+        if (!forceOwner && ownerId && ownerId !== sessionId) {
+            const ownerTarget = this._listActiveSessionTargets()
+                .find((t) => t.sessionId === ownerId);
+            const ownerSerial = ownerTarget
+                ? (await this._resolveSerial(ownerTarget)) || serial
+                : serial;
+            const ownerKey = ownerTarget?.deviceKey || key;
+            const ownerDisplayId = ownerTarget?.displayId ?? displayId;
+            // Propager ON/OFF vers l'owner (sinon le mute device ne flip pas la capture).
+            return this._startUnlocked(ownerId, {
+                serial: ownerSerial,
+                displayId: ownerDisplayId,
+                deviceKey: ownerKey,
+                pcPlayback,
+                forceOwner: true
+            });
+        }
+
         const wantPlayback = typeof pcPlayback === "boolean"
             ? pcPlayback
             : this._wantPcPlayback(key);
@@ -947,41 +1205,21 @@ class SessionAudioProcessManager {
         let sessionId = null;
         let displayId = null;
 
-        for (const target of this._listActiveSessionTargets()) {
-            const tSerial = await this._resolveSerial(target);
-            const ids = new Set([
-                target.deviceKey,
-                target.serial,
-                tSerial,
-                target.entry?.stableDeviceId,
-                target.entry?.deviceId,
-                target.niSession?.stableDeviceId,
-                target.niSession?.serial
-            ].map((x) => String(x || "").trim()).filter(Boolean));
-
-            // Enrichir UNIQUEMENT avec le même appareil physique (USB/WiFi).
-            // Ne jamais utiliser needles ici : sinon OFF device A matche aussi device B.
-            for (const d of unified) {
-                const cand = [d.deviceId, d.serial, d.usbSerial, d.wifiSerial]
-                    .map((x) => String(x || "").trim())
-                    .filter(Boolean);
-                if (!cand.some((id) => ids.has(id))) continue;
-                cand.forEach((id) => ids.add(id));
-            }
-
-            const hit = [...ids].some((id) => needles.has(id))
-                || [...needles].some((n) => this._matchesDeviceKey(target, n));
-            if (!hit) continue;
-
-            sessionId = target.sessionId;
-            displayId = target.displayId;
-            resolvedKey = target.deviceKey || resolvedKey;
-            resolvedSerial = tSerial || resolvedSerial || target.serial;
-            break;
+        // Toujours la session propriétaire audio (1re ouverte Type A/B) — pas de 2e capture.
+        const openSessions = await this.listOpenSessionsForDeviceAsync(resolvedKey, resolvedSerial);
+        if (openSessions.length) {
+            const owner = this.getAudioOwnerSessionId(resolvedKey, resolvedSerial)
+                || this.claimAudioOwner(openSessions[0].sessionId, resolvedKey, resolvedSerial);
+            const ownerSession = openSessions.find((s) => s.sessionId === owner) || openSessions[0];
+            sessionId = ownerSession.sessionId;
+            displayId = ownerSession.displayId;
+            resolvedKey = ownerSession.deviceKey || resolvedKey;
+            resolvedSerial = ownerSession.serial || resolvedSerial;
+            this.claimAudioOwner(sessionId, resolvedKey, resolvedSerial);
         }
 
         // Capture déjà vivante sous un autre sessionId (ex. launch-* / device-audio-*) :
-        // réutiliser plutôt que d'en créer une 2e (REMOTE_SUBMIX exclusif).
+        // réutiliser / adopter vers le propriétaire plutôt que d'en créer une 2e.
         if (!sessionId) {
             for (const [id, entry] of this.processes.entries()) {
                 if (!entry || !this.isRunning(id)) continue;
@@ -994,6 +1232,16 @@ class SessionAudioProcessManager {
                 resolvedKey = entry.deviceKey || resolvedKey;
                 displayId = Number.isInteger(entry.displayId) ? entry.displayId : displayId;
                 break;
+            }
+        } else {
+            // Adopter une capture launch-* / autre id vers le owner.
+            try {
+                this.adoptCaptureForSession(sessionId, {
+                    serial: resolvedSerial,
+                    deviceKey: resolvedKey
+                });
+            } catch (_err) {
+                /* ignore */
             }
         }
 
@@ -1013,11 +1261,12 @@ class SessionAudioProcessManager {
             serial: resolvedSerial,
             displayId,
             deviceKey: resolvedKey,
-            pcPlayback: Boolean(pcPlayback)
+            pcPlayback: Boolean(pcPlayback),
+            forceOwner: Boolean(openSessions.length)
         });
 
         // ADB 100 % seulement au vrai start/restart — pas à chaque reuse (slider device).
-        if (pcPlayback && resolvedSerial && !result?.reused) {
+        if (pcPlayback && resolvedSerial && !result?.reused && !result?.skipped) {
             void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.({
                 onlySerial: resolvedSerial
             }).catch((err) => {
@@ -1027,9 +1276,10 @@ class SessionAudioProcessManager {
 
         return {
             ...result,
-            sessionId,
+            sessionId: result?.sessionId || sessionId,
             serial: resolvedSerial,
-            deviceKey: resolvedKey
+            deviceKey: resolvedKey,
+            ownerSessionId: this.getAudioOwnerSessionId(resolvedKey, resolvedSerial)
         };
     }
 
@@ -1058,21 +1308,42 @@ class SessionAudioProcessManager {
         const targets = this._listActiveSessionTargets();
         const activeIds = new Set();
         const activeSerials = new Set();
+        /** @type {Map<string, typeof targets[0]>} 1re session (owner) par device */
+        const ownerByDevice = new Map();
 
         for (const target of targets) {
             const serial = await this._resolveSerial(target);
             if (!serial) continue;
             activeIds.add(target.sessionId);
             activeSerials.add(serial);
+            const key = String(target.deviceKey || serial);
+            const owner = this.claimAudioOwner(target.sessionId, key, serial);
+            if (owner === target.sessionId && !ownerByDevice.has(key)) {
+                ownerByDevice.set(key, { ...target, serial });
+            }
+        }
+
+        // Une seule capture par device = session propriétaire.
+        for (const target of ownerByDevice.values()) {
             await this.start(target.sessionId, {
-                serial,
+                serial: target.serial,
                 displayId: target.displayId,
-                deviceKey: target.deviceKey
+                deviceKey: target.deviceKey,
+                forceOwner: true
             });
         }
 
         for (const sessionId of [...this.processes.keys()]) {
-            if (activeIds.has(sessionId)) continue;
+            if (activeIds.has(sessionId)) {
+                // Capture d'une session non-owner → arrêter (dédup).
+                const entry = this.processes.get(sessionId);
+                const key = entry?.deviceKey || entry?.serial;
+                const owner = key ? this.getAudioOwnerSessionId(key, entry?.serial) : null;
+                if (owner && owner !== sessionId) {
+                    await this.stop(sessionId);
+                }
+                continue;
+            }
             // Garder les captures "device-audio-*" tant que le serial est encore une session active.
             const entry = this.processes.get(sessionId);
             if (
@@ -1085,7 +1356,6 @@ class SessionAudioProcessManager {
             await this.stop(sessionId);
         }
 
-        // ADB 100 % sur toutes les captures en playback (connues ou device-audio-*).
         void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
             console.warn("[SessionAudio] ensureAdb after syncAll:", err?.message || err);
         });

@@ -832,6 +832,25 @@ function registerSessionHandlers(adbPath, deps = {}) {
             global.streamParamsManager?.notifySessionListChanged();
         }
 
+        // Relève audio : la prochaine session du même device (A ou B) devient owner.
+        if (global.sessionAudioProcessManager?.handoffAudioOwner) {
+            void global.sessionAudioProcessManager.handoffAudioOwner(sessionId, {
+                deviceKey: stableDeviceId || serial,
+                serial
+            }).then((nextId) => {
+                if (nextId) {
+                    console.log(`[session:close] audio owner → ${nextId}`);
+                    try {
+                        global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.();
+                    } catch (_err) {
+                        /* ignore */
+                    }
+                }
+            }).catch((err) => {
+                console.warn("[session:close] handoff audio:", err?.message || err);
+            });
+        }
+
         if (manager && isAppInstance) {
             // Un seul owner device-cleanup : ensure (stop session si vivante, sinon fallback
             // avec métadonnées capturées). force-stop / re-off sont idempotents côté manager.
