@@ -7,7 +7,9 @@
  *
  * Usage :
  *   npm run build:release
- *   node scripts/publish-github-release.js --upload-only   (dist déjà buildé)
+ *   npm run release:patch          (même version, patchRevision +1, release marquée Patch)
+ *   node scripts/publish-github-release.js --upload-only
+ *   node scripts/publish-github-release.js --patch
  */
 const { execSync, execFileSync } = require("child_process");
 const { createReadStream } = require("fs");
@@ -236,23 +238,80 @@ async function deleteReleaseByTag(token, tag) {
     return true;
 }
 
-async function createRelease(token, tag, version) {
+async function createRelease(token, tag, version, { isPatch = false, patchRevision = 0 } = {}) {
     const existing = await getReleaseByTag(token, tag);
     if (existing) {
         return existing;
     }
 
-    console.log(`Création de la release GitHub ${tag}…`);
+    const name = isPatch ? `v${version} (patch ${patchRevision})` : tag;
+    const body = isPatch
+        ? [
+            `Android Hub **v${version}** — patch **#${patchRevision}**`,
+            "",
+            "Même numéro de version : correctif republable (les clients détectent le patch via `patchRevision`)."
+        ].join("\n")
+        : `Android Hub v${version}`;
+
+    console.log(`Création de la release GitHub ${tag}${isPatch ? ` [patch #${patchRevision}]` : ""}…`);
     return githubApi(token, `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`, {
         method: "POST",
         body: {
             tag_name: tag,
-            name: tag,
+            name,
             draft: false,
             prerelease: false,
-            body: `Android Hub v${version}`
+            body
         }
     });
+}
+
+function injectPatchRevisionIntoLatestYml(version, patchRevision) {
+    const distRoot = resolveDistAbsolute();
+    const artifacts = findUpdateArtifacts(distRoot, version);
+    const ymlPath = artifacts.latestYml;
+    if (!fs.existsSync(ymlPath)) {
+        throw new Error(`latest.yml introuvable pour injecter patchRevision: ${ymlPath}`);
+    }
+
+    let text = fs.readFileSync(ymlPath, "utf8");
+    if (/^patchRevision\s*:/m.test(text)) {
+        text = text.replace(/^patchRevision\s*:.*$/m, `patchRevision: ${patchRevision}`);
+    } else {
+        text = `${text.replace(/\s*$/, "")}\npatchRevision: ${patchRevision}\n`;
+    }
+    fs.writeFileSync(ymlPath, text, "utf8");
+    console.log(`latest.yml ← patchRevision: ${patchRevision}`);
+}
+
+function writePackageJson(pkg) {
+    const pkgPath = path.join(ROOT, "package.json");
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+}
+
+function bumpPatchRevision() {
+    const pkgPath = path.join(ROOT, "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    const previous = Number(pkg.patchRevision) || 0;
+    const next = previous + 1;
+    pkg.patchRevision = next;
+    writePackageJson(pkg);
+    console.log(`patchRevision: ${previous} → ${next} (version inchangée: ${pkg.version})`);
+    return { version: pkg.version, patchRevision: next, previousPatchRevision: previous };
+}
+
+/** Nouvelle release semver : le compteur de patch repart à 0. */
+function resetPatchRevision() {
+    const pkgPath = path.join(ROOT, "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    const previous = Number(pkg.patchRevision) || 0;
+    if (previous === 0) {
+        return { version: pkg.version, patchRevision: 0, previousPatchRevision: previous };
+    }
+    pkg.patchRevision = 0;
+    writePackageJson(pkg);
+    console.log(`patchRevision: ${previous} → 0 (nouvelle version ${pkg.version})`);
+    return { version: pkg.version, patchRevision: 0, previousPatchRevision: previous };
 }
 
 function collectArtifacts(version) {
@@ -282,9 +341,9 @@ function collectArtifacts(version) {
     return files;
 }
 
-async function uploadArtifacts(token, tag, version) {
+async function uploadArtifacts(token, tag, version, releaseOpts = {}) {
     const files = collectArtifacts(version);
-    const release = await createRelease(token, tag, version);
+    const release = await createRelease(token, tag, version, releaseOpts);
     const latestYmlPath = files.find((file) => path.basename(file) === "latest.yml") || null;
 
     for (const file of files) {
@@ -350,11 +409,29 @@ async function runBuildWithRetry(env) {
 
 async function main() {
     const uploadOnly = process.argv.includes("--upload-only");
+    const isPatch = process.argv.includes("--patch");
     const token = getToken();
+
+    let patchRevision = 0;
+    if (isPatch && !uploadOnly) {
+        const bumped = bumpPatchRevision();
+        patchRevision = bumped.patchRevision;
+    } else if (!uploadOnly) {
+        // Release semver normale : ne pas garder le compteur des patches de la version précédente.
+        patchRevision = resetPatchRevision().patchRevision;
+    } else {
+        const pkgNow = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+        patchRevision = Number(pkgNow.patchRevision) || 0;
+    }
+
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     const tag = `v${pkg.version}`;
+    const releaseOpts = { isPatch, patchRevision };
 
-    console.log(`\n=== Publication GitHub Releases — ${tag} ===\n`);
+    console.log(
+        `\n=== Publication GitHub Releases — ${tag}`
+        + `${isPatch ? ` (patch #${patchRevision}, version inchangée)` : ""} ===\n`
+    );
 
     if (!uploadOnly) {
         await ensureGitTag(tag);
@@ -367,11 +444,13 @@ async function main() {
         };
 
         await runBuildWithRetry(buildEnv);
+        injectPatchRevisionIntoLatestYml(pkg.version, patchRevision);
     } else {
         console.log("Mode --upload-only : pas de rebuild, upload depuis dist/.\n");
+        injectPatchRevisionIntoLatestYml(pkg.version, patchRevision);
     }
 
-    await uploadArtifacts(token, tag, pkg.version);
+    await uploadArtifacts(token, tag, pkg.version, releaseOpts);
     console.log(`OK — release ${tag} complète (Setup + latest.yml + blockmap).\n`);
 }
 

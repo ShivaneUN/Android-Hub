@@ -158,14 +158,32 @@
         manualCheckPending = false;
 
         if (status === "available") {
-            if (surface === "banner" && dismissedVersion && dismissedVersion === nextVersion) {
+            if (surface === "banner" && dismissedVersion && dismissedVersion === nextVersion && !state.isPatch) {
                 return { visibility: "hide", status, manualCheckPending };
             }
-            if (titleEl) titleEl.textContent = t("update.status.available", { version: nextVersion });
-            if (detailEl) {
-                detailEl.textContent = state.releaseNotes
-                    ? state.releaseNotes.split("\n")[0]
-                    : t("update.status.availableDetail", { currentVersion });
+            if (state.isPatch) {
+                const rev = state.patchRevision != null ? String(state.patchRevision) : "?";
+                if (titleEl) {
+                    titleEl.textContent = t("update.status.availablePatch", {
+                        version: nextVersion || currentVersion,
+                        revision: rev
+                    });
+                }
+                if (detailEl) {
+                    detailEl.textContent = state.releaseNotes
+                        ? state.releaseNotes.split("\n")[0]
+                        : t("update.status.availablePatchDetail", {
+                            version: nextVersion || currentVersion,
+                            revision: rev
+                        });
+                }
+            } else {
+                if (titleEl) titleEl.textContent = t("update.status.available", { version: nextVersion });
+                if (detailEl) {
+                    detailEl.textContent = state.releaseNotes
+                        ? state.releaseNotes.split("\n")[0]
+                        : t("update.status.availableDetail", { currentVersion });
+                }
             }
             setProgress(targets, false);
             renderActions(status, buttons, options);

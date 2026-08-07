@@ -84,6 +84,14 @@ async function main() {
     if (!noBump) {
         console.log("Incrément version (patch)...");
         run("npm version patch --no-git-tag-version");
+        // Nouvelle version semver → le compteur de hotfixes repart à 0.
+        const pkgPath = path.join(ROOT, "package.json");
+        const pkgBump = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        if ((Number(pkgBump.patchRevision) || 0) !== 0) {
+            console.log(`patchRevision: ${pkgBump.patchRevision} → 0`);
+            pkgBump.patchRevision = 0;
+            fs.writeFileSync(pkgPath, `${JSON.stringify(pkgBump, null, 2)}\n`, "utf8");
+        }
     }
 
     const releasesDir = path.join(ROOT, "releases");

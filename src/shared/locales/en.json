@@ -87,6 +87,8 @@
       "notConfigured": "Updates not configured",
       "available": "Update v{version} available",
       "availableDetail": "A new version is ready (current: v{currentVersion}).",
+      "availablePatch": "Patch v{version} (#{revision}) available",
+      "availablePatchDetail": "Hotfix for v{version} — same version, patch #{revision}.",
       "downloading": "Downloading v{version}…",
       "downloaded": "Update v{version} ready",
       "downloadedInstall": "Restart the application to complete installation.",

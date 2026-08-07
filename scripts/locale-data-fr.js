@@ -87,6 +87,8 @@ module.exports = {
             "notConfigured": "Mises à jour non configurées",
             "available": "Mise à jour v{version} disponible",
             "availableDetail": "Une nouvelle version est prête (actuelle : v{currentVersion}).",
+            "availablePatch": "Patch v{version} (#{revision}) disponible",
+            "availablePatchDetail": "Correctif pour v{version} — même version, patch #{revision}.",
             "downloading": "Téléchargement v{version}…",
             "downloaded": "Mise à jour v{version} prête",
             "downloadedInstall": "Redémarrez l'application pour terminer l'installation.",
