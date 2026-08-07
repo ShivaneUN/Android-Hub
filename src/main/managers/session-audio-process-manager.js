@@ -538,7 +538,12 @@ class SessionAudioProcessManager {
     async _ensureBrandedScrcpyTemplate() {
         const fs = require("fs");
         const path = require("path");
-        const { brandExeWithHubIdentity, resolveHubIconPath } = require("./windows-exe-icon");
+        const {
+            brandExeWithHubIdentity,
+            resolveHubIconPath,
+            readExeFileDescription,
+            ensureMixerIconBesideTools
+        } = require("./windows-exe-icon");
 
         const source = this.scrcpyBinaryPath;
         if (!source || !fs.existsSync(source) || process.platform !== "win32") {
@@ -550,6 +555,8 @@ class SessionAudioProcessManager {
             const dir = path.dirname(source);
             const branded = path.join(dir, "Android Hub Audio.exe");
             const stampPath = path.join(dir, "Android Hub Audio.exe.hub-ico");
+            // Matérialise hors asar + copie tools/android-hub-mixer.ico si possible.
+            ensureMixerIconBesideTools(dir);
             const iconPath = resolveHubIconPath();
             if (!iconPath || !fs.existsSync(iconPath)) {
                 console.warn("[SessionAudio] icon.ico Hub introuvable — branding impossible");
@@ -557,7 +564,7 @@ class SessionAudioProcessManager {
             }
             const sourceMtime = fs.statSync(source).mtimeMs;
             const iconMtime = fs.statSync(iconPath).mtimeMs;
-            const stampVersion = 4;
+            const stampVersion = 5;
 
             let stamp = null;
             if (fs.existsSync(stampPath) && fs.existsSync(branded)) {
@@ -568,12 +575,17 @@ class SessionAudioProcessManager {
                 }
             }
 
+            // Template copié sans rcedit = même taille / FileDescription vide → rebuild.
+            const descOk = fs.existsSync(branded)
+                && readExeFileDescription(branded) === "Android Hub";
+
             const needRebuild = !stamp
                 || stamp.version !== stampVersion
                 || stamp.iconOk !== true
                 || stamp.sourceMtime !== sourceMtime
                 || stamp.iconMtime !== iconMtime
-                || stamp.source !== source;
+                || stamp.source !== source
+                || !descOk;
 
             if (!needRebuild) return branded;
 
@@ -595,6 +607,14 @@ class SessionAudioProcessManager {
                     if (fs.existsSync(stampPath)) fs.unlinkSync(stampPath);
                 } catch (_err) {
                     /* ignore */
+                }
+                // Garder une copie utilisable comme source si le PE est partiel ; sinon scrcpy.
+                if (!fs.existsSync(branded)) {
+                    try {
+                        fs.copyFileSync(source, branded);
+                    } catch (_err) {
+                        return source;
+                    }
                 }
                 return source;
             }
@@ -633,7 +653,8 @@ class SessionAudioProcessManager {
             brandExeWithHubIdentity,
             stripExeSuffix,
             resolveHubIconPath,
-            readExeFileDescription
+            readExeFileDescription,
+            ensureMixerIconBesideTools
         } = require("./windows-exe-icon");
         const source = this.scrcpyBinaryPath;
         const fallback = {
@@ -645,47 +666,57 @@ class SessionAudioProcessManager {
             return fallback;
         }
 
-        const branded = await this._ensureBrandedScrcpyTemplate();
-        if (!branded || !fs.existsSync(branded) || branded === source) {
-            return fallback;
-        }
-
+        const dir = path.dirname(source);
+        ensureMixerIconBesideTools(dir);
         const iconPath = resolveHubIconPath();
         const deviceLabel = await this._resolveDeviceMixerLabelAsync(deviceKey, serial);
         const uniqueKey = this._sanitizeMixerFileName(deviceKey || serial || "dev").slice(0, 16);
         const fileLabel = (deviceLabel && deviceLabel !== "Device")
             ? this._sanitizeMixerFileName(deviceLabel)
             : `Device ${uniqueKey}`;
-        // displayName = FileDescription = basename sans .exe (même libellé que le fichier).
         const displayName = stripExeSuffix(`Android Hub - ${fileLabel}`);
-        const dir = path.dirname(source);
         const labeledPath = path.join(dir, `Android Hub - ${fileLabel}.exe`);
         const deviceStamp = `${labeledPath}.hub-ico`;
-        const brandedToken = String(fs.statSync(branded).mtimeMs);
-        const stampExpected = `v7|ok|${brandedToken}|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`;
         const okResult = { binaryPath: labeledPath, displayName, deviceLabel };
 
         const descMatches = () => {
             try {
-                return readExeFileDescription(labeledPath) === displayName;
+                return fs.existsSync(labeledPath)
+                    && readExeFileDescription(labeledPath) === displayName;
             } catch (_err) {
                 return false;
             }
         };
 
-        if (fs.existsSync(labeledPath) && descMatches()) {
+        // Réutiliser un exe device déjà brandé — même si le template Audio a échoué.
+        if (descMatches()) {
             try {
-                const stampOk = fs.existsSync(deviceStamp)
-                    && fs.readFileSync(deviceStamp, "utf8").trim() === stampExpected;
-                if (!stampOk) fs.writeFileSync(deviceStamp, stampExpected);
+                fs.writeFileSync(
+                    deviceStamp,
+                    `v9|ok|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`
+                );
             } catch (_err) {
-                /* ignore stamp */
+                /* ignore */
             }
             return okResult;
         }
 
-        // Exe absent / FileDescription faux → (re)brand obligatoire.
-        // Ne jamais spawn un "Android Hub - Pad 6.exe" encore décrit comme "Android Hub".
+        // Source de copie : template brandé si OK, sinon scrcpy.exe brut.
+        const branded = await this._ensureBrandedScrcpyTemplate();
+        const brandSource = (branded
+            && branded !== source
+            && fs.existsSync(branded)
+            && readExeFileDescription(branded) === "Android Hub")
+            ? branded
+            : source;
+
+        if (!iconPath || !fs.existsSync(iconPath)) {
+            console.warn(
+                "[SessionAudio] icon Hub absent — spawn scrcpy (volume OK, mixeur non brandé)"
+            );
+            return fallback;
+        }
+
         try {
             if (fs.existsSync(labeledPath)) fs.unlinkSync(labeledPath);
         } catch (unlinkErr) {
@@ -701,17 +732,10 @@ class SessionAudioProcessManager {
         }
 
         try {
-            fs.copyFileSync(branded, labeledPath);
+            fs.copyFileSync(brandSource, labeledPath);
         } catch (copyErr) {
             console.warn("[SessionAudio] label copy:", copyErr?.message || copyErr);
-            console.warn(
-                `[SessionAudio] spawn fallback template (pas de nom device) pour ${deviceKey || serial}`
-            );
-            return {
-                binaryPath: branded,
-                displayName: "Android Hub",
-                deviceLabel
-            };
+            return fallback;
         }
 
         const named = await brandExeWithHubIdentity(labeledPath, {
@@ -723,22 +747,21 @@ class SessionAudioProcessManager {
                 "[SessionAudio] label brand:",
                 named?.error || `FileDescription≠${displayName}`
             );
-            // Ne pas renvoyer un exe non vérifié (sinon mixeur = "Android Hub" générique).
             try {
                 if (fs.existsSync(labeledPath)) fs.unlinkSync(labeledPath);
             } catch (_err) {
                 /* ignore */
             }
-            return {
-                binaryPath: branded,
-                displayName: "Android Hub",
-                deviceLabel
-            };
+            // Son d'abord : scrcpy brut plutôt qu'un exe cassé.
+            return fallback;
         }
 
         console.log(`[SessionAudio] spawn: ${path.basename(labeledPath)} ("${displayName}")`);
         try {
-            fs.writeFileSync(deviceStamp, stampExpected);
+            fs.writeFileSync(
+                deviceStamp,
+                `v9|ok|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`
+            );
         } catch (_err) {
             /* ignore */
         }
@@ -1209,7 +1232,17 @@ class SessionAudioProcessManager {
                 await this._muteDeviceSpeakerBriefly(serial);
                 await this.stop(sessionId);
                 await new Promise((r) => setTimeout(r, 300));
-                child = this._spawnHidden(binaryPath, args);
+                // Si l'exe brandé crash, retomber sur scrcpy.exe (son prioritaire).
+                let retryBinary = binaryPath;
+                if (retryBinary !== this.scrcpyBinaryPath && this.scrcpyBinaryPath) {
+                    const pathMod = require("path");
+                    console.warn(
+                        `[SessionAudio ${sessionId}] retry avec scrcpy.exe `
+                        + `(brandé: ${pathMod.basename(String(retryBinary))})`
+                    );
+                    retryBinary = this.scrcpyBinaryPath;
+                }
+                child = this._spawnHidden(retryBinary, args);
                 pid = child.pid || null;
                 if (pid) this._knownPids.add(pid);
                 this.processes.set(sessionId, {
@@ -1219,7 +1252,7 @@ class SessionAudioProcessManager {
                     pid,
                     deviceKey: key,
                     pcPlayback: processPlayback,
-                    binaryPath,
+                    binaryPath: retryBinary,
                     mixerDisplayName
                 });
                 this._attachLogging(sessionId, child);

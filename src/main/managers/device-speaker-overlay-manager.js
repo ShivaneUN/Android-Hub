@@ -347,11 +347,41 @@ class DeviceSpeakerOverlayManager {
             { force }
         );
         if (!result?.success) {
-            console.warn(
-                `[DeviceSpeaker] windows apply pid=${targetPid} %=${level} mute=${Boolean(muted)}:`,
-                result?.error || "echec"
-            );
-        } else if (!result?.skipped) {
+            // Fallback set + mute (anciens CLI / apply manquant).
+            const vol = await this.applyWindowsPlaybackVolume({
+                deviceKey,
+                adbSerial,
+                sessionId,
+                percent: level,
+                pid: targetPid,
+                force
+            });
+            const mute = await this.applyWindowsPlaybackMute({
+                deviceKey,
+                adbSerial,
+                sessionId,
+                muted: Boolean(muted),
+                pid: targetPid,
+                force
+            });
+            const ok = Boolean(vol?.success || mute?.success);
+            if (!ok) {
+                console.warn(
+                    `[DeviceSpeaker] windows apply pid=${targetPid} %=${level} mute=${Boolean(muted)}:`,
+                    result?.error || "echec"
+                );
+            }
+            return {
+                success: ok,
+                pid: targetPid,
+                percent: level,
+                muted: Boolean(muted),
+                fallback: true,
+                volume: vol,
+                mute
+            };
+        }
+        if (!result?.skipped) {
             console.log(
                 `[DeviceSpeaker] windows apply pid=${targetPid} → ${level}% `
                 + `mute=${muted ? "ON" : "OFF"}`

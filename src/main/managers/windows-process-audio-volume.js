@@ -43,8 +43,38 @@ class WindowsProcessAudioVolume {
         this._iconPath = null;
     }
 
+    /** Bump pour forcer recompile hub-volume-mixer.exe (set|mute|apply|identity). */
+    static get CLI_VERSION() {
+        return 3;
+    }
+
     _sourceCsPath() {
-        return path.join(__dirname, "../native/VolumeMixer.cs");
+        const asarOrDisk = path.join(__dirname, "../native/VolumeMixer.cs");
+        // csc.exe ne lit pas l'asar — copier vers userData si besoin.
+        if (!String(asarOrDisk).includes(`${path.sep}app.asar${path.sep}`)) {
+            return asarOrDisk;
+        }
+        try {
+            const dir = path.join(
+                app?.getPath?.("userData") || require("os").tmpdir(),
+                "hub-volume-mixer-src"
+            );
+            fs.mkdirSync(dir, { recursive: true });
+            const dest = path.join(dir, "VolumeMixer.cs");
+            const srcBuf = fs.readFileSync(asarOrDisk);
+            let need = !fs.existsSync(dest);
+            if (!need) {
+                try {
+                    need = fs.readFileSync(dest).length !== srcBuf.length;
+                } catch (_err) {
+                    need = true;
+                }
+            }
+            if (need) fs.writeFileSync(dest, srcBuf);
+            return dest;
+        } catch (_err) {
+            return asarOrDisk;
+        }
     }
 
     _resolveExePath() {
@@ -59,6 +89,20 @@ class WindowsProcessAudioVolume {
         return this._exePath;
     }
 
+    _cliVersionPath(exe = this._resolveExePath()) {
+        return `${exe}.cli-version`;
+    }
+
+    _cliVersionOk(exe) {
+        try {
+            const verPath = this._cliVersionPath(exe);
+            if (!fs.existsSync(exe) || !fs.existsSync(verPath)) return false;
+            return String(fs.readFileSync(verPath, "utf8")).trim() === String(WindowsProcessAudioVolume.CLI_VERSION);
+        } catch (_err) {
+            return false;
+        }
+    }
+
     async _ensureExe() {
         if (this._ensurePromise) return this._ensurePromise;
         this._ensurePromise = (async () => {
@@ -67,7 +111,8 @@ class WindowsProcessAudioVolume {
             }
             const exe = this._resolveExePath();
             const src = this._sourceCsPath();
-            if (fs.existsSync(exe) && fs.existsSync(src)) {
+            const versionOk = this._cliVersionOk(exe);
+            if (versionOk && fs.existsSync(exe) && fs.existsSync(src)) {
                 const exeStat = fs.statSync(exe);
                 const srcStat = fs.statSync(src);
                 if (exeStat.mtimeMs >= srcStat.mtimeMs) return exe;
@@ -76,7 +121,6 @@ class WindowsProcessAudioVolume {
                 throw new Error(`VolumeMixer.cs introuvable: ${src}`);
             }
             fs.mkdirSync(path.dirname(exe), { recursive: true });
-            // Ancien DLL éventuel — plus utilisé.
             try {
                 const oldDll = path.join(path.dirname(exe), "hub-volume-mixer.dll");
                 if (fs.existsSync(oldDll)) fs.unlinkSync(oldDll);
@@ -93,6 +137,11 @@ class WindowsProcessAudioVolume {
                 timeoutMs: 30000
             });
             if (!fs.existsSync(exe)) throw new Error("compilation VolumeMixer échouée");
+            try {
+                fs.writeFileSync(this._cliVersionPath(exe), String(WindowsProcessAudioVolume.CLI_VERSION));
+            } catch (_err) {
+                /* ignore */
+            }
             return exe;
         })();
         try {
@@ -334,8 +383,8 @@ class WindowsProcessAudioVolume {
     resolveHubIconPath() {
         if (this._iconPath && fs.existsSync(this._iconPath)) return this._iconPath;
         try {
-            const { resolveHubIconPath } = require("./windows-exe-icon");
-            this._iconPath = resolveHubIconPath();
+            const { resolveHubIconPath, ensureMixerIconBesideTools } = require("./windows-exe-icon");
+            this._iconPath = ensureMixerIconBesideTools() || resolveHubIconPath();
         } catch (_err) {
             this._iconPath = null;
         }
