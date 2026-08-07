@@ -1441,6 +1441,11 @@ async function startSessionAudioPlayback(sessionId, {
     } catch (err) {
         console.warn(`[SessionAudio] sync autres sessions:`, err?.message || err);
     }
+    try {
+        await global.sessionAudioProcessManager?.ensureMixerCapturesForConnectedDevices?.();
+    } catch (err) {
+        console.warn(`[SessionAudio] ensure mixer devices:`, err?.message || err);
+    }
 }
 
 /**
@@ -1560,9 +1565,19 @@ async function ensureAllSessionsLaunchAudioPolicy({
 async function stopSessionAudioPlayback(sessionId) {
     if (!sessionId || !global.sessionAudioProcessManager) return;
     try {
-        await global.sessionAudioProcessManager.stop(sessionId);
+        const entry = global.browserViewManager?.getSessionEntry?.(sessionId);
+        const deviceKey = entry?.stableDeviceId || entry?.deviceId || null;
+        const serial = entry?.deviceId || null;
+        if (global.sessionAudioProcessManager.releaseSessionKeepHold) {
+            await global.sessionAudioProcessManager.releaseSessionKeepHold(sessionId, {
+                deviceKey,
+                serial
+            });
+        } else {
+            await global.sessionAudioProcessManager.stop(sessionId);
+        }
     } catch (err) {
-        console.warn(`[SessionAudio ${sessionId}] arret:`, err?.message || err);
+        console.warn(`[SessionAudio ${sessionId}] arret/hold:`, err?.message || err);
     }
 }
 
@@ -1575,25 +1590,34 @@ async function applyGlobalAudioMuteSideEffects(globalMuted, options = {}) {
     const audioState = globalMuted ? "off" : "on";
     console.log(`[GlobalAudio] Toggle → audio=${audioState}`);
 
+    // Soft mute (overlay ON/OFF / slider) : captures restent, volume Windows seul.
+    // Ne PAS relancer syncAll/ensureMixer ici — ça réapplique 0↔100 en boucle.
+    if (options.skipSpeakerRestore) {
+        return;
+    }
+    if (global.deviceSpeakerOverlayManager?._audioUiInFlight
+        || global.deviceSpeakerOverlayManager?._deviceToggleInFlight
+        || global.deviceSpeakerOverlayManager?._sliderInFlight
+        || global.deviceSpeakerOverlayManager?._globalVolumeInFlight) {
+        return;
+    }
+
     // Toujours sync captures (une par session).
     if (global.sessionAudioProcessManager) {
         await global.sessionAudioProcessManager.syncAllActiveSessions();
     }
 
-    // skipSpeakerRestore : l'appelant (overlay global / device) applique les volumes.
-    if (!options.skipSpeakerRestore) {
-        try {
-            await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForActiveSessions?.();
-        } catch (err) {
-            console.warn("[GlobalAudio] volume sessions:", err?.message || err);
-        }
-        if (!globalMuted) {
-            void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
-                console.warn("[GlobalAudio] ensureAdb all:", err?.message || err);
-            });
-        }
-        void global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.().catch(() => {});
+    try {
+        await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForActiveSessions?.();
+    } catch (err) {
+        console.warn("[GlobalAudio] volume sessions:", err?.message || err);
     }
+    if (!globalMuted) {
+        void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
+            console.warn("[GlobalAudio] ensureAdb all:", err?.message || err);
+        });
+    }
+    void global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.().catch(() => {});
 }
 
 function launchCompanionScrcpyWindow(serial, packageName, options = {}) {
@@ -1843,6 +1867,14 @@ app.whenReady().then(() => {
     });
     global.globalAudioOutputManager.setOnDeviceMuteChanged(async (deviceKey, muted, meta = {}) => {
         console.log(`[DeviceAudio] ${deviceKey} → ${muted ? "off" : "on"}`);
+        // Overlay/dock toggle ou slider appliquent déjà le volume Windows — ne pas
+        // relancer sync/start (sinon 0↔100 + gros délai).
+        if (global.deviceSpeakerOverlayManager?._audioUiInFlight
+            || global.deviceSpeakerOverlayManager?._deviceToggleInFlight
+            || global.deviceSpeakerOverlayManager?._sliderInFlight
+            || global.deviceSpeakerOverlayManager?._globalVolumeInFlight) {
+            return;
+        }
         const aliases = Array.isArray(meta.aliasKeys) ? meta.aliasKeys : [];
         if (global.sessionAudioProcessManager?.syncDeviceSessionsWithAliases) {
             await global.sessionAudioProcessManager.syncDeviceSessionsWithAliases(
@@ -1852,11 +1884,6 @@ app.whenReady().then(() => {
             );
         } else if (global.sessionAudioProcessManager?.syncDeviceSessions) {
             await global.sessionAudioProcessManager.syncDeviceSessions(deviceKey, muted);
-        }
-        // Overlay/dock toggleDeviceAudio ou slider appliquent déjà le volume — ne pas doubler.
-        if (global.deviceSpeakerOverlayManager?._deviceToggleInFlight
-            || global.deviceSpeakerOverlayManager?._sliderInFlight) {
-            return;
         }
         try {
             await global.deviceSpeakerOverlayManager?.applyDesiredPcVolumeForDevice?.({

@@ -6,6 +6,7 @@ const { app } = require("electron");
 /**
  * Volume de lecture PC par PID (Windows Core Audio).
  * Slider Hub → process scrcpy audio du device, sans ADB media_session.
+ * Utilise hub-volume-mixer.exe (pas PowerShell) pour rester réactif.
  */
 
 function clampPercent(percent) {
@@ -16,7 +17,7 @@ function execFileAsync(command, args, opts = {}) {
     return new Promise((resolve, reject) => {
         execFile(command, args, {
             windowsHide: true,
-            timeout: opts.timeoutMs || 10000,
+            timeout: opts.timeoutMs || 8000,
             maxBuffer: 1024 * 1024
         }, (err, stdout, stderr) => {
             if (err) {
@@ -30,7 +31,7 @@ function execFileAsync(command, args, opts = {}) {
 
 class WindowsProcessAudioVolume {
     constructor() {
-        this._dllPath = null;
+        this._exePath = null;
         this._ensurePromise = null;
         this._queue = Promise.resolve();
         /** @type {Map<number, number>} */
@@ -44,46 +45,53 @@ class WindowsProcessAudioVolume {
         return path.join(__dirname, "../native/VolumeMixer.cs");
     }
 
-    _resolveDllPath() {
-        if (this._dllPath) return this._dllPath;
+    _resolveExePath() {
+        if (this._exePath) return this._exePath;
         let base;
         try {
             base = app?.getPath?.("userData") || path.join(require("os").tmpdir(), "android-hub");
         } catch (_err) {
             base = path.join(require("os").tmpdir(), "android-hub");
         }
-        this._dllPath = path.join(base, "hub-volume-mixer.dll");
-        return this._dllPath;
+        this._exePath = path.join(base, "hub-volume-mixer.exe");
+        return this._exePath;
     }
 
-    async _ensureDll() {
+    async _ensureExe() {
         if (this._ensurePromise) return this._ensurePromise;
         this._ensurePromise = (async () => {
             if (process.platform !== "win32") {
                 throw new Error("windows uniquement");
             }
-            const dll = this._resolveDllPath();
+            const exe = this._resolveExePath();
             const src = this._sourceCsPath();
-            if (fs.existsSync(dll) && fs.existsSync(src)) {
-                const dllStat = fs.statSync(dll);
+            if (fs.existsSync(exe) && fs.existsSync(src)) {
+                const exeStat = fs.statSync(exe);
                 const srcStat = fs.statSync(src);
-                if (dllStat.mtimeMs >= srcStat.mtimeMs) return dll;
+                if (exeStat.mtimeMs >= srcStat.mtimeMs) return exe;
             }
             if (!fs.existsSync(src)) {
                 throw new Error(`VolumeMixer.cs introuvable: ${src}`);
             }
-            fs.mkdirSync(path.dirname(dll), { recursive: true });
+            fs.mkdirSync(path.dirname(exe), { recursive: true });
+            // Ancien DLL éventuel — plus utilisé.
+            try {
+                const oldDll = path.join(path.dirname(exe), "hub-volume-mixer.dll");
+                if (fs.existsSync(oldDll)) fs.unlinkSync(oldDll);
+            } catch (_err) {
+                /* ignore */
+            }
             const cscCandidates = [
                 path.join(process.env.WINDIR || "C:\\Windows", "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
                 path.join(process.env.WINDIR || "C:\\Windows", "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe")
             ];
             const csc = cscCandidates.find((p) => fs.existsSync(p));
             if (!csc) throw new Error("csc.exe introuvable");
-            await execFileAsync(csc, ["/nologo", "/target:library", `/out:${dll}`, src], {
+            await execFileAsync(csc, ["/nologo", "/target:exe", `/out:${exe}`, src], {
                 timeoutMs: 30000
             });
-            if (!fs.existsSync(dll)) throw new Error("compilation VolumeMixer échouée");
-            return dll;
+            if (!fs.existsSync(exe)) throw new Error("compilation VolumeMixer échouée");
+            return exe;
         })();
         try {
             return await this._ensurePromise;
@@ -107,28 +115,20 @@ class WindowsProcessAudioVolume {
             return Promise.resolve({ success: false, percent: p, error: "windows uniquement" });
         }
 
+        // Skip no-op (évite file d'attente pendant un drag).
+        if (this._lastByPid.get(id) === p) {
+            return Promise.resolve({ success: true, percent: p, matched: 1, skipped: true });
+        }
+
         const run = async () => {
             try {
-                const dll = await this._ensureDll();
-                const script = `
-Add-Type -Path '${String(dll).replace(/'/g, "''")}';
-$n = [HubVolumeMixer]::SetApplicationVolume(${id}, [single]${p})
-Write-Output $n
-`.trim();
-                let out = await execFileAsync(
-                    "powershell.exe",
-                    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-                    { timeoutMs: 8000 }
-                );
+                const exe = await this._ensureExe();
+                let out = await execFileAsync(exe, ["set", String(id), String(p)], { timeoutMs: 4000 });
                 let matched = Number.parseInt(String(out).trim(), 10);
                 if (!Number.isInteger(matched) || matched <= 0) {
-                    // Session audio parfois créée après le démarrage scrcpy playback.
-                    await new Promise((r) => setTimeout(r, 400));
-                    out = await execFileAsync(
-                        "powershell.exe",
-                        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-                        { timeoutMs: 8000 }
-                    );
+                    // Session audio parfois créée juste après spawn scrcpy.
+                    await new Promise((r) => setTimeout(r, 180));
+                    out = await execFileAsync(exe, ["set", String(id), String(p)], { timeoutMs: 4000 });
                     matched = Number.parseInt(String(out).trim(), 10);
                 }
                 if (!Number.isInteger(matched) || matched <= 0) {
@@ -169,7 +169,6 @@ Write-Output $n
 
     /**
      * Nom + icône Hub dans le mixeur Windows (SetDisplayName / SetIconPath).
-     * L'icône embarquée dans l'exe ne suffit souvent pas pour le Volume Mixer.
      */
     setMixerIdentity(pid, opts = {}) {
         const id = Number(pid);
@@ -183,8 +182,6 @@ Write-Output $n
         const displayName = String(
             opts.displayName || this.formatMixerDisplayName(opts.deviceName) || "Android Hub"
         ).trim().replace(/\.exe$/i, "");
-        // Icon path format Windows : "path,0" (exe brandé) ou .ico absolu.
-        // Win11 Settings préfère souvent l'icône HWND ; on pose quand même SetIconPath.
         let iconPath = opts.iconPath || "";
         if (!iconPath && opts.exePath && fs.existsSync(opts.exePath)) {
             iconPath = `${opts.exePath},0`;
@@ -214,27 +211,21 @@ Write-Output $n
         }
         if (!this._identityByPid) this._identityByPid = new Map();
 
-        const psQuote = (v) => `'${String(v ?? "").replace(/'/g, "''")}'`;
         const run = async () => {
             try {
-                const dll = await this._ensureDll();
-                const script = `
-Add-Type -Path ${psQuote(dll)};
-$n = [HubVolumeMixer]::SetApplicationIdentity(${id}, ${psQuote(displayName)}, ${psQuote(iconPath)});
-Write-Output $n
-`.trim();
+                const exe = await this._ensureExe();
                 let out = await execFileAsync(
-                    "powershell.exe",
-                    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-                    { timeoutMs: 8000 }
+                    exe,
+                    ["identity", String(id), displayName, iconPath || ""],
+                    { timeoutMs: 4000 }
                 );
                 let matched = Number.parseInt(String(out).trim(), 10);
                 if (!Number.isInteger(matched) || matched <= 0) {
-                    await new Promise((r) => setTimeout(r, 500));
+                    await new Promise((r) => setTimeout(r, 200));
                     out = await execFileAsync(
-                        "powershell.exe",
-                        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-                        { timeoutMs: 8000 }
+                        exe,
+                        ["identity", String(id), displayName, iconPath || ""],
+                        { timeoutMs: 4000 }
                     );
                     matched = Number.parseInt(String(out).trim(), 10);
                 }

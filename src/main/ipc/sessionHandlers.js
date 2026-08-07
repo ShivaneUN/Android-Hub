@@ -809,20 +809,34 @@ function registerSessionHandlers(adbPath, deps = {}) {
         const userId = entry?.userId;
         const stableDeviceId = entry?.stableDeviceId || null;
 
-        // Fermeture UI immédiate (comme Type A) — cleanup device en arrière-plan.
+        // Handoff audio AVANT stop vidéo : la capture ne doit pas mourir avec le display Type B.
+        if (global.sessionAudioProcessManager) {
+            try {
+                if (global.sessionAudioProcessManager.releaseSessionKeepHold) {
+                    const holdId = await global.sessionAudioProcessManager.releaseSessionKeepHold(
+                        sessionId,
+                        {
+                            deviceKey: stableDeviceId || serial,
+                            serial
+                        }
+                    );
+                    if (holdId) {
+                        console.log(`[session:close] audio hold → ${holdId}`);
+                    }
+                } else {
+                    await global.sessionAudioProcessManager.stop(sessionId);
+                }
+            } catch (err) {
+                console.warn("[session:close] arret/hold audio:", err?.message || err);
+            }
+        }
+
+        // Fermeture UI / flux vidéo ensuite.
         if (getVideoClientRef?.(sessionId) && stopVideoStream) {
             try {
                 await stopVideoStream(sessionId);
             } catch (err) {
                 console.warn("[session:close] arret flux:", err?.message || err);
-            }
-        }
-
-        if (global.sessionAudioProcessManager) {
-            try {
-                await global.sessionAudioProcessManager.stop(sessionId);
-            } catch (err) {
-                console.warn("[session:close] arret audio:", err?.message || err);
             }
         }
 
@@ -832,23 +846,10 @@ function registerSessionHandlers(adbPath, deps = {}) {
             global.streamParamsManager?.notifySessionListChanged();
         }
 
-        // Relève audio : la prochaine session du même device (A ou B) devient owner.
-        if (global.sessionAudioProcessManager?.handoffAudioOwner) {
-            void global.sessionAudioProcessManager.handoffAudioOwner(sessionId, {
-                deviceKey: stableDeviceId || serial,
-                serial
-            }).then((nextId) => {
-                if (nextId) {
-                    console.log(`[session:close] audio owner → ${nextId}`);
-                    try {
-                        global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.();
-                    } catch (_err) {
-                        /* ignore */
-                    }
-                }
-            }).catch((err) => {
-                console.warn("[session:close] handoff audio:", err?.message || err);
-            });
+        try {
+            global.deviceSpeakerOverlayManager?.syncSlidersFromAudioState?.();
+        } catch (_err) {
+            /* ignore */
         }
 
         if (manager && isAppInstance) {

@@ -509,7 +509,9 @@ class DeviceRegistry {
         const unified = await this.listUnifiedDevices({ forceFresh });
         const pickLiveSerial = (device) => {
             if (!device || device.connected === false) return null;
-            return device.serial || device.wifiSerial || device.usbSerial || null;
+            // device.serial = transport ADB actuellement online (USB ou Wi‑Fi).
+            // Ne pas préférer wifiSerial stale quand le pad est en USB.
+            return device.serial || device.usbSerial || device.wifiSerial || null;
         };
 
         const findByTransport = (transportId) => {

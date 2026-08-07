@@ -198,17 +198,186 @@ class SessionAudioProcessManager {
      */
     canControlDeviceAudio(deviceKey, serial = null, { activeSessionId = null, home = false } = {}) {
         const open = this.listOpenSessionsForDevice(deviceKey, serial);
+        const hasHold = this.hasCaptureForSerial?.(serial, deviceKey);
+
+        // Home / pas de focus session : OK si une session owner OU un hold connecté.
+        if (home || !activeSessionId) {
+            return open.length > 0 || Boolean(hasHold);
+        }
+
         if (!open.length) return false;
 
         const owner = this.getAudioOwnerSessionId(deviceKey, serial)
             || this.claimAudioOwner(open[0].sessionId, deviceKey || open[0].deviceKey, serial || open[0].serial);
         if (!owner) return false;
 
-        if (home || !activeSessionId) return true;
-
         const focusedOnDevice = open.some((s) => s.sessionId === activeSessionId);
         if (!focusedOnDevice) return true;
         return activeSessionId === owner;
+    }
+
+    async _muteDeviceSpeakerBriefly(serial) {
+        const s = String(serial || "").trim();
+        if (!s) return;
+        try {
+            await global.deviceAudioVolumeManager?.forceSpeakerSilent?.(s);
+        } catch (err) {
+            console.warn(`[SessionAudio] forceSpeakerSilent ${s}:`, err?.message || err);
+        }
+    }
+
+    /**
+     * PID / sessionId de la capture vivante pour CE device (serial ou deviceKey).
+     */
+    findCaptureSessionId({ serial = null, deviceKey = null, preferSessionId = null } = {}) {
+        const needle = String(serial || "").trim();
+        const key = String(deviceKey || "").trim();
+        if (preferSessionId && this.isRunning(preferSessionId)) {
+            const entry = this.processes.get(preferSessionId);
+            if (entry) {
+                const same = (!needle || entry.serial === needle)
+                    && (!key || !entry.deviceKey || entry.deviceKey === key);
+                if (same || (!needle && !key)) return preferSessionId;
+            }
+        }
+        if (!needle && !key) return null;
+        for (const [id, entry] of this.processes.entries()) {
+            if (!entry || !this.isRunning(id)) continue;
+            if (needle && entry.serial === needle) return id;
+            if (key && entry.deviceKey && entry.deviceKey === key) return id;
+        }
+        return null;
+    }
+
+    _forceAudioOwner(deviceKey, serial, sessionId) {
+        const mapKey = this._ownerMapKey(deviceKey, serial);
+        if (!mapKey || !sessionId) return;
+        this._audioOwners.set(mapKey, sessionId);
+        if (serial && this._ownerMapKey(serial) !== mapKey) {
+            this._audioOwners.set(this._ownerMapKey(serial), sessionId);
+        }
+        console.log(`[SessionAudio] owner ${mapKey} → ${sessionId} (handoff)`);
+    }
+
+    _clearAudioOwner(deviceKey, serial) {
+        const mapKey = this._ownerMapKey(deviceKey, serial);
+        if (mapKey) this._audioOwners.delete(mapKey);
+        if (serial) this._audioOwners.delete(this._ownerMapKey(serial));
+    }
+
+    _playbackPercentForDevice(deviceKey, serial, pcOn) {
+        if (!pcOn) return 0;
+        const overlay = global.deviceSpeakerOverlayManager;
+        const intent = overlay?.intentPercentByKey?.get?.(deviceKey)
+            ?? overlay?.intentPercentByKey?.get?.(serial);
+        if (Number.isInteger(intent)) return intent;
+        return overlay?.defaultOnPercent || 100;
+    }
+
+    /**
+     * Ferme une session sans relâcher REMOTE_SUBMIX :
+     * bascule owner + capture vers la prochaine session (ou hold device-audio-*).
+     * Audio Hub = device-level (pas de --display-id) pour survivre à la fermeture Type B.
+     */
+    async releaseSessionKeepHold(sessionId, { deviceKey = null, serial = null } = {}) {
+        if (!sessionId) return null;
+        const closedEntry = this.processes.get(sessionId);
+        let ser = String(closedEntry?.serial || serial || "").trim() || null;
+        let key = String(closedEntry?.deviceKey || deviceKey || ser || "").trim() || null;
+
+        const sourceId = this.findCaptureSessionId({
+            serial: ser,
+            deviceKey: key,
+            preferSessionId: sessionId
+        });
+        const sourceEntry = sourceId ? this.processes.get(sourceId) : null;
+        if (sourceEntry) {
+            ser = String(sourceEntry.serial || ser || "").trim() || null;
+            key = String(sourceEntry.deviceKey || key || ser || "").trim() || null;
+        }
+
+        const open = ser || key
+            ? (await this.listOpenSessionsForDeviceAsync(key, ser))
+                .filter((s) => s.sessionId !== sessionId)
+            : [];
+        const next = open[0] || null;
+        const holdId = next?.sessionId || (key || ser ? `device-audio-${key || ser}` : null);
+        if (!holdId) {
+            if (sourceId) {
+                await this._muteDeviceSpeakerBriefly(ser);
+                await this.stop(sourceId);
+            }
+            this._clearAudioOwner(key, ser);
+            return null;
+        }
+
+        const audio = global.globalAudioOutputManager;
+        const pcOn = Boolean(audio?.isDeviceAudioEnabled?.(key || ser));
+        const boundToDisplay = Number.isInteger(sourceEntry?.displayId);
+
+        if (next) {
+            this._forceAudioOwner(key, ser, next.sessionId);
+        } else {
+            this._clearAudioOwner(key, ser);
+        }
+
+        if (sourceId && sourceId === holdId && !boundToDisplay && this.isRunning(holdId)) {
+            this._applyHoldVolume(holdId, key, ser, pcOn);
+            return holdId;
+        }
+
+        // Adopt Map sans tuer le process — sauf capture liée à un display virtuel.
+        if (sourceId && this.isRunning(sourceId) && !boundToDisplay) {
+            if (sourceId !== holdId) {
+                this.processes.delete(sourceId);
+                this.processes.set(holdId, {
+                    ...sourceEntry,
+                    displayId: null,
+                    deviceKey: key || sourceEntry.deviceKey,
+                    serial: ser || sourceEntry.serial
+                });
+                console.log(`[SessionAudio] keep-hold adopt ${sourceId} → ${holdId}`);
+            }
+            this._applyHoldVolume(holdId, key, ser, pcOn);
+            return holdId;
+        }
+
+        await this._muteDeviceSpeakerBriefly(ser);
+        if (sourceId && this.isRunning(sourceId)) {
+            await this.stop(sourceId);
+        }
+        try {
+            await this.start(holdId, {
+                serial: ser,
+                displayId: null,
+                deviceKey: key,
+                pcPlayback: pcOn,
+                forceOwner: true
+            });
+            this._applyHoldVolume(holdId, key, ser, pcOn);
+            console.log(
+                `[SessionAudio] keep-hold restart → ${holdId} `
+                + `(pc=${pcOn ? "on" : "off"}; next=${next?.sessionId || "hold"})`
+            );
+            return holdId;
+        } catch (err) {
+            console.warn(`[SessionAudio] hold restart:`, err?.message || err);
+            return null;
+        }
+    }
+
+    _applyHoldVolume(holdId, key, ser, pcOn) {
+        const holdEntry = this.processes.get(holdId);
+        const pid = holdEntry?.pid;
+        if (!pid || !global.deviceSpeakerOverlayManager?.applyWindowsPlaybackVolume) return;
+        const percent = this._playbackPercentForDevice(key, ser, pcOn);
+        void global.deviceSpeakerOverlayManager.applyWindowsPlaybackVolume({
+            pid,
+            deviceKey: key,
+            adbSerial: ser,
+            sessionId: holdId,
+            percent
+        });
     }
 
     /**
@@ -217,45 +386,20 @@ class SessionAudioProcessManager {
     async handoffAudioOwner(closedSessionId, { deviceKey = null, serial = null } = {}) {
         if (!closedSessionId) return null;
 
-        const ownedKeys = [];
-        for (const [mapKey, ownerId] of [...this._audioOwners.entries()]) {
-            if (ownerId === closedSessionId) ownedKeys.push(mapKey);
-        }
-        // Si pas encore dans la map, tenter via deviceKey fourni.
-        if (!ownedKeys.length && (deviceKey || serial)) {
-            const mapKey = this._ownerMapKey(deviceKey, serial);
-            if (mapKey) ownedKeys.push(mapKey);
-        }
-        if (!ownedKeys.length) return null;
-
-        let next = null;
-        for (const mapKey of ownedKeys) {
-            this._audioOwners.delete(mapKey);
-            const sessions = await this.listOpenSessionsForDeviceAsync(mapKey, serial);
-            if (!sessions.length) continue;
-            next = sessions[0];
-            this._audioOwners.set(mapKey, next.sessionId);
-            console.log(`[SessionAudio] handoff owner ${mapKey}: ${closedSessionId} → ${next.sessionId}`);
+        if (!this.isRunning(closedSessionId)
+            && (deviceKey || serial)
+            && this.hasCaptureForSerial?.(serial, deviceKey)) {
+            const open = await this.listOpenSessionsForDeviceAsync(deviceKey, serial);
+            if (open[0]) {
+                this._forceAudioOwner(deviceKey, serial, open[0].sessionId);
+                return open[0].sessionId;
+            }
+            return null;
         }
 
-        if (!next) return null;
-
-        const audio = global.globalAudioOutputManager;
-        const key = next.deviceKey || deviceKey || next.serial;
-        const pcPlayback = Boolean(audio?.isDeviceAudioEnabled?.(key));
-        try {
-            await this.start(next.sessionId, {
-                serial: next.serial,
-                displayId: next.displayId,
-                deviceKey: key,
-                pcPlayback,
-                forceOwner: true
-            });
-        } catch (err) {
-            console.warn(`[SessionAudio] handoff start:`, err?.message || err);
-        }
-        return next.sessionId;
+        return this.releaseSessionKeepHold(closedSessionId, { deviceKey, serial });
     }
+
 
     _spawnHidden(command, args) {
         const options = { windowsHide: true, detached: false, stdio: ["ignore", "ignore", "pipe"] };
@@ -509,28 +653,43 @@ class SessionAudioProcessManager {
         const fileLabel = (deviceLabel && deviceLabel !== "Device")
             ? this._sanitizeMixerFileName(deviceLabel)
             : `Device ${uniqueKey}`;
-        const displayName = stripExeSuffix(`Android Hub - ${deviceLabel}`);
+        // displayName = FileDescription = basename sans .exe (même libellé que le fichier).
+        const displayName = stripExeSuffix(`Android Hub - ${fileLabel}`);
         const dir = path.dirname(source);
         const labeledPath = path.join(dir, `Android Hub - ${fileLabel}.exe`);
         const deviceStamp = `${labeledPath}.hub-ico`;
         const brandedToken = String(fs.statSync(branded).mtimeMs);
-        const stampExpected = `v6|ok|${brandedToken}|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`;
+        const stampExpected = `v7|ok|${brandedToken}|${displayName}|${deviceKey || ""}|${serial || ""}|${iconPath || ""}`;
         const okResult = { binaryPath: labeledPath, displayName, deviceLabel };
 
-        if (fs.existsSync(labeledPath) && fs.existsSync(deviceStamp)) {
+        const descMatches = () => {
             try {
-                const stampOk = fs.readFileSync(deviceStamp, "utf8").trim() === stampExpected;
-                const descOk = readExeFileDescription(labeledPath) === displayName;
-                if (stampOk && descOk) return okResult;
+                return readExeFileDescription(labeledPath) === displayName;
             } catch (_err) {
-                /* recreate */
+                return false;
             }
+        };
+
+        if (fs.existsSync(labeledPath) && descMatches()) {
+            try {
+                const stampOk = fs.existsSync(deviceStamp)
+                    && fs.readFileSync(deviceStamp, "utf8").trim() === stampExpected;
+                if (!stampOk) fs.writeFileSync(deviceStamp, stampExpected);
+            } catch (_err) {
+                /* ignore stamp */
+            }
+            return okResult;
         }
 
+        // Exe absent / FileDescription faux → (re)brand obligatoire.
+        // Ne jamais spawn un "Android Hub - Pad 6.exe" encore décrit comme "Android Hub".
         try {
             if (fs.existsSync(labeledPath)) fs.unlinkSync(labeledPath);
-        } catch (_err) {
-            /* ignore */
+        } catch (unlinkErr) {
+            console.warn(
+                `[SessionAudio] label unlink ${path.basename(labeledPath)}:`,
+                unlinkErr?.message || unlinkErr
+            );
         }
         try {
             if (fs.existsSync(deviceStamp)) fs.unlinkSync(deviceStamp);
@@ -556,9 +715,22 @@ class SessionAudioProcessManager {
             iconPath,
             displayName
         });
-        if (!named?.success) {
-            console.warn("[SessionAudio] label brand:", named?.error || "echec");
-            return okResult;
+        if (!named?.success || !descMatches()) {
+            console.warn(
+                "[SessionAudio] label brand:",
+                named?.error || `FileDescription≠${displayName}`
+            );
+            // Ne pas renvoyer un exe non vérifié (sinon mixeur = "Android Hub" générique).
+            try {
+                if (fs.existsSync(labeledPath)) fs.unlinkSync(labeledPath);
+            } catch (_err) {
+                /* ignore */
+            }
+            return {
+                binaryPath: branded,
+                displayName: "Android Hub",
+                deviceLabel
+            };
         }
 
         console.log(`[SessionAudio] spawn: ${path.basename(labeledPath)} ("${displayName}")`);
@@ -734,9 +906,13 @@ class SessionAudioProcessManager {
         if (!needle && !key) return false;
         for (const [id, entry] of this.processes.entries()) {
             if (id === sessionId || !entry || !this.isRunning(id)) continue;
+            // Strict : ne jamais adopter la capture d'un AUTRE device.
             const sameSerial = needle && entry.serial && entry.serial === needle;
             const sameKey = key && entry.deviceKey && entry.deviceKey === key;
             if (!sameSerial && !sameKey) continue;
+            // Si les deux sont fournis et divergent du process → skip.
+            if (needle && entry.serial && entry.serial !== needle) continue;
+            if (key && entry.deviceKey && entry.deviceKey !== key) continue;
             this.processes.delete(id);
             this.processes.set(sessionId, entry);
             console.log(`[SessionAudio] adopt ${id} → ${sessionId} (serial=${entry.serial})`);
@@ -883,78 +1059,116 @@ class SessionAudioProcessManager {
 
         const key = deviceKey || serial;
         // 1 device = 1 session audio owner (évite captures dupliquées Type A/B).
-        const ownerId = this.claimAudioOwner(sessionId, key, serial);
+        let ownerId = this.claimAudioOwner(sessionId, key, serial);
         if (!forceOwner && ownerId && ownerId !== sessionId) {
             const ownerTarget = this._listActiveSessionTargets()
                 .find((t) => t.sessionId === ownerId);
             const ownerSerial = ownerTarget
-                ? (await this._resolveSerial(ownerTarget)) || serial
-                : serial;
-            const ownerKey = ownerTarget?.deviceKey || key;
-            const ownerDisplayId = ownerTarget?.displayId ?? displayId;
-            // Propager ON/OFF vers l'owner (sinon le mute device ne flip pas la capture).
-            return this._startUnlocked(ownerId, {
-                serial: ownerSerial,
-                displayId: ownerDisplayId,
-                deviceKey: ownerKey,
-                pcPlayback,
-                forceOwner: true
-            });
+                ? (await this._resolveSerial(ownerTarget)) || null
+                : null;
+            const ownerKey = ownerTarget?.deviceKey || null;
+            const ownerEntry = this.processes.get(ownerId);
+            const runningSerial = ownerEntry?.serial || ownerSerial;
+            const runningKey = ownerEntry?.deviceKey || ownerKey;
+            const sameDevice = Boolean(
+                (serial && runningSerial && String(serial) === String(runningSerial))
+                || (key && runningKey && String(key) === String(runningKey))
+            );
+            if (!sameDevice) {
+                // Owner map corrompue / collision entre 2 pads — ce device reprend son owner.
+                console.warn(
+                    `[SessionAudio] owner mismatch ${ownerId} (ser=${runningSerial}) `
+                    + `≠ demande ${sessionId} (ser=${serial}) — reclaim`
+                );
+                const mapKey = this._ownerMapKey(key, serial);
+                if (mapKey) this._audioOwners.set(mapKey, sessionId);
+                if (serial) this._audioOwners.set(this._ownerMapKey(serial), sessionId);
+                ownerId = sessionId;
+            } else {
+                return this._startUnlocked(ownerId, {
+                    serial: runningSerial || serial,
+                    displayId: ownerTarget?.displayId ?? displayId,
+                    deviceKey: runningKey || key,
+                    pcPlayback,
+                    forceOwner: true
+                });
+            }
         }
 
-        const wantPlayback = typeof pcPlayback === "boolean"
+        // Intention PC (Windows volume). La capture scrcpy garde TOUJOURS le playback
+        // pour apparaître dans le mixeur Windows + tenir REMOTE_SUBMIX.
+        const wantPcSound = typeof pcPlayback === "boolean"
             ? pcPlayback
             : this._wantPcPlayback(key);
-        const normalizedDisplayId = Number.isInteger(displayId) ? displayId : null;
         const existing = this.processes.get(sessionId);
         if (
             existing
             && existing.serial === serial
-            && existing.displayId === normalizedDisplayId
+            && existing.displayId == null
             && existing.deviceKey === key
-            && existing.pcPlayback === wantPlayback
             && this.isRunning(sessionId)
+            && existing.pcPlayback === true
         ) {
-            if (wantPlayback && existing.pid) {
-                void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
-                    pid: existing.pid,
-                    deviceKey: key,
-                    serial,
-                    sessionId,
-                    pcPlayback: true
-                });
+            // Déjà en playback (visible mixeur) : pas de restart — volume Windows seul.
+            if (existing.pid) {
+                // Pendant une op UI volume, l'overlay pose le % — ne pas écraser ici.
+                if (!global.deviceSpeakerOverlayManager?._audioUiInFlight) {
+                    const intent = global.deviceSpeakerOverlayManager?.intentPercentByKey?.get?.(key);
+                    const percent = wantPcSound
+                        ? (Number.isInteger(intent)
+                            ? intent
+                            : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100))
+                        : 0;
+                    void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackVolume?.({
+                        pid: existing.pid,
+                        deviceKey: key,
+                        serial,
+                        sessionId,
+                        percent
+                    });
+                }
+                // Renforcer identité mixeur (nom + icône) si absente.
+                try {
+                    const hostVol = global.deviceSpeakerOverlayManager?._hostVolume;
+                    if (hostVol?.setMixerIdentity && existing.mixerDisplayName) {
+                        void hostVol.setMixerIdentity(existing.pid, {
+                            displayName: existing.mixerDisplayName,
+                            exePath: existing.binaryPath || null,
+                            force: false
+                        });
+                    }
+                } catch (_err) {
+                    /* ignore */
+                }
             }
             return {
                 success: true,
                 reused: true,
-                pcPlayback: wantPlayback,
+                pcPlayback: true,
+                softMuted: !wantPcSound,
                 pid: existing.pid || null
             };
         }
+        // existing.pcPlayback === false → fall through : upgrader vers playback (sinon invisible mixeur).
 
+        // Audio Hub = toujours device-level (REMOTE_SUBMIX).
+        // Ne JAMAIS lier au display virtuel Type B : la capture mourrait à la fermeture
+        // de la 1re session → fuite HP + pas de handoff.
+        const processPlayback = true;
         const args = this._buildArgs({
             serial,
-            displayId: normalizedDisplayId,
-            pcPlayback: wantPlayback
+            displayId: null,
+            pcPlayback: processPlayback
         });
         console.log(
             `[SessionAudio ${sessionId}] demarrage scrcpy audio `
-            + `(pcPlayback=${wantPlayback ? "on" : "off"} ; ${args.join(" ")})`
+            + `(pcSound=${wantPcSound ? "on" : "off"} ; mixer-visible ; ${args.join(" ")})`
         );
 
-        // Flip pcPlayback (OFF↔ON) : stop puis restart (pas de hot-swap — REMOTE_SUBMIX exclusif).
-        const wasPlaybackFlip = Boolean(
-            existing
-            && this.isRunning(sessionId)
-            && existing.serial === serial
-            && existing.displayId === normalizedDisplayId
-            && existing.deviceKey === key
-            && existing.pcPlayback !== wantPlayback
-        );
-
-        await this.stop(sessionId);
-        if (wasPlaybackFlip) {
-            await new Promise((r) => setTimeout(r, 150));
+        if (this.isRunning(sessionId)) {
+            await this._muteDeviceSpeakerBriefly(serial);
+            await this.stop(sessionId);
+            await new Promise((r) => setTimeout(r, 40));
         }
 
         const labeled = await this._resolveLabeledScrcpyBinary(key, serial);
@@ -969,10 +1183,10 @@ class SessionAudioProcessManager {
             this.processes.set(sessionId, {
                 child,
                 serial,
-                displayId: normalizedDisplayId,
+                displayId: null,
                 pid,
                 deviceKey: key,
-                pcPlayback: wantPlayback,
+                pcPlayback: processPlayback,
                 binaryPath,
                 mixerDisplayName
             });
@@ -982,8 +1196,9 @@ class SessionAudioProcessManager {
             if (diedEarly) {
                 console.warn(
                     `[SessionAudio ${sessionId}] exit precoce apres start `
-                    + `(pcPlayback=${wantPlayback ? "on" : "off"}) — retry`
+                    + `(pcSound=${wantPcSound ? "on" : "off"}) — retry`
                 );
+                await this._muteDeviceSpeakerBriefly(serial);
                 await this.stop(sessionId);
                 await new Promise((r) => setTimeout(r, 300));
                 child = this._spawnHidden(binaryPath, args);
@@ -992,10 +1207,10 @@ class SessionAudioProcessManager {
                 this.processes.set(sessionId, {
                     child,
                     serial,
-                    displayId: normalizedDisplayId,
+                    displayId: null,
                     pid,
                     deviceKey: key,
-                    pcPlayback: wantPlayback,
+                    pcPlayback: processPlayback,
                     binaryPath,
                     mixerDisplayName
                 });
@@ -1021,22 +1236,38 @@ class SessionAudioProcessManager {
                 } catch (_err) {
                     /* ignore */
                 }
-                if (wantPlayback) {
-                    void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
+                // Volume Windows immédiat (0 si mute Hub) — SUBMIX déjà tenu, pas de fuite HP.
+                if (!global.deviceSpeakerOverlayManager?._audioUiInFlight) {
+                    const intent = global.deviceSpeakerOverlayManager?.intentPercentByKey?.get?.(key);
+                    const percent = wantPcSound
+                        ? (Number.isInteger(intent)
+                            ? intent
+                            : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100))
+                        : 0;
+                    void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackVolume?.({
                         pid,
                         deviceKey: key,
                         serial,
                         sessionId,
-                        pcPlayback: true,
-                        mixerDisplayName
+                        percent
                     });
+                    if (wantPcSound && percent > 0) {
+                        void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
+                            pid,
+                            deviceKey: key,
+                            serial,
+                            sessionId,
+                            pcPlayback: true
+                        });
+                    }
                 }
             }
 
             return {
                 success: true,
-                pcPlayback: wantPlayback,
-                restarted: wasPlaybackFlip,
+                pcPlayback: processPlayback,
+                pcSound: wantPcSound,
+                restarted: Boolean(existing),
                 retried: Boolean(diedEarly),
                 pid: pid || null
             };
@@ -1182,14 +1413,14 @@ class SessionAudioProcessManager {
             if (!ids.some((id) => needles.has(id))) continue;
             ids.forEach((id) => needles.add(id));
             resolvedKey = d.deviceId || resolvedKey;
-            if (!resolvedSerial) {
-                resolvedSerial = d.wifiSerial || d.usbSerial || d.serial || null;
-            }
+            // Préférer le serial ADB live (d.serial), jamais un Wi‑Fi stale en premier.
+            resolvedSerial = d.serial || d.usbSerial || d.wifiSerial || resolvedSerial || null;
             if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
                 try {
                     const eff = await global.deviceRegistry.resolveEffectiveAdbSerial({
                         deviceId: d.deviceId || null,
-                        serial: resolvedSerial
+                        serial: resolvedSerial,
+                        forceFresh: true
                     });
                     if (eff) {
                         resolvedSerial = eff;
@@ -1265,6 +1496,8 @@ class SessionAudioProcessManager {
             forceOwner: Boolean(openSessions.length)
         });
 
+        await this.dedupeCapturesPerDevice();
+
         // ADB 100 % seulement au vrai start/restart — pas à chaque reuse (slider device).
         if (pcPlayback && resolvedSerial && !result?.reused && !result?.skipped) {
             void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.({
@@ -1279,7 +1512,13 @@ class SessionAudioProcessManager {
             sessionId: result?.sessionId || sessionId,
             serial: resolvedSerial,
             deviceKey: resolvedKey,
-            ownerSessionId: this.getAudioOwnerSessionId(resolvedKey, resolvedSerial)
+            ownerSessionId: this.getAudioOwnerSessionId(resolvedKey, resolvedSerial),
+            pid: result?.pid
+                || this.getCapturePid({
+                    sessionId: result?.sessionId || sessionId,
+                    serial: resolvedSerial,
+                    deviceKey: resolvedKey
+                })
         };
     }
 
@@ -1302,12 +1541,83 @@ class SessionAudioProcessManager {
     }
 
     /**
-     * Une capture par session, avec pcPlayback selon mute global/device.
+     * Une capture scrcpy audio max par device physique.
+     * Supprime les device-audio-* / non-owners en doublon dès qu'une session owner vit.
+     */
+    async dedupeCapturesPerDevice() {
+        const running = [...this.processes.entries()]
+            .filter(([id, entry]) => entry && this.isRunning(id));
+        if (running.length <= 1) return;
+
+        const parent = new Map();
+        const find = (id) => {
+            let p = parent.get(id) || id;
+            while ((parent.get(p) || p) !== p) p = parent.get(p);
+            parent.set(id, p);
+            return p;
+        };
+        const union = (a, b) => {
+            const ra = find(a);
+            const rb = find(b);
+            if (ra !== rb) parent.set(ra, rb);
+        };
+
+        for (const [id] of running) parent.set(id, id);
+
+        // Même deviceKey ou même serial → même groupe.
+        for (let i = 0; i < running.length; i += 1) {
+            for (let j = i + 1; j < running.length; j += 1) {
+                const [idA, a] = running[i];
+                const [idB, b] = running[j];
+                const keyA = String(a.deviceKey || "").trim();
+                const keyB = String(b.deviceKey || "").trim();
+                const serA = String(a.serial || "").trim();
+                const serB = String(b.serial || "").trim();
+                const same = (keyA && keyB && keyA === keyB)
+                    || (serA && serB && serA === serB);
+                if (same) union(idA, idB);
+            }
+        }
+
+        /** @type {Map<string, string[]>} */
+        const groups = new Map();
+        for (const [id] of running) {
+            const root = find(id);
+            if (!groups.has(root)) groups.set(root, []);
+            groups.get(root).push(id);
+        }
+
+        const score = (id) => {
+            // Préférer session Hub owner, puis n'importe quelle session, puis hold.
+            if (String(id).startsWith("device-audio-")) return 0;
+            if (String(id).startsWith("launch-")) return 1;
+            return 3;
+        };
+
+        for (const ids of groups.values()) {
+            if (ids.length <= 1) continue;
+            ids.sort((a, b) => score(b) - score(a) || String(a).localeCompare(String(b)));
+            const keep = ids[0];
+            for (const id of ids.slice(1)) {
+                console.log(`[SessionAudio] dedupe stop ${id} (garde ${keep})`);
+                await this.stop(id);
+            }
+            const entry = this.processes.get(keep);
+            const mapKey = this._ownerMapKey(entry?.deviceKey, entry?.serial);
+            if (mapKey && entry && !String(keep).startsWith("device-audio-")) {
+                this._audioOwners.set(mapKey, keep);
+            }
+        }
+    }
+
+    /**
+     * Une capture par device (session owner). Pas de doublon device-audio + session.
      */
     async syncAllActiveSessions() {
         const targets = this._listActiveSessionTargets();
         const activeIds = new Set();
         const activeSerials = new Set();
+        const activeDeviceKeys = new Set();
         /** @type {Map<string, typeof targets[0]>} 1re session (owner) par device */
         const ownerByDevice = new Map();
 
@@ -1317,9 +1627,21 @@ class SessionAudioProcessManager {
             activeIds.add(target.sessionId);
             activeSerials.add(serial);
             const key = String(target.deviceKey || serial);
+            if (target.deviceKey) activeDeviceKeys.add(String(target.deviceKey));
             const owner = this.claimAudioOwner(target.sessionId, key, serial);
             if (owner === target.sessionId && !ownerByDevice.has(key)) {
                 ownerByDevice.set(key, { ...target, serial });
+            } else if (owner === target.sessionId) {
+                /* already have */
+            } else if (!ownerByDevice.has(key) && owner) {
+                // Owner déjà choisi ailleurs — retrouver la target owner.
+                const ownerTarget = targets.find((t) => t.sessionId === owner);
+                if (ownerTarget) {
+                    ownerByDevice.set(key, {
+                        ...ownerTarget,
+                        serial: await this._resolveSerial(ownerTarget) || serial
+                    });
+                }
             }
         }
 
@@ -1334,9 +1656,10 @@ class SessionAudioProcessManager {
         }
 
         for (const sessionId of [...this.processes.keys()]) {
+            const entry = this.processes.get(sessionId);
+            if (!entry) continue;
+
             if (activeIds.has(sessionId)) {
-                // Capture d'une session non-owner → arrêter (dédup).
-                const entry = this.processes.get(sessionId);
                 const key = entry?.deviceKey || entry?.serial;
                 const owner = key ? this.getAudioOwnerSessionId(key, entry?.serial) : null;
                 if (owner && owner !== sessionId) {
@@ -1344,21 +1667,183 @@ class SessionAudioProcessManager {
                 }
                 continue;
             }
-            // Garder les captures "device-audio-*" tant que le serial est encore une session active.
-            const entry = this.processes.get(sessionId);
-            if (
-                String(sessionId).startsWith("device-audio-")
-                && entry?.serial
-                && activeSerials.has(entry.serial)
-            ) {
+
+            // device-audio-* : garder SEULEMENT s'il n'y a plus de session Hub pour ce device.
+            if (String(sessionId).startsWith("device-audio-")) {
+                const ser = String(entry.serial || "").trim();
+                const key = String(entry.deviceKey || "").trim();
+                const sessionStillOpen = (ser && activeSerials.has(ser))
+                    || (key && activeDeviceKeys.has(key))
+                    || (key && ownerByDevice.has(key));
+                if (sessionStillOpen) {
+                    console.log(
+                        `[SessionAudio] drop hold ${sessionId} — session Hub active`
+                    );
+                    await this.stop(sessionId);
+                    continue;
+                }
                 continue;
             }
+
             await this.stop(sessionId);
         }
+
+        await this.dedupeCapturesPerDevice();
+
+        // Chaque device connecté doit avoir une capture playback (visible mixeur).
+        await this.ensureMixerCapturesForConnectedDevices();
 
         void global.deviceSpeakerOverlayManager?.ensureAdbVolumeMaxForAllDevices?.().catch((err) => {
             console.warn("[SessionAudio] ensureAdb after syncAll:", err?.message || err);
         });
+    }
+
+    /**
+     * Garantit 1 capture playback (entrée mixeur Windows) par device connecté.
+     * Chaque pad a son propre PID + FileDescription "Android Hub - {nom}".
+     */
+    async ensureMixerCapturesForConnectedDevices(opts = {}) {
+        const applyVolume = opts.applyVolume !== false;
+        const overlay = global.deviceSpeakerOverlayManager;
+        let devices = [];
+        try {
+            if (overlay?._listConnectedDevices) {
+                devices = await overlay._listConnectedDevices() || [];
+            }
+        } catch (_err) {
+            devices = [];
+        }
+        if (!devices.length) {
+            try {
+                const unified = await global.deviceRegistry?.listUnifiedDevices?.({ forceFresh: false }) || [];
+                devices = unified
+                    .filter((d) => d && d.connected !== false)
+                    .map((d) => ({
+                        deviceId: d.deviceId || null,
+                        serial: d.serial || d.usbSerial || d.wifiSerial || null,
+                        name: d.name || d.model || null
+                    }));
+            } catch (_err) {
+                devices = [];
+            }
+        }
+
+        const results = [];
+        for (const d of devices) {
+            const deviceKey = d.deviceId || d.deviceKey || d.serial || null;
+            let serial = d.serial || d.adbSerial || null;
+            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                try {
+                    const eff = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                        deviceId: deviceKey,
+                        serial,
+                        forceFresh: true
+                    });
+                    if (eff) serial = eff;
+                } catch (_err) {
+                    /* keep */
+                }
+            }
+            if (!serial) continue;
+
+            const audio = global.globalAudioOutputManager;
+            const pcSound = Boolean(audio?.isDeviceAudioEnabled?.(deviceKey || serial));
+
+            // Session owner de CE device uniquement (pas de redirect cross-device).
+            const open = await this.listOpenSessionsForDeviceAsync(deviceKey, serial);
+            const captureId = open[0]?.sessionId || `device-audio-${deviceKey || serial}`;
+            const displayId = open[0]?.displayId ?? null;
+
+            // Invalider un owner qui pointerait vers un autre serial.
+            const mapKey = this._ownerMapKey(deviceKey, serial);
+            const mappedOwner = mapKey ? this._audioOwners.get(mapKey) : null;
+            if (mappedOwner) {
+                const mappedEntry = this.processes.get(mappedOwner);
+                if (mappedEntry?.serial && mappedEntry.serial !== serial) {
+                    this._audioOwners.delete(mapKey);
+                }
+            }
+            this.claimAudioOwner(captureId, deviceKey || serial, serial);
+
+            try {
+                const started = await this.start(captureId, {
+                    serial,
+                    displayId,
+                    deviceKey: deviceKey || serial,
+                    // Toujours playback pour être visible dans le mixeur ; mute = Windows 0.
+                    pcPlayback: true,
+                    forceOwner: true
+                });
+                let pid = started?.pid || this.getCapturePid({
+                    sessionId: captureId,
+                    serial,
+                    deviceKey
+                });
+                // Retry dédié si pas de PID pour CE serial.
+                if (!pid || !this.hasCaptureForSerial(serial, deviceKey)) {
+                    const holdId = `device-audio-${deviceKey || serial}`;
+                    const retry = await this.start(holdId, {
+                        serial,
+                        displayId: null,
+                        deviceKey: deviceKey || serial,
+                        pcPlayback: true,
+                        forceOwner: true
+                    });
+                    pid = retry?.pid || this.getCapturePid({
+                        sessionId: holdId,
+                        serial,
+                        deviceKey
+                    });
+                }
+                // Soft-mute si le Hub a ce device OFF.
+                if (applyVolume && pid && !pcSound) {
+                    void overlay?.applyWindowsPlaybackVolume?.({
+                        pid,
+                        deviceKey,
+                        adbSerial: serial,
+                        percent: 0
+                    });
+                } else if (applyVolume && pid && pcSound) {
+                    const intent = overlay?.intentPercentByKey?.get?.(deviceKey);
+                    const percent = Number.isInteger(intent)
+                        ? intent
+                        : (overlay?.defaultOnPercent || 100);
+                    void overlay?.applyWindowsPlaybackVolume?.({
+                        pid,
+                        deviceKey,
+                        adbSerial: serial,
+                        percent
+                    });
+                }
+                results.push({
+                    deviceKey,
+                    serial,
+                    pid,
+                    ok: Boolean(pid)
+                });
+                console.log(
+                    `[SessionAudio] mixer device ${d.name || deviceKey}: `
+                    + `serial=${serial} pid=${pid || "NONE"} sound=${pcSound ? "on" : "off"}`
+                );
+            } catch (err) {
+                console.warn(
+                    `[SessionAudio] mixer ensure ${deviceKey || serial}:`,
+                    err?.message || err
+                );
+                results.push({ deviceKey, serial, pid: null, ok: false });
+            }
+        }
+
+        await this.dedupeCapturesPerDevice();
+
+        const missing = results.filter((r) => !r.ok);
+        if (missing.length) {
+            console.warn(
+                `[SessionAudio] mixer manquant pour: `
+                + missing.map((m) => m.deviceKey || m.serial).join(", ")
+            );
+        }
+        return results;
     }
 
     /**

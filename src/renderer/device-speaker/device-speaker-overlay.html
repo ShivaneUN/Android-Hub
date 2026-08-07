@@ -383,7 +383,7 @@
       timers.set(key, setTimeout(() => {
         timers.delete(key);
         void fn();
-      }, 120));
+      }, 40));
     }
 
     listEl.addEventListener("click", (event) => {

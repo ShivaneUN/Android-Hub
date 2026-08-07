@@ -6,6 +6,47 @@ using System.Runtime.InteropServices;
 /// </summary>
 public static class HubVolumeMixer
 {
+    /// <summary>
+    /// CLI rapide (évite PowerShell à chaque slider) :
+    ///   hub-volume-mixer.exe set &lt;pid&gt; &lt;percent&gt;
+    ///   hub-volume-mixer.exe identity &lt;pid&gt; &lt;displayName&gt; &lt;iconPath&gt;
+    /// </summary>
+    [STAThread]
+    public static int Main(string[] args)
+    {
+        try
+        {
+            if (args == null || args.Length < 1)
+            {
+                Console.Error.WriteLine("usage: set|identity ...");
+                return 2;
+            }
+            string cmd = args[0].Trim().ToLowerInvariant();
+            if (cmd == "set" && args.Length >= 3)
+            {
+                int pid = int.Parse(args[1]);
+                float pct = float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+                Console.WriteLine(SetApplicationVolume(pid, pct));
+                return 0;
+            }
+            if (cmd == "identity" && args.Length >= 4)
+            {
+                int pid = int.Parse(args[1]);
+                string name = args[2] ?? "";
+                string icon = args[3] ?? "";
+                Console.WriteLine(SetApplicationIdentity(pid, name, icon));
+                return 0;
+            }
+            Console.Error.WriteLine("usage: set <pid> <percent> | identity <pid> <name> <icon>");
+            return 2;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     /// <summary>levelPercent: 0–100. Retourne le nombre de sessions audio matchées.</summary>
     public static int SetApplicationVolume(int pid, float levelPercent)
     {
@@ -16,33 +57,11 @@ public static class HubVolumeMixer
         IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
         try
         {
-            // Défaut multimedia + communications
+            // Défaut multimedia + communications + console (suffisant pour le mixeur Hub).
+            // Pas d'EnumAudioEndpoints : crash natif fréquent hors processus PowerShell.
             matched += SetOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, level, ref guid);
             matched += SetOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, level, ref guid);
             matched += SetOnEndpoint(deviceEnumerator, ERole.eConsole, pid, level, ref guid);
-
-            // Toutes les sorties actives (cas multi-carte / HDMI / casque)
-            IMMDeviceCollection coll;
-            deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender, 1 /* DEVICE_STATE_ACTIVE */, out coll);
-            if (coll != null)
-            {
-                int n;
-                coll.GetCount(out n);
-                for (int i = 0; i < n; i++)
-                {
-                    IMMDevice device;
-                    coll.Item(i, out device);
-                    try
-                    {
-                        matched += SetOnDevice(device, pid, level, ref guid);
-                    }
-                    finally
-                    {
-                        if (device != null) Marshal.ReleaseComObject(device);
-                    }
-                }
-                Marshal.ReleaseComObject(coll);
-            }
         }
         finally
         {
@@ -139,28 +158,6 @@ public static class HubVolumeMixer
             matched += IdentityOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, displayName, iconPath, setName, setIcon, ref guid);
             matched += IdentityOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, displayName, iconPath, setName, setIcon, ref guid);
             matched += IdentityOnEndpoint(deviceEnumerator, ERole.eConsole, pid, displayName, iconPath, setName, setIcon, ref guid);
-
-            IMMDeviceCollection coll;
-            deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender, 1 /* DEVICE_STATE_ACTIVE */, out coll);
-            if (coll != null)
-            {
-                int n;
-                coll.GetCount(out n);
-                for (int i = 0; i < n; i++)
-                {
-                    IMMDevice device;
-                    coll.Item(i, out device);
-                    try
-                    {
-                        matched += IdentityOnDevice(device, pid, displayName, iconPath, setName, setIcon, ref guid);
-                    }
-                    finally
-                    {
-                        if (device != null) Marshal.ReleaseComObject(device);
-                    }
-                }
-                Marshal.ReleaseComObject(coll);
-            }
         }
         finally
         {
