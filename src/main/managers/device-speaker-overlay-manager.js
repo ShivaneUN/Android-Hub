@@ -60,6 +60,8 @@ class DeviceSpeakerOverlayManager {
         this._globalVolumeInFlight = false;
         /** Dernier hint d'ouverture overlay (home / device). */
         this._lastShowHint = {};
+        /** Ignore blur hide pendant re-render panel (évite fermeture "toute seule"). */
+        this._suppressBlurHideUntil = 0;
         /** Volume PC Windows par PID scrcpy (1 slider Hub = 1 process scrcpy). */
         this._hostVolume = new WindowsProcessAudioVolume();
 
@@ -67,6 +69,7 @@ class DeviceSpeakerOverlayManager {
         this._onMainResize = () => this.hide();
         this._onMainMinimize = () => this.hide();
         this._onMainClose = () => this.destroy();
+        this._onOverlayBlur = () => this._handleOverlayBlur();
 
         mainWindow.on("move", this._onMainMove);
         mainWindow.on("resize", this._onMainResize);
@@ -646,9 +649,7 @@ class DeviceSpeakerOverlayManager {
                     adbSerial
                 ) || openSessions[0].sessionId;
             }
-            const audioControlsEnabled = sap?.canControlDeviceAudio
-                ? sap.canControlDeviceAudio(deviceKey, adbSerial, { activeSessionId, home })
-                : openSessions.length > 0;
+            const audioControlsEnabled = true;
 
             devices.push({
                 deviceKey,
@@ -1140,12 +1141,14 @@ class DeviceSpeakerOverlayManager {
                 return { success: true, panel: this.lastPanel || panelBefore, superseded: true };
             }
 
+            // Panel frais depuis intents + mute (pas le snapshot pré-ON bloqué à 0 %).
+            const fresh = await this._buildPanel();
             const panel = {
-                ...panelBefore,
+                ...fresh,
                 globalVolume: percent,
                 globalMuted: Boolean(audio?.isGlobalMuted?.()),
                 _scope: "global",
-                devices: devices.map((d) => ({
+                devices: (fresh.devices || []).map((d) => ({
                     ...d,
                     percent,
                     audioOn: goingOn
@@ -1229,17 +1232,10 @@ class DeviceSpeakerOverlayManager {
      * Un prochain global OFF/ON reprendra le dessus sur tout le monde.
      */
     _assertDeviceAudioControlsEnabled(deviceKey, adbSerial = null) {
-        const sap = global.sessionAudioProcessManager;
-        if (!sap?.canControlDeviceAudio) return { ok: true };
-        const activeSessionId = global.browserViewManager?.activeSessionId || null;
-        const home = Boolean(this._lastShowHint?.home);
-        const ok = sap.canControlDeviceAudio(deviceKey, adbSerial, { activeSessionId, home });
-        if (ok) return { ok: true };
-        return {
-            ok: false,
-            error: "Audio réservé à la première session de cet appareil",
-            ownerSessionId: sap.getAudioOwnerSessionId?.(deviceKey, adbSerial) || null
-        };
+        // Volume/mute UI toujours autorisé ; l'owner ne verrouille plus les sliders.
+        void deviceKey;
+        void adbSerial;
+        return { ok: true };
     }
 
     async _toggleDeviceAudio(payload = {}) {
@@ -1434,8 +1430,34 @@ class DeviceSpeakerOverlayManager {
             }
 
             const panel = buildResultPanel();
-            this._broadcastPanel(panel);
-            return { success: true, muted: goingOff, panel };
+            // Resync depuis l'état réel (intent/mute) pour coller l'UI au Windows %.
+            try {
+                const fresh = await this._buildPanel();
+                const merged = {
+                    ...fresh,
+                    globalMuted: Boolean(audio.isGlobalMuted?.()),
+                    globalVolume: Number.isInteger(this.lastGlobalPercent) && this.lastGlobalPercent > 0
+                        ? this.lastGlobalPercent
+                        : fresh.globalVolume,
+                    _scope: "device",
+                    _changedKey: intentKey,
+                    devices: (fresh.devices || []).map((d) => {
+                        if (isSameDevice(d)) {
+                            return { ...d, percent: nextPercent, audioOn: !goingOff };
+                        }
+                        if (!goingOff && wasGlobalMuted) {
+                            return { ...d, percent: 0, audioOn: false };
+                        }
+                        return d;
+                    })
+                };
+                this.lastPanel = merged;
+                this._broadcastPanel(merged);
+                return { success: true, muted: goingOff, panel: merged };
+            } catch (_err) {
+                this._broadcastPanel(panel);
+                return { success: true, muted: goingOff, panel };
+            }
         } finally {
             this._deviceToggleInFlight = false;
         }
@@ -1661,8 +1683,57 @@ class DeviceSpeakerOverlayManager {
         if (panel) this.lastPanel = panel;
         const win = this.overlayWindow;
         if (win && !win.isDestroyed() && this.visible) {
+            // Re-render HTML = perte de focus temporaire → ne pas interpréter comme clic à côté.
+            this._suppressBlurHideUntil = Date.now() + 450;
             win.webContents.send("deviceSpeakerOverlay:panel", panel);
         }
+    }
+
+    _pointerInsideOverlay() {
+        const win = this.overlayWindow;
+        if (!win || win.isDestroyed() || !this.visible) return false;
+        try {
+            const { screen } = require("electron");
+            const point = screen.getCursorScreenPoint();
+            const b = win.getBounds();
+            return point.x >= b.x
+                && point.x <= b.x + b.width
+                && point.y >= b.y
+                && point.y <= b.y + b.height;
+        } catch (_err) {
+            return false;
+        }
+    }
+
+    _handleOverlayBlur() {
+        setTimeout(() => {
+            if (!this.visible) return;
+            if (Date.now() < this._suppressBlurHideUntil) return;
+            const win = this.overlayWindow;
+            if (!win || win.isDestroyed()) return;
+            if (win.isFocused()) return;
+            // Souris encore sur le popup (ex. re-render) → garder ouvert.
+            if (this._pointerInsideOverlay()) return;
+            this.hide();
+        }, 120);
+    }
+
+    _installMainOutsideClickClose() {
+        if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+        // Clic dans la fenêtre Hub (à côté du popup) → fermer, sauf bouton audio.
+        void this.mainWindow.webContents.executeJavaScript(`
+            (() => {
+                if (window.__hubAudioPopupOutsideBound) return true;
+                window.__hubAudioPopupOutsideBound = true;
+                document.addEventListener("mousedown", (event) => {
+                    if (!window.__deviceSpeakerPopoverOpen) return;
+                    const btn = document.getElementById("nav-toggle-global-audio");
+                    if (btn && (btn === event.target || btn.contains(event.target))) return;
+                    try { window.deviceSpeakerOverlayAPI?.hide?.(); } catch (_err) { /* ignore */ }
+                }, true);
+                return true;
+            })()
+        `).catch(() => {});
     }
 
     _clientToScreen(x, y) {
@@ -1738,14 +1809,8 @@ class DeviceSpeakerOverlayManager {
             }
         });
 
-        this.overlayWindow.on("blur", () => {
-            setTimeout(() => {
-                if (!this.visible) return;
-                const win = this.overlayWindow;
-                if (!win || win.isDestroyed()) return;
-                if (!win.isFocused()) this.hide();
-            }, 180);
-        });
+        // Fermer au clic à côté (blur) ; pas pendant un re-render ni si souris sur le popup.
+        this.overlayWindow.on("blur", this._onOverlayBlur);
 
         this.readyPromise = this.overlayWindow.loadFile(
             path.join(__dirname, "../../renderer/device-speaker/device-speaker-overlay.html")
@@ -1790,6 +1855,8 @@ class DeviceSpeakerOverlayManager {
         this._placeAboveAnchor(payload.anchor || {});
         this.visible = true;
         this._setMainPopoverFlag(true);
+        this._suppressBlurHideUntil = Date.now() + 500;
+        this._installMainOutsideClickClose();
 
         const win = await this._ensureWindow();
         this._syncBounds();

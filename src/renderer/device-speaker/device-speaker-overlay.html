@@ -267,19 +267,21 @@
       panelState.globalMuted = !wantOn;
     }
 
-    function resolveDevicePercent(d, panel) {
+    function resolveDevicePercent(d, panel, editingDevice = null, keepDeviceValue = null) {
       const key = deviceRowKey(d);
-      if (panel?._scope === "global") {
-        const p = Number.isInteger(d.percent) ? d.percent : 0;
-        if (key) deviceVolumeLocal.set(key, p);
-        return p;
+      // Pendant un drag sur CE slider : garder la valeur locale.
+      if (editingDevice && key === editingDevice && keepDeviceValue != null) {
+        return Math.max(0, Math.min(100, Math.round(Number(keepDeviceValue) || 0)));
+      }
+      // Sinon le panel main est la source de vérité (évite cache local bloqué à 0 %).
+      if (Number.isInteger(d.percent)) {
+        if (key) deviceVolumeLocal.set(key, d.percent);
+        return d.percent;
       }
       if (key && deviceVolumeLocal.has(key)) {
         return deviceVolumeLocal.get(key);
       }
-      const p = Number.isInteger(d.percent) ? d.percent : 0;
-      if (key) deviceVolumeLocal.set(key, p);
-      return p;
+      return 0;
     }
 
     function applyPanel(panel, { preserveDeviceFocus = false } = {}) {
@@ -294,17 +296,25 @@
 
       if (panel._scope === "global") {
         deviceVolumeLocal.clear();
-      } else if (panel._scope === "device" && panel._changedKey) {
+      }
+      // Resync cache depuis le panel (sauf le slider en cours d'édition).
+      for (const d of (panel.devices || [])) {
+        const key = deviceRowKey(d);
+        if (!key || !Number.isInteger(d.percent)) continue;
+        if (editingDevice && key === editingDevice) continue;
+        deviceVolumeLocal.set(key, d.percent);
+      }
+      if (panel._scope === "device" && panel._changedKey) {
         const changed = (panel.devices || []).find((d) => deviceRowKey(d) === panel._changedKey);
-        if (changed) {
-          deviceVolumeLocal.set(panel._changedKey, Number.isInteger(changed.percent) ? changed.percent : 0);
+        if (changed && Number.isInteger(changed.percent)) {
+          deviceVolumeLocal.set(panel._changedKey, changed.percent);
+          const rowKey = deviceRowKey(changed);
+          if (rowKey) deviceVolumeLocal.set(rowKey, changed.percent);
         }
       }
 
       panelState = panel;
       const gVolRaw = Number.isInteger(panel.globalVolume) ? panel.globalVolume : 0;
-      // Slider device : ne pas écraser le global affiché (reste à 100 % après sidebar).
-      // Slider global : suit le panel (reprend le dessus).
       let gVol = gVolRaw;
       if (panel._scope === "device") {
         const currentUi = Number(globalSlider.value);
@@ -318,7 +328,6 @@
       if (gVol > 0) savedGlobalPercent = gVol;
       globalSlider.max = "100";
       if (!editingGlobal) {
-        // Device scope : garder le % global UI ; global scope : appliquer panel.
         if (panel._scope !== "device" || gVolRaw > 0) {
           globalSlider.value = String(gVol);
           globalValue.textContent = String(gVol);
@@ -338,22 +347,14 @@
       listEl.innerHTML = devices.map((d) => {
         const key = escapeHtml(deviceRowKey(d));
         const name = escapeHtml(d.name || d.serial || "Device");
-        let percent = resolveDevicePercent(d, panel);
-        if (editingDevice && deviceRowKey(d) === editingDevice && keepDeviceValue != null) {
-          percent = Number(keepDeviceValue);
-        }
+        const percent = resolveDevicePercent(d, panel, editingDevice, keepDeviceValue);
         const on = percent > 0 && d.audioOn !== false;
-        const locked = d.audioControlsEnabled === false;
-        const lockHint = locked
-          ? `<div class="lock-hint">Son : première session uniquement</div>`
-          : "";
         return (
-          `<div class="row${locked ? " audio-locked" : ""}" data-key="${key}" data-locked="${locked ? "1" : "0"}">` +
+          `<div class="row" data-key="${key}" data-locked="0">` +
           `<div class="name" title="${name}">${name}</div>` +
-          muteButtonHtml(on, key, locked) +
-          `<input class="slider" data-action="volume" data-key="${key}" data-adb="${escapeHtml(d.adbSerial || "")}" type="range" min="0" max="100" step="1" value="${percent}"${locked ? " disabled" : ""}>` +
+          muteButtonHtml(on, key, false) +
+          `<input class="slider" data-action="volume" data-key="${key}" data-adb="${escapeHtml(d.adbSerial || "")}" type="range" min="0" max="100" step="1" value="${percent}">` +
           `<div class="value">${percent}</div>` +
-          lockHint +
           `</div>`
         );
       }).join("");

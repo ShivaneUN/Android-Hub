@@ -191,29 +191,24 @@ class SessionAudioProcessManager {
     }
 
     /**
-     * La session focus peut piloter le son de CE device ?
-     * - propriétaire = oui
-     * - autre session du même device = non
-     * - pas de session focus (home) = oui si un owner existe
+     * Qui peut régler le volume/mute de CE device dans l'UI ?
+     * Toujours oui dès qu'il y a une session, un hold audio, ou un device ciblé :
+     * l'owner limite uniquement la capture scrcpy (1 process), pas les sliders.
      */
     canControlDeviceAudio(deviceKey, serial = null, { activeSessionId = null, home = false } = {}) {
-        const open = this.listOpenSessionsForDevice(deviceKey, serial);
-        const hasHold = this.hasCaptureForSerial?.(serial, deviceKey);
+        void activeSessionId;
+        void home;
+        const key = String(deviceKey || "").trim();
+        const ser = String(serial || "").trim();
+        if (!key && !ser) return false;
 
-        // Home / pas de focus session : OK si une session owner OU un hold connecté.
-        if (home || !activeSessionId) {
-            return open.length > 0 || Boolean(hasHold);
-        }
+        const open = this.listOpenSessionsForDevice(key || ser, ser || key);
+        if (open.length > 0) return true;
+        if (this.hasCaptureForSerial?.(ser || null, key || null)) return true;
 
-        if (!open.length) return false;
-
-        const owner = this.getAudioOwnerSessionId(deviceKey, serial)
-            || this.claimAudioOwner(open[0].sessionId, deviceKey || open[0].deviceKey, serial || open[0].serial);
-        if (!owner) return false;
-
-        const focusedOnDevice = open.some((s) => s.sessionId === activeSessionId);
-        if (!focusedOnDevice) return true;
-        return activeSessionId === owner;
+        // Device connecté listé dans le panneau, capture pas encore créée :
+        // autoriser — ensureCapture posera le hold au premier geste.
+        return Boolean(key || ser);
     }
 
     async _muteDeviceSpeakerBriefly(serial) {
