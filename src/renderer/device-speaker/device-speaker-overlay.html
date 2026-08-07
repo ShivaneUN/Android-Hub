@@ -462,11 +462,14 @@
       }
       // Uniquement CE device — pas les autres lignes.
       setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
-      schedule(`vol:${deviceKey}`, () => window.deviceSpeakerOverlayAPI?.setVolume?.({
-        deviceKey,
-        adbSerial,
-        percent
-      }));
+      schedule(`vol:${deviceKey}`, () => {
+        slider.setAttribute("data-last-sent", String(percent));
+        void window.deviceSpeakerOverlayAPI?.setVolume?.({
+          deviceKey,
+          adbSerial,
+          percent
+        });
+      });
     });
 
     listEl.addEventListener("change", (event) => {
@@ -488,11 +491,16 @@
         });
       }
       setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
+      // Si un debounce input est déjà en route pour le même %, il suffit.
+      // Sinon (clic direct / release sans input récent) : appliquer maintenant.
       const key = `vol:${deviceKey}`;
       if (timers.has(key)) {
         clearTimeout(timers.get(key));
         timers.delete(key);
       }
+      const lastSent = Number(slider.getAttribute("data-last-sent"));
+      if (lastSent === percent) return;
+      slider.setAttribute("data-last-sent", String(percent));
       void window.deviceSpeakerOverlayAPI?.setVolume?.({
         deviceKey,
         adbSerial,
@@ -504,9 +512,10 @@
       const percent = Number(globalSlider.value);
       globalValue.textContent = String(percent);
       applyDevicePercents(percent);
-      schedule("global", () => window.deviceSpeakerOverlayAPI?.setGlobalVolume?.({
-        percent
-      }));
+      schedule("global", () => {
+        globalSlider.setAttribute("data-last-sent", String(percent));
+        void window.deviceSpeakerOverlayAPI?.setGlobalVolume?.({ percent });
+      });
     });
 
     globalSlider.addEventListener("change", () => {
@@ -517,6 +526,9 @@
         clearTimeout(timers.get("global"));
         timers.delete("global");
       }
+      const lastSent = Number(globalSlider.getAttribute("data-last-sent"));
+      if (lastSent === percent) return;
+      globalSlider.setAttribute("data-last-sent", String(percent));
       void window.deviceSpeakerOverlayAPI?.setGlobalVolume?.({ percent });
     });
 

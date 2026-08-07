@@ -115,13 +115,18 @@ class WindowsProcessAudioVolume {
             return Promise.resolve({ success: false, percent: p, error: "windows uniquement" });
         }
 
-        // Skip no-op (évite file d'attente pendant un drag).
-        if (this._lastByPid.get(id) === p) {
+        // Skip no-op (évite file d'attente pendant un drag / double input+change).
+        if (this._lastByPid.get(id) === p || this._pendingByPid?.get(id) === p) {
             return Promise.resolve({ success: true, percent: p, matched: 1, skipped: true });
         }
+        if (!this._pendingByPid) this._pendingByPid = new Map();
+        this._pendingByPid.set(id, p);
 
         const run = async () => {
             try {
+                if (this._lastByPid.get(id) === p) {
+                    return { success: true, percent: p, matched: 1, skipped: true };
+                }
                 const exe = await this._ensureExe();
                 let out = await execFileAsync(exe, ["set", String(id), String(p)], { timeoutMs: 4000 });
                 let matched = Number.parseInt(String(out).trim(), 10);
@@ -143,6 +148,8 @@ class WindowsProcessAudioVolume {
                 return { success: true, percent: p, matched };
             } catch (err) {
                 return { success: false, percent: p, error: err?.message || String(err) };
+            } finally {
+                if (this._pendingByPid?.get(id) === p) this._pendingByPid.delete(id);
             }
         };
 

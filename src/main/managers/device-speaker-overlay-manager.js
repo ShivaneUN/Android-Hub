@@ -62,6 +62,10 @@ class DeviceSpeakerOverlayManager {
         this._lastShowHint = {};
         /** Ignore blur hide pendant re-render panel (évite fermeture "toute seule"). */
         this._suppressBlurHideUntil = 0;
+        /** Throttle ADB 100 % (évite spam dumpsys). */
+        this._ensureAdbAt = 0;
+        /** @type {Map<string, number>} serial → last ok at */
+        this._adbMaxOkAt = new Map();
         /** Volume PC Windows par PID scrcpy (1 slider Hub = 1 process scrcpy). */
         this._hostVolume = new WindowsProcessAudioVolume();
 
@@ -225,7 +229,7 @@ class DeviceSpeakerOverlayManager {
                 `[DeviceSpeaker] windows volume pid=${targetPid} %=${percent}:`,
                 result?.error || "echec"
             );
-        } else {
+        } else if (!result?.skipped) {
             console.log(`[DeviceSpeaker] windows volume pid=${targetPid} → ${percent}%`);
             const label = this._resolveMixerDeviceName?.(deviceKey, adbSerial)
                 || deviceKey
@@ -247,17 +251,25 @@ class DeviceSpeakerOverlayManager {
             if (!mixerDisplayName) {
                 mixerDisplayName = this._hostVolume.formatMixerDisplayName(label);
             }
-            const applyId = (force = false) => this._hostVolume.setMixerIdentity(targetPid, {
+            // 1 identity sans force (cache) ; retry unique si première fois.
+            void this._hostVolume.setMixerIdentity(targetPid, {
                 displayName: mixerDisplayName,
                 deviceName: label,
                 exePath: resolvedExe,
-                force
+                force: false
+            }).then((idResult) => {
+                if (idResult?.success && !idResult?.skipped) return;
+                setTimeout(() => {
+                    void this._hostVolume.setMixerIdentity(targetPid, {
+                        displayName: mixerDisplayName,
+                        deviceName: label,
+                        exePath: resolvedExe,
+                        force: false
+                    }).catch(() => {});
+                }, 700);
             }).catch((err) => {
                 console.warn("[DeviceSpeaker] mixer identity:", err?.message || err);
             });
-            void applyId(true);
-            setTimeout(() => { void applyId(true); }, 700);
-            setTimeout(() => { void applyId(true); }, 2000);
         }
         return { ...result, pid: targetPid };
     }
@@ -456,7 +468,13 @@ class DeviceSpeakerOverlayManager {
      * - captures scrcpy vivantes y compris device-audio-* (pas encore connus du panel)
      * - sessions Hub actives
      */
-    async ensureAdbVolumeMaxForAllDevices({ onlySerial = null } = {}) {
+    async ensureAdbVolumeMaxForAllDevices({ onlySerial = null, force = false } = {}) {
+        const now = Date.now();
+        if (!force && !onlySerial && now - this._ensureAdbAt < 2500) {
+            return { success: true, skipped: true, reason: "throttled" };
+        }
+        if (!onlySerial) this._ensureAdbAt = now;
+
         const needle = String(onlySerial || "").trim() || null;
         const seen = new Set();
         const results = [];
@@ -467,13 +485,20 @@ class DeviceSpeakerOverlayManager {
             if (needle && s !== needle && !s.startsWith(needle) && !needle.startsWith(s)) {
                 return false;
             }
+            // Déjà max récemment → skip (sauf force / onlySerial explicite).
+            if (!force && (this._adbMaxOkAt.get(s) || 0) > now - 8000) {
+                seen.add(s);
+                return false;
+            }
             seen.add(s);
             return true;
         };
 
         const run = async (serial, deviceKey) => {
             if (!accept(serial)) return;
-            results.push(await this._ensureDeviceScrcpyVolumeAt100(serial, deviceKey));
+            const r = await this._ensureDeviceScrcpyVolumeAt100(serial, deviceKey);
+            if (r?.success) this._adbMaxOkAt.set(String(serial), Date.now());
+            results.push(r);
         };
 
         // 1) Devices connectés connus
@@ -1866,10 +1891,12 @@ class DeviceSpeakerOverlayManager {
             panel
         });
 
-        // À l'ouverture : chaque device connecté = 1 entrée mixeur + ADB 100 % si ON.
+        // À l'ouverture : captures mixeur si besoin (throttle interne) ; ADB max soft.
         void (async () => {
             try {
-                await global.sessionAudioProcessManager?.ensureMixerCapturesForConnectedDevices?.();
+                await global.sessionAudioProcessManager?.ensureMixerCapturesForConnectedDevices?.({
+                    applyVolume: false
+                });
             } catch (_err) {
                 /* ignore */
             }
