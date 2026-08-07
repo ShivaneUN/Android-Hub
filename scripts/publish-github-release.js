@@ -333,7 +333,7 @@ async function runBuildWithRetry(env) {
             run("node scripts/clean-dist-unpack.js");
             run("node scripts/generate-update-feed.js");
             run(
-                "electron-builder --win --config electron-builder.publish.config.js --publish never",
+                "npx electron-builder --win --config electron-builder.publish.config.js --publish never",
                 env
             );
             return;
