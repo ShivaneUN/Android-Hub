@@ -10,6 +10,9 @@ const {
 
 registerAppIconProtocolSchemes();
 registerHubWallpaperProtocolSchemes();
+// Pas de sortie audio Chromium : le son PC = scrcpy "Android Hub - {device}".
+// Sinon Electron / "Android Hub" apparaît inutilement dans le mixeur Windows.
+app.commandLine.appendSwitch("disable-audio-output");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const path = require("path");
 const fs = require("fs");
