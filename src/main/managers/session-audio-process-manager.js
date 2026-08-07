@@ -1117,17 +1117,22 @@ class SessionAudioProcessManager {
                 // Pendant une op UI volume, l'overlay pose le % — ne pas écraser ici.
                 if (!global.deviceSpeakerOverlayManager?._audioUiInFlight) {
                     const intent = global.deviceSpeakerOverlayManager?.intentPercentByKey?.get?.(key);
-                    const percent = wantPcSound
-                        ? (Number.isInteger(intent)
-                            ? intent
-                            : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100))
-                        : 0;
+                    const percent = Number.isInteger(intent) && intent > 0
+                        ? intent
+                        : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100);
                     void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackVolume?.({
                         pid: existing.pid,
                         deviceKey: key,
                         serial,
                         sessionId,
                         percent
+                    });
+                    void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackMute?.({
+                        pid: existing.pid,
+                        deviceKey: key,
+                        serial,
+                        sessionId,
+                        muted: !wantPcSound
                     });
                 }
                 // Renforcer identité mixeur (nom + icône) si absente.
@@ -1241,17 +1246,22 @@ class SessionAudioProcessManager {
                 // Volume Windows immédiat (0 si mute Hub) — SUBMIX déjà tenu, pas de fuite HP.
                 if (!global.deviceSpeakerOverlayManager?._audioUiInFlight) {
                     const intent = global.deviceSpeakerOverlayManager?.intentPercentByKey?.get?.(key);
-                    const percent = wantPcSound
-                        ? (Number.isInteger(intent)
-                            ? intent
-                            : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100))
-                        : 0;
+                    const percent = Number.isInteger(intent) && intent > 0
+                        ? intent
+                        : (global.deviceSpeakerOverlayManager?.defaultOnPercent || 100);
                     void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackVolume?.({
                         pid,
                         deviceKey: key,
                         serial,
                         sessionId,
                         percent
+                    });
+                    void global.deviceSpeakerOverlayManager?.applyWindowsPlaybackMute?.({
+                        pid,
+                        deviceKey: key,
+                        serial,
+                        sessionId,
+                        muted: !wantPcSound
                     });
                     if (wantPcSound && percent > 0) {
                         void global.deviceSpeakerOverlayManager?.reapplyHostVolumeForCapture?.({
@@ -1819,16 +1829,9 @@ class SessionAudioProcessManager {
                             pid = this.getCapturePid({ sessionId: holdId, serial, deviceKey }) || pid;
                         }
                     }
-                    if (!skipVolume && pid && !pcSound) {
-                        void overlay?.applyWindowsPlaybackVolume?.({
-                            pid,
-                            deviceKey,
-                            adbSerial: serial,
-                            percent: 0
-                        });
-                    } else if (!skipVolume && pid && pcSound) {
+                    if (!skipVolume && pid) {
                         const intent = overlay?.intentPercentByKey?.get?.(deviceKey);
-                        const percent = Number.isInteger(intent)
+                        const percent = Number.isInteger(intent) && intent > 0
                             ? intent
                             : (overlay?.defaultOnPercent || 100);
                         void overlay?.applyWindowsPlaybackVolume?.({
@@ -1836,6 +1839,12 @@ class SessionAudioProcessManager {
                             deviceKey,
                             adbSerial: serial,
                             percent
+                        });
+                        void overlay?.applyWindowsPlaybackMute?.({
+                            pid,
+                            deviceKey,
+                            adbSerial: serial,
+                            muted: !pcSound
                         });
                     }
                     results.push({

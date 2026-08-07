@@ -240,11 +240,12 @@
     }
 
     /** Global uniquement : aligne TOUS les devices sur le même %. */
-    function applyDevicePercents(percent) {
+    function applyDevicePercents(percent, { syncMuteFromPercent = true } = {}) {
       const p = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
-      const wantOn = p > 0;
-      if (wantOn) savedGlobalPercent = p;
-      setMuteButtonState(globalMuteBtn, wantOn);
+      if (p > 0) savedGlobalPercent = p;
+      if (syncMuteFromPercent) {
+        setMuteButtonState(globalMuteBtn, p > 0);
+      }
       deviceVolumeLocal.clear();
       listEl.querySelectorAll(".row").forEach((row) => {
         const slider = row.querySelector("input[data-action='volume']");
@@ -254,17 +255,23 @@
         slider.value = String(p);
         const valueEl = row.querySelector(".value");
         if (valueEl) valueEl.textContent = String(p);
-        setMuteButtonState(row.querySelector("[data-action='mute']"), wantOn);
+        if (syncMuteFromPercent) {
+          setMuteButtonState(row.querySelector("[data-action='mute']"), p > 0);
+        }
       });
       if (panelState?.devices) {
         panelState.devices = panelState.devices.map((d) => {
           const key = deviceRowKey(d);
           if (key) deviceVolumeLocal.set(key, p);
-          return { ...d, percent: p, audioOn: wantOn };
+          return {
+            ...d,
+            percent: p,
+            audioOn: syncMuteFromPercent ? p > 0 : Boolean(d.audioOn)
+          };
         });
       }
       panelState.globalVolume = p;
-      panelState.globalMuted = !wantOn;
+      if (syncMuteFromPercent) panelState.globalMuted = !(p > 0);
     }
 
     function resolveDevicePercent(d, panel, editingDevice = null, keepDeviceValue = null) {
@@ -324,13 +331,15 @@
           gVol = savedGlobalPercent;
         }
       }
-      const globalOn = !panel.globalMuted && (gVol > 0 || (panel.devices || []).some((d) => d.audioOn));
+      const globalOn = !panel.globalMuted;
       if (gVol > 0) savedGlobalPercent = gVol;
       globalSlider.max = "100";
       if (!editingGlobal) {
-        if (panel._scope !== "device" || gVolRaw > 0) {
-          globalSlider.value = String(gVol);
-          globalValue.textContent = String(gVol);
+        // Mute ≠ 0% : garder le % même si globalMuted.
+        const showVol = gVol > 0 ? gVol : (savedGlobalPercent || 100);
+        if (panel._scope !== "device" || gVolRaw > 0 || panel.globalMuted) {
+          globalSlider.value = String(panel.globalMuted && gVolRaw <= 0 ? showVol : (gVol > 0 ? gVol : showVol));
+          globalValue.textContent = globalSlider.value;
         }
       }
       setMuteButtonState(globalMuteBtn, globalOn);
@@ -348,7 +357,7 @@
         const key = escapeHtml(deviceRowKey(d));
         const name = escapeHtml(d.name || d.serial || "Device");
         const percent = resolveDevicePercent(d, panel, editingDevice, keepDeviceValue);
-        const on = percent > 0 && d.audioOn !== false;
+        const on = Boolean(d.audioOn);
         return (
           `<div class="row" data-key="${key}" data-locked="0">` +
           `<div class="name" title="${name}">${name}</div>` +
@@ -396,15 +405,9 @@
       if (!deviceKey) return;
       btn.classList.add("pending");
       btn.disabled = true;
-      // Intention AVANT flip optimiste : OFF si bouton actuellement ON.
+      // Mute seul — ne touche PAS le slider %.
       const wantOff = btn.classList.contains("on");
-      const next = wantOff ? 0 : 100;
-      if (deviceKey) deviceVolumeLocal.set(deviceKey, next);
       setMuteButtonState(btn, !wantOff);
-      const slider = row?.querySelector("input[data-action='volume']");
-      const valueEl = row?.querySelector(".value");
-      if (slider) slider.value = String(next);
-      if (valueEl) valueEl.textContent = String(next);
       void window.deviceSpeakerOverlayAPI?.toggleDeviceAudio?.({ deviceKey, wantOff })
         .catch((err) => console.error("[device-speaker] toggleDeviceAudio:", err))
         .finally(() => {
@@ -416,20 +419,18 @@
     globalMuteBtn.addEventListener("click", () => {
       if (globalMuteBtn.disabled) return;
       cancelPendingGlobal();
-      // Optimistic UI ; le main applique la même logique que le clic dock.
-      const currentlyOn = globalMuteBtn.classList.contains("on")
-        || (Number(globalSlider.value) > 0 && !panelState?.globalMuted);
-      if (currentlyOn) {
-        const cur = Number(globalSlider.value);
-        if (cur > 0) savedGlobalPercent = cur;
-        globalSlider.value = "0";
-        globalValue.textContent = "0";
-        applyDevicePercents(0);
-      } else {
-        const restore = 100;
-        globalSlider.value = String(restore);
-        globalValue.textContent = String(restore);
-        applyDevicePercents(restore);
+      // Optimistic : mute seul, sliders inchangés.
+      const currentlyOn = globalMuteBtn.classList.contains("on");
+      setMuteButtonState(globalMuteBtn, !currentlyOn);
+      listEl.querySelectorAll("[data-action='mute']").forEach((btn) => {
+        setMuteButtonState(btn, !currentlyOn);
+      });
+      if (panelState) {
+        panelState.globalMuted = currentlyOn;
+        panelState.devices = (panelState.devices || []).map((d) => ({
+          ...d,
+          audioOn: !currentlyOn
+        }));
       }
       void window.deviceSpeakerOverlayAPI?.toggleGlobalAudio?.();
     });
@@ -452,16 +453,19 @@
       const percent = Number(slider.value);
       const valueEl = row?.querySelector(".value");
       if (valueEl) valueEl.textContent = String(percent);
-      const wantOn = percent > 0;
       if (deviceKey) deviceVolumeLocal.set(deviceKey, percent);
       if (panelState?.devices) {
         panelState.devices = panelState.devices.map((d) => {
           const key = deviceRowKey(d);
-          return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
+          // Slider > 0 démute ; slider = 0 mute via main.
+          return key === deviceKey
+            ? { ...d, percent, audioOn: percent > 0 }
+            : d;
         });
       }
-      // Uniquement CE device — pas les autres lignes.
-      setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
+      if (percent > 0) {
+        setMuteButtonState(row?.querySelector("[data-action='mute']"), true);
+      }
       schedule(`vol:${deviceKey}`, () => {
         slider.setAttribute("data-last-sent", String(percent));
         void window.deviceSpeakerOverlayAPI?.setVolume?.({
@@ -482,15 +486,20 @@
       const row = slider.closest(".row");
       const valueEl = row?.querySelector(".value");
       if (valueEl) valueEl.textContent = String(percent);
-      const wantOn = percent > 0;
       if (deviceKey) deviceVolumeLocal.set(deviceKey, percent);
       if (panelState?.devices) {
         panelState.devices = panelState.devices.map((d) => {
           const key = deviceRowKey(d);
-          return key === deviceKey ? { ...d, percent, audioOn: wantOn } : d;
+          return key === deviceKey
+            ? { ...d, percent, audioOn: percent > 0 }
+            : d;
         });
       }
-      setMuteButtonState(row?.querySelector("[data-action='mute']"), wantOn);
+      if (percent > 0) {
+        setMuteButtonState(row?.querySelector("[data-action='mute']"), true);
+      } else {
+        setMuteButtonState(row?.querySelector("[data-action='mute']"), false);
+      }
       // Si un debounce input est déjà en route pour le même %, il suffit.
       // Sinon (clic direct / release sans input récent) : appliquer maintenant.
       const key = `vol:${deviceKey}`;

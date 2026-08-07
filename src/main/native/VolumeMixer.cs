@@ -9,6 +9,8 @@ public static class HubVolumeMixer
     /// <summary>
     /// CLI rapide (évite PowerShell à chaque slider) :
     ///   hub-volume-mixer.exe set &lt;pid&gt; &lt;percent&gt;
+    ///   hub-volume-mixer.exe mute &lt;pid&gt; &lt;0|1&gt;
+    ///   hub-volume-mixer.exe apply &lt;pid&gt; &lt;percent&gt; &lt;0|1&gt;  (volume + mute atomique)
     ///   hub-volume-mixer.exe identity &lt;pid&gt; &lt;displayName&gt; &lt;iconPath&gt;
     /// </summary>
     [STAThread]
@@ -18,7 +20,7 @@ public static class HubVolumeMixer
         {
             if (args == null || args.Length < 1)
             {
-                Console.Error.WriteLine("usage: set|identity ...");
+                Console.Error.WriteLine("usage: set|mute|apply|identity ...");
                 return 2;
             }
             string cmd = args[0].Trim().ToLowerInvariant();
@@ -29,6 +31,21 @@ public static class HubVolumeMixer
                 Console.WriteLine(SetApplicationVolume(pid, pct));
                 return 0;
             }
+            if (cmd == "mute" && args.Length >= 3)
+            {
+                int pid = int.Parse(args[1]);
+                bool muted = args[2] == "1" || args[2].Equals("true", StringComparison.OrdinalIgnoreCase);
+                Console.WriteLine(SetApplicationMute(pid, muted));
+                return 0;
+            }
+            if (cmd == "apply" && args.Length >= 4)
+            {
+                int pid = int.Parse(args[1]);
+                float pct = float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+                bool muted = args[3] == "1" || args[3].Equals("true", StringComparison.OrdinalIgnoreCase);
+                Console.WriteLine(SetApplicationVolumeAndMute(pid, pct, muted));
+                return 0;
+            }
             if (cmd == "identity" && args.Length >= 4)
             {
                 int pid = int.Parse(args[1]);
@@ -37,7 +54,7 @@ public static class HubVolumeMixer
                 Console.WriteLine(SetApplicationIdentity(pid, name, icon));
                 return 0;
             }
-            Console.Error.WriteLine("usage: set <pid> <percent> | identity <pid> <name> <icon>");
+            Console.Error.WriteLine("usage: set <pid> <percent> | mute <pid> <0|1> | apply <pid> <percent> <0|1> | identity <pid> <name> <icon>");
             return 2;
         }
         catch (Exception ex)
@@ -47,7 +64,7 @@ public static class HubVolumeMixer
         }
     }
 
-    /// <summary>levelPercent: 0–100. Retourne le nombre de sessions audio matchées.</summary>
+    /// <summary>levelPercent: 0–100. Volume seul ; unmute si &gt; 0 (le mute UI est via SetApplicationMute).</summary>
     public static int SetApplicationVolume(int pid, float levelPercent)
     {
         Guid guid = Guid.Empty;
@@ -59,9 +76,9 @@ public static class HubVolumeMixer
         {
             // Défaut multimedia + communications + console (suffisant pour le mixeur Hub).
             // Pas d'EnumAudioEndpoints : crash natif fréquent hors processus PowerShell.
-            matched += SetOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, level, ref guid);
-            matched += SetOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, level, ref guid);
-            matched += SetOnEndpoint(deviceEnumerator, ERole.eConsole, pid, level, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, level, true, level > 0.0001f, false, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, level, true, level > 0.0001f, false, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eConsole, pid, level, true, level > 0.0001f, false, ref guid);
         }
         finally
         {
@@ -71,14 +88,65 @@ public static class HubVolumeMixer
         return matched;
     }
 
-    private static int SetOnEndpoint(IMMDeviceEnumerator enumerator, ERole role, int pid, float level, ref Guid guid)
+    /// <summary>Mute Windows (Core Audio) sans toucher le %.</summary>
+    public static int SetApplicationMute(int pid, bool muted)
+    {
+        Guid guid = Guid.Empty;
+        int matched = 0;
+
+        IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+        try
+        {
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, 0f, false, muted, true, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, 0f, false, muted, true, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eConsole, pid, 0f, false, muted, true, ref guid);
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(deviceEnumerator);
+        }
+
+        return matched;
+    }
+
+    /// <summary>Volume + mute atomiques (pour sync mixeur ↔ popup Hub).</summary>
+    public static int SetApplicationVolumeAndMute(int pid, float levelPercent, bool muted)
+    {
+        Guid guid = Guid.Empty;
+        float level = Math.Max(0f, Math.Min(1f, levelPercent / 100f));
+        int matched = 0;
+
+        IMMDeviceEnumerator deviceEnumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+        try
+        {
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eMultimedia, pid, level, true, muted, true, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eCommunications, pid, level, true, muted, true, ref guid);
+            matched += SetOnEndpoint(deviceEnumerator, ERole.eConsole, pid, level, true, muted, true, ref guid);
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(deviceEnumerator);
+        }
+
+        return matched;
+    }
+
+    private static int SetOnEndpoint(
+        IMMDeviceEnumerator enumerator,
+        ERole role,
+        int pid,
+        float level,
+        bool setVolume,
+        bool muteValue,
+        bool setMute,
+        ref Guid guid)
     {
         IMMDevice speakers = null;
         try
         {
             enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, role, out speakers);
             if (speakers == null) return 0;
-            return SetOnDevice(speakers, pid, level, ref guid);
+            return SetOnDevice(speakers, pid, level, setVolume, muteValue, setMute, ref guid);
         }
         catch
         {
@@ -90,7 +158,14 @@ public static class HubVolumeMixer
         }
     }
 
-    private static int SetOnDevice(IMMDevice device, int pid, float level, ref Guid guid)
+    private static int SetOnDevice(
+        IMMDevice device,
+        int pid,
+        float level,
+        bool setVolume,
+        bool muteValue,
+        bool setMute,
+        ref Guid guid)
     {
         Guid iid = typeof(IAudioSessionManager2).GUID;
         object o;
@@ -122,8 +197,20 @@ public static class HubVolumeMixer
                     ISimpleAudioVolume volume = ctl as ISimpleAudioVolume;
                     if (volume == null) continue;
 
-                    volume.SetMasterVolume(level, ref guid);
-                    volume.SetMute(level <= 0.0001f, ref guid);
+                    if (setVolume)
+                    {
+                        volume.SetMasterVolume(level, ref guid);
+                    }
+                    if (setMute)
+                    {
+                        // Mute explicite (apply/mute) — pas d'auto-unmute du set volume.
+                        volume.SetMute(muteValue, ref guid);
+                    }
+                    else if (setVolume && level > 0.0001f)
+                    {
+                        // Slider seul : volume > 0 démute.
+                        volume.SetMute(false, ref guid);
+                    }
                     matched++;
                 }
                 finally

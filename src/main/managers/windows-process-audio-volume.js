@@ -36,6 +36,8 @@ class WindowsProcessAudioVolume {
         this._queue = Promise.resolve();
         /** @type {Map<number, number>} */
         this._lastByPid = new Map();
+        /** @type {Map<number, boolean>} */
+        this._muteByPid = new Map();
         /** @type {Map<number, string>} */
         this._identityByPid = new Map();
         this._iconPath = null;
@@ -104,10 +106,12 @@ class WindowsProcessAudioVolume {
     /**
      * @param {number} pid
      * @param {number} percent 0–100
+     * @param {{ force?: boolean }} [opts]
      */
-    setVolumePercent(pid, percent) {
+    setVolumePercent(pid, percent, opts = {}) {
         const p = clampPercent(percent);
         const id = Number(pid);
+        const force = Boolean(opts.force);
         if (!Number.isInteger(id) || id <= 0) {
             return Promise.resolve({ success: false, percent: p, error: "pid invalide" });
         }
@@ -116,7 +120,7 @@ class WindowsProcessAudioVolume {
         }
 
         // Skip no-op (évite file d'attente pendant un drag / double input+change).
-        if (this._lastByPid.get(id) === p || this._pendingByPid?.get(id) === p) {
+        if (!force && (this._lastByPid.get(id) === p || this._pendingByPid?.get(id) === p)) {
             return Promise.resolve({ success: true, percent: p, matched: 1, skipped: true });
         }
         if (!this._pendingByPid) this._pendingByPid = new Map();
@@ -124,7 +128,7 @@ class WindowsProcessAudioVolume {
 
         const run = async () => {
             try {
-                if (this._lastByPid.get(id) === p) {
+                if (!force && this._lastByPid.get(id) === p) {
                     return { success: true, percent: p, matched: 1, skipped: true };
                 }
                 const exe = await this._ensureExe();
@@ -145,11 +149,175 @@ class WindowsProcessAudioVolume {
                     };
                 }
                 this._lastByPid.set(id, p);
+                if (p > 0) this._muteByPid.set(id, false);
                 return { success: true, percent: p, matched };
             } catch (err) {
                 return { success: false, percent: p, error: err?.message || String(err) };
             } finally {
                 if (this._pendingByPid?.get(id) === p) this._pendingByPid.delete(id);
+            }
+        };
+
+        const next = this._queue.then(run, run);
+        this._queue = next.then(() => undefined, () => undefined);
+        return next;
+    }
+
+    /**
+     * Mute Windows (Core Audio) pour le PID — ne touche pas le %.
+     * @param {number} pid
+     * @param {boolean} muted
+     * @param {{ force?: boolean }} [opts]
+     */
+    setMuted(pid, muted, opts = {}) {
+        const id = Number(pid);
+        const wantMute = Boolean(muted);
+        const force = Boolean(opts.force);
+        if (!Number.isInteger(id) || id <= 0) {
+            return Promise.resolve({ success: false, muted: wantMute, error: "pid invalide" });
+        }
+        if (process.platform !== "win32") {
+            return Promise.resolve({ success: false, muted: wantMute, error: "windows uniquement" });
+        }
+
+        if (!force && this._muteByPid.get(id) === wantMute) {
+            return Promise.resolve({ success: true, muted: wantMute, matched: 1, skipped: true });
+        }
+
+        const run = async () => {
+            try {
+                if (!force && this._muteByPid.get(id) === wantMute) {
+                    return { success: true, muted: wantMute, matched: 1, skipped: true };
+                }
+                const exe = await this._ensureExe();
+                let out = await execFileAsync(
+                    exe,
+                    ["mute", String(id), wantMute ? "1" : "0"],
+                    { timeoutMs: 4000 }
+                );
+                let matched = Number.parseInt(String(out).trim(), 10);
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    await new Promise((r) => setTimeout(r, 180));
+                    out = await execFileAsync(
+                        exe,
+                        ["mute", String(id), wantMute ? "1" : "0"],
+                        { timeoutMs: 4000 }
+                    );
+                    matched = Number.parseInt(String(out).trim(), 10);
+                }
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    return {
+                        success: false,
+                        muted: wantMute,
+                        matched: 0,
+                        error: "session audio introuvable (playback OFF?)"
+                    };
+                }
+                this._muteByPid.set(id, wantMute);
+                return { success: true, muted: wantMute, matched };
+            } catch (err) {
+                return { success: false, muted: wantMute, error: err?.message || String(err) };
+            }
+        };
+
+        const next = this._queue.then(run, run);
+        this._queue = next.then(() => undefined, () => undefined);
+        return next;
+    }
+
+    /**
+     * Volume + mute atomiques (CLI apply) — sync mixeur Windows sur le % Hub.
+     * @param {number} pid
+     * @param {number} percent
+     * @param {boolean} muted
+     * @param {{ force?: boolean }} [opts]
+     */
+    applyVolumeAndMute(pid, percent, muted, opts = {}) {
+        const p = clampPercent(percent);
+        const id = Number(pid);
+        const wantMute = Boolean(muted);
+        const force = Boolean(opts.force);
+        if (!Number.isInteger(id) || id <= 0) {
+            return Promise.resolve({
+                success: false,
+                percent: p,
+                muted: wantMute,
+                error: "pid invalide"
+            });
+        }
+        if (process.platform !== "win32") {
+            return Promise.resolve({
+                success: false,
+                percent: p,
+                muted: wantMute,
+                error: "windows uniquement"
+            });
+        }
+
+        if (
+            !force
+            && this._lastByPid.get(id) === p
+            && this._muteByPid.get(id) === wantMute
+        ) {
+            return Promise.resolve({
+                success: true,
+                percent: p,
+                muted: wantMute,
+                matched: 1,
+                skipped: true
+            });
+        }
+
+        const run = async () => {
+            try {
+                if (
+                    !force
+                    && this._lastByPid.get(id) === p
+                    && this._muteByPid.get(id) === wantMute
+                ) {
+                    return {
+                        success: true,
+                        percent: p,
+                        muted: wantMute,
+                        matched: 1,
+                        skipped: true
+                    };
+                }
+                const exe = await this._ensureExe();
+                let out = await execFileAsync(
+                    exe,
+                    ["apply", String(id), String(p), wantMute ? "1" : "0"],
+                    { timeoutMs: 4000 }
+                );
+                let matched = Number.parseInt(String(out).trim(), 10);
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    await new Promise((r) => setTimeout(r, 180));
+                    out = await execFileAsync(
+                        exe,
+                        ["apply", String(id), String(p), wantMute ? "1" : "0"],
+                        { timeoutMs: 4000 }
+                    );
+                    matched = Number.parseInt(String(out).trim(), 10);
+                }
+                if (!Number.isInteger(matched) || matched <= 0) {
+                    return {
+                        success: false,
+                        percent: p,
+                        muted: wantMute,
+                        matched: 0,
+                        error: "session audio introuvable (playback OFF?)"
+                    };
+                }
+                this._lastByPid.set(id, p);
+                this._muteByPid.set(id, wantMute);
+                return { success: true, percent: p, muted: wantMute, matched };
+            } catch (err) {
+                return {
+                    success: false,
+                    percent: p,
+                    muted: wantMute,
+                    error: err?.message || String(err)
+                };
             }
         };
 
