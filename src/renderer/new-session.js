@@ -1711,8 +1711,7 @@ async function launchTypeBSession({
             latencyTraceId = started.traceId;
         }
 
-        // Lire le preset default AVANT le bootstrap externe pour que --new-display
-        // naisse à la bonne résolution (sinon attach display_id reste collé à 1920x1080).
+        // Un seul encodeur : le Hub crée le new_display (plus de scrcpy.exe externe).
         const launchContext = {
             serial,
             device: selectedDevice,
@@ -1722,39 +1721,7 @@ async function launchTypeBSession({
         const presetScrcpyOpts = (typeof StreamParams !== "undefined" && StreamParams.toScrcpyOptions)
             ? StreamParams.toScrcpyOptions(launchParams, "B")
             : await buildDefaultScrcpyOptions("B", launchContext);
-        const bootstrapNewDisplay = presetScrcpyOpts?.newDisplay || null;
         setStatus(`Lancement : ${formatTypeBLaunchCommand(packageName, launchParams)}`);
-
-        const scrcpyLaunch = await window.electronAPI.launchNewInstance(
-            serial,
-            packageName,
-            normalizedUserId,
-            latencyTraceId,
-            resolvedStableId,
-            bootstrapNewDisplay
-        );
-        if (!scrcpyLaunch?.success) {
-            if (scrcpyLaunch?.reason === "already-open" && scrcpyLaunch?.sessionId) {
-                await focusExistingTypeBSession(scrcpyLaunch.sessionId, resolvedAppLabel);
-                return { skipped: true, reason: "already-open", sessionId: scrcpyLaunch.sessionId };
-            }
-            if (scrcpyLaunch?.reason === "launch-in-progress") {
-                setStatus(t("newSession.launchInProgress", { appLabel: resolvedAppLabel }), true);
-                return { skipped: true, reason: "launch-in-progress" };
-            }
-            throw new Error(scrcpyLaunch?.error || t("newSession.launchFailed"));
-        }
-
-        if (latencyTraceId && window.LaunchLatency?.mark) {
-            await window.LaunchLatency.mark(latencyTraceId, "waitDisplayStart");
-        }
-        const presetDisplayId = await waitForVirtualDisplayId(serial, scrcpyLaunch.displayId, 10000);
-        if (latencyTraceId && window.LaunchLatency?.mark) {
-            await window.LaunchLatency.mark(latencyTraceId, "waitDisplayEnd");
-        }
-        if (!Number.isInteger(presetDisplayId)) {
-            throw new Error(t("newSession.virtualDisplayMissing"));
-        }
 
         const streamOptions = {
             ...presetScrcpyOpts,
@@ -1770,14 +1737,19 @@ async function launchTypeBSession({
             userId: normalizedUserId,
             tabLabel,
             appLabel: resolvedAppLabel,
-            streamOptions,
-            presetDisplayId,
-            skipPackageLaunch: true,
-            externalLaunchId: scrcpyLaunch.launchId || null
+            streamOptions
         };
 
         const created = await window.electronAPI.newInstanceCreate(payload);
         if (!created?.success || !created?.session?.sessionId) {
+            if (created?.reason === "already-open" && created?.sessionId) {
+                await focusExistingTypeBSession(created.sessionId, resolvedAppLabel);
+                return { skipped: true, reason: "already-open", sessionId: created.sessionId };
+            }
+            if (created?.reason === "launch-in-progress") {
+                setStatus(t("newSession.launchInProgress", { appLabel: resolvedAppLabel }), true);
+                return { skipped: true, reason: "launch-in-progress" };
+            }
             throw new Error(created?.error || "creation session impossible");
         }
 
@@ -1825,7 +1797,13 @@ async function launchTypeBSession({
                 });
             }
 
+            if (latencyTraceId && window.LaunchLatency?.mark) {
+                await window.LaunchLatency.mark(latencyTraceId, "waitDisplayStart");
+            }
             const started = await pipeline.start();
+            if (latencyTraceId && window.LaunchLatency?.mark) {
+                await window.LaunchLatency.mark(latencyTraceId, "waitDisplayEnd");
+            }
             if (!started?.success) {
                 throw new Error(started?.error || "demarrage session echoue");
             }

@@ -40,6 +40,22 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
 
     ipcMain.handle("new-instance:create", async (_event, payload = {}) => {
         try {
+            if (typeof global.findTypeBLaunchConflict === "function") {
+                const conflict = global.findTypeBLaunchConflict({
+                    serial: payload.serial,
+                    packageName: payload.packageName,
+                    userId: payload.userId,
+                    stableDeviceId: payload.stableDeviceId
+                });
+                if (conflict) {
+                    return {
+                        success: false,
+                        reason: conflict.reason,
+                        sessionId: conflict.sessionId || null,
+                        error: conflict.error
+                    };
+                }
+            }
             const session = manager.createNewInstanceSession(payload);
             if (payload.externalLaunchId && typeof global.getExternalLaunchLaunchDims === "function") {
                 const dims = global.getExternalLaunchLaunchDims(payload.externalLaunchId);
@@ -78,6 +94,17 @@ function registerNewInstanceIpc({ ipcMain, manager, getWindow }) {
                     pending.streamOptions.captureOrientationLock || "null",
                     launchDims ? `${launchDims.width}x${launchDims.height}` : "dims-absentes"
                 );
+            }
+            if (pending?.serial && typeof global.prepareSessionAudioBeforeAppLaunch === "function") {
+                try {
+                    await global.prepareSessionAudioBeforeAppLaunch({
+                        sessionId,
+                        serial: pending.serial,
+                        deviceKey: pending.stableDeviceId || pending.serial
+                    });
+                } catch (err) {
+                    console.warn(`[NewInstance] prepare audio avant start:`, err?.message || err);
+                }
             }
             const session = await manager.startNewInstanceSession(sessionId);
             if (global.launchHistoryManager && session?.serial && session?.packageName) {

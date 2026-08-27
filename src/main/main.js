@@ -129,9 +129,11 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     const bringToFront = options.bringToFront === true;
 
     if (!activity) {
-        if (bringToFront) {
+        if (bringToFront || useDisplay) {
             console.warn(
-                `[launchPackageOnDisplay] activité introuvable pour bringToFront ${packageName} user=${userId ?? "default"}`
+                `[launchPackageOnDisplay] activité introuvable pour ${packageName}`
+                + ` user=${userId ?? "default"}`
+                + (useDisplay ? ` display=${displayId}` : " bringToFront")
             );
             return;
         }
@@ -158,7 +160,8 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
         );
     }
 
-    if (!bringToFront) {
+    // Type B : jamais sans --display, sinon l'app part sur l'écran téléphone (canvas Hub noir).
+    if (!bringToFront && !useDisplay) {
         launchCandidates.push(
             options.backgroundLaunch
                 ? `"${adbPath}" -s ${adbSerialArg(serial)} shell am start${userArg} --activity-task-on-home -n ${activity}`
@@ -179,9 +182,11 @@ async function launchPackageOnDisplay(serial, packageName, displayId, options = 
     }
 
     if (!launched) {
-        if (bringToFront) {
+        if (bringToFront || useDisplay) {
             console.warn(
-                `[launchPackageOnDisplay] bringToFront échec ${packageName} display=${displayId} user=${userId ?? "default"}`
+                `[launchPackageOnDisplay] échec ${packageName}`
+                + (useDisplay ? ` display=${displayId}` : "")
+                + ` user=${userId ?? "default"}`
             );
             return;
         }
@@ -1071,6 +1076,8 @@ function findTypeBLaunchConflict({ serial, packageName, userId = null, stableDev
 
     return null;
 }
+
+global.findTypeBLaunchConflict = findTypeBLaunchConflict;
 
 function getExternalLaunchLaunchDims(launchId) {
     const dims = externalLaunches[launchId]?.launchDims;

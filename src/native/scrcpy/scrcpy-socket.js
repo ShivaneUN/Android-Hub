@@ -4,7 +4,8 @@ const EventEmitter = require("events");
 const { resolveCaptureOrientationLock } = require("../../shared/stream-params");
 
 // Chemin vers scrcpy-server (poussé puis exécuté sur le téléphone)
-const DEVICE_SERVER_PATH = "/data/local/tmp/scrcpy-server.jar";
+const DEVICE_SERVER_DIR = "/data/local/tmp";
+const DEVICE_SERVER_PATH = `${DEVICE_SERVER_DIR}/scrcpy-server.jar`;
 const LOCAL_SOCKET_NAME_PREFIX = "scrcpy_";
 const PACKET_FLAG_SESSION = 1n << 63n;
 const PACKET_FLAG_CONFIG = 1n << 62n;
@@ -57,6 +58,7 @@ class ScrcpySocketClient extends EventEmitter {
         this.shellSerial = serial;
         this.scid = generateScid();
         this.socketName = LOCAL_SOCKET_NAME_PREFIX + this.scid;
+        this.deviceServerPath = `${DEVICE_SERVER_DIR}/scrcpy-${this.scid}.jar`;
         this.localPort = null;
         this.videoSocket = null;
         this.audioSocket = null;
@@ -198,7 +200,8 @@ class ScrcpySocketClient extends EventEmitter {
     }
 
     async _pushServer(serverJarPath) {
-        await this._runAdb(`push "${serverJarPath}" ${DEVICE_SERVER_PATH}`);
+        const dest = this.deviceServerPath || DEVICE_SERVER_PATH;
+        await this._runAdb(`push "${serverJarPath}" ${dest}`);
     }
 
     async _setupTunnel() {
@@ -354,8 +357,9 @@ class ScrcpySocketClient extends EventEmitter {
             }
         ];
 
+        const classpath = this.deviceServerPath || DEVICE_SERVER_PATH;
         const buildShellParts = (srvArgs) => ([
-            `CLASSPATH=${DEVICE_SERVER_PATH}`,
+            `CLASSPATH=${classpath}`,
             "app_process",
             "/",
             "com.genymobile.scrcpy.Server",
@@ -991,6 +995,12 @@ class ScrcpySocketClient extends EventEmitter {
             this.serverProcess = null;
         }
         exec(`"${this.adbPath}" -s ${this._quotedSerial()} reverse --remove localabstract:${this.socketName}`, { windowsHide: true });
+        if (this.deviceServerPath && this.deviceServerPath !== DEVICE_SERVER_PATH) {
+            exec(
+                `"${this.adbPath}" -s ${this._quotedSerial()} shell rm -f ${this.deviceServerPath}`,
+                { windowsHide: true }
+            );
+        }
     }
 
     getNewDisplayId() {

@@ -1421,6 +1421,10 @@ class NewInstanceManager extends EventEmitter {
             ? targetDisplayId
             : (hasPresetDisplay ? session.presetDisplayId : this._syncSessionDisplayId(session));
 
+        if (recreateDisplay && !Number.isInteger(session.displayId)) {
+            throw new Error("Display virtuel introuvable");
+        }
+
         if (recreateDisplay && Number.isInteger(session.displayId)) {
             session.presetDisplayId = session.displayId;
         }
@@ -1439,8 +1443,15 @@ class NewInstanceManager extends EventEmitter {
             this._prewarmInputController(session);
         }
 
-        // Jamais force-stop si l'app tourne déjà sur le VD bootstrap (skipPackageLaunch).
-        if (recreateDisplay && !session.skipPackageLaunch && session.packageName && session.serial) {
+        // Force-stop seulement sur un vrai recreate (pas le 1er start Hub, pas le rebind USB↔WiFi).
+        if (
+            recreateDisplay
+            && !session.skipPackageLaunch
+            && !session._transportRebindActive
+            && session._hadStartedOnce
+            && session.packageName
+            && session.serial
+        ) {
             await this.forceStopAppOnDevice({
                 serial: session.serial,
                 packageName: session.packageName,
@@ -1462,6 +1473,7 @@ class NewInstanceManager extends EventEmitter {
         }
 
         session.state = "started";
+        session._hadStartedOnce = true;
         this.emit("state", {
             sessionId,
             state: session.state,
