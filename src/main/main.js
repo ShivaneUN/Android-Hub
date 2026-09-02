@@ -80,6 +80,9 @@ const { UiPreferencesManager } = require("./managers/ui-preferences-manager");
 const { DisplayPresetsManager } = require("./managers/display-presets-manager");
 const { registerDisplayPresetsHandlers } = require("./ipc/display-presets-handlers");
 const { registerUiPreferencesHandlers } = require("./ipc/uiPreferencesHandlers");
+const { ClipboardSyncManager } = require("./managers/clipboard-sync-manager");
+const { DeviceFsManager } = require("./managers/device-fs-manager");
+const { registerDeviceFsHandlers } = require("./ipc/deviceFsHandlers");
 const { fromScrcpyOptions } = require("../shared/stream-params");
 const { GlobalAudioOutputManager } = require("./managers/global-audio-output-manager");
 const { DeviceAudioVolumeManager } = require("./managers/device-audio-volume-manager");
@@ -1912,6 +1915,11 @@ app.whenReady().then(() => {
 
     global.launchLatencyTracker = new LaunchLatencyTracker(app.getPath("userData"));
     global.scrcpyStartProfiler = installScrcpyStartProfiler(ScrcpySocketClient, global.launchLatencyTracker);
+    global.clipboardSyncManager = new ClipboardSyncManager({
+        getUiPreferencesManager: () => global.uiPreferencesManager
+    });
+    global.clipboardSyncManager.install(ScrcpySocketClient);
+    global.deviceFsManager = new DeviceFsManager(adbPath);
     registerLaunchLatencyHandlers();
 
     registerNewInstanceIpc({
@@ -3714,6 +3722,36 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         getDisplayPresetsManager: () => global.displayPresetsManager,
         getMainWindow: () => win,
         getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null
+    });
+    registerDeviceFsHandlers({
+        getDeviceFsManager: () => global.deviceFsManager,
+        getMainWindow: () => win,
+        getHubModalWindow: () => global.hubModalOverlayManager?.overlayWindow || null,
+        resolveSerial: async (hint = {}) => {
+            if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                const resolved = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                    deviceId: hint.deviceId || hint.stableDeviceId || null,
+                    serial: hint.serial || hint.deviceId || null
+                });
+                if (resolved) return resolved;
+            }
+            if (hint.sessionId) {
+                const entry = global.browserViewManager?.getSessionEntry?.(hint.sessionId);
+                if (entry?.deviceId) {
+                    if (global.deviceRegistry?.resolveEffectiveAdbSerial) {
+                        const fromSession = await global.deviceRegistry.resolveEffectiveAdbSerial({
+                            deviceId: entry.stableDeviceId || null,
+                            serial: entry.deviceId
+                        });
+                        if (fromSession) return fromSession;
+                    }
+                    return entry.deviceId;
+                }
+                const typeB = global.newInstanceManager?.getNewInstanceSession?.(hint.sessionId);
+                if (typeB?.serial) return typeB.serial;
+            }
+            return hint.serial || hint.deviceId || null;
+        }
     });
     registerDeviceColorsHandlers({
         getDeviceColorsManager: () => global.deviceColorsManager,

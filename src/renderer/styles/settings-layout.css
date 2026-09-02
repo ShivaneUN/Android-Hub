@@ -930,6 +930,10 @@
   color: #9aa3b5;
 }
 
+.settings-perf-mode-btn + .settings-perf-mode-btn {
+  margin-top: 8px;
+}
+
 .settings-perf-mode-btn {
   display: flex;
   align-items: flex-start;

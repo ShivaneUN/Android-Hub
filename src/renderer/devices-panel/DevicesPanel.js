@@ -503,13 +503,16 @@
 
     function renderDeviceRow(entry, { section, subLine }) {
         const deviceId = entry.deviceId || entry.serial;
+        const isOnline = section === "wifi"
+            ? entry.adbState === "connected"
+            : Boolean(entry.connected);
+        const filesBtn = isOnline
+            ? `<button type="button" class="devices-panel-btn" data-action="files" data-device-id="${escapeHtml(deviceId)}" data-device-name="${escapeHtml(entry.name)}" title="${t("devicesPanel.files")}">${t("devicesPanel.files")}</button><span class="devices-panel-action-sep" aria-hidden="true"></span>`
+            : "";
         const reconnectBtn = section === "wifi"
             ? `<button type="button" class="devices-panel-btn" data-action="reconnect" data-device-id="${escapeHtml(deviceId)}" title="${t("devicesPanel.reconnect")}">${t("devicesPanel.reconnect")}</button><span class="devices-panel-action-sep" aria-hidden="true"></span>`
             : "";
 
-        const isOnline = section === "wifi"
-            ? entry.adbState === "connected"
-            : Boolean(entry.connected);
         const statusClass = isOnline ? "online" : "offline";
         const statusBadge = isOnline ? t("devicesPanel.connectedBadge") : t("devicesPanel.offlineBadge");
         const liveLabel = isOnline ? t("devicesPanel.online") : t("devicesPanel.offline");
@@ -531,6 +534,7 @@
                     <div class="devices-panel-actions">
                         <button type="button" class="devices-panel-btn" data-action="rename" data-device-id="${escapeHtml(deviceId)}" data-original-name="${escapeHtml(entry.originalName || entry.name)}" title="${t("devicesPanel.rename")}">${t("devicesPanel.rename")}</button>
                         <span class="devices-panel-action-sep" aria-hidden="true"></span>
+                        ${filesBtn}
                         ${reconnectBtn}
                         <button type="button" class="devices-panel-btn danger" data-action="remove" data-device-id="${escapeHtml(deviceId)}" data-section="${section}" title="${t("devicesPanel.remove")}">${t("devicesPanel.remove")}</button>
                     </div>
@@ -612,6 +616,23 @@
             const currentName = btn.closest(".devices-panel-row")?.querySelector(".devices-panel-name")?.textContent?.trim();
             const originalName = btn.dataset.originalName || currentName;
             openDeviceRenameDialog(deviceId, currentName, originalName);
+            return;
+        }
+
+        if (action === "files") {
+            if (typeof window.openDeviceFsExplorer === "function") {
+                void window.openDeviceFsExplorer({
+                    deviceId,
+                    serial: deviceId,
+                    deviceName: btn.dataset.deviceName || ""
+                });
+                return;
+            }
+            void window.deviceFsAPI?.openExplorer?.({
+                deviceId,
+                serial: deviceId,
+                deviceName: btn.dataset.deviceName || ""
+            });
             return;
         }
 

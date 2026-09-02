@@ -50,8 +50,13 @@
     }
 
     function closeHubModal() {
+        window.closeDeviceFsExplorer?.();
         window.stopDevicesPanelLiveRefresh?.();
         window.hubModalWindowAPI?.close?.();
+    }
+
+    function isDeviceFsOpen() {
+        return Boolean(window.isDeviceFsExplorerOpen?.());
     }
 
     function isCleanupModalOpen() {
@@ -72,6 +77,7 @@
             panel.addEventListener("mousedown", (event) => {
                 if (event.target !== panel) return;
                 if (isCleanupModalOpen()) return;
+                if (isDeviceFsOpen()) return;
                 closeHubModal();
             });
         });
@@ -79,6 +85,12 @@
         document.addEventListener("keydown", (event) => {
             if (event.key !== "Escape") return;
             if (event.defaultPrevented) return;
+
+            if (isDeviceFsOpen()) {
+                window.closeDeviceFsExplorer?.();
+                event.preventDefault();
+                return;
+            }
 
             if (isCleanupModalOpen()) {
                 document.getElementById("cleanup-modal-cancel-btn")?.click();
@@ -115,6 +127,10 @@
             window.openHelpPanel(payload.tab || "shortcuts");
         } else {
             window.stopDevicesPanelLiveRefresh?.();
+        }
+
+        if (payload.openFiles && typeof window.openDeviceFsExplorer === "function") {
+            await window.openDeviceFsExplorer(payload.openFiles);
         }
     }
 

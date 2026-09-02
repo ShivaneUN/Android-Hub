@@ -598,6 +598,9 @@ function buildDeviceCardsHtml(connected) {
                     <span class="sidebar-device-status ${statusDot}"></span>
                     <span class="sidebar-device-name">${name}</span>
                     <div class="sidebar-device-actions">
+                        <button type="button" class="sidebar-device-audio-btn sidebar-device-files-btn" data-device-id="${device.deviceId || ""}" data-device-name="${name}" data-dock-tip="${dt("sidebar.devicePanel.files")}" aria-label="${dt("sidebar.devicePanel.files")}">
+                            <svg class="sidebar-device-audio-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M3 7h6l2 2h10v10H3z"/></svg>
+                        </button>
                         <button type="button" class="sidebar-device-audio-btn ${audioOn ? "audio-on" : "audio-off"}" data-device-key="${audioKey}" data-dock-tip="${dt("sidebar.devicePanel.audioToggle")}" aria-label="${dt("sidebar.devicePanel.audioToggle")}">
                             ${audioOn ? AUDIO_ICON_ON : AUDIO_ICON_OFF}
                         </button>
@@ -643,7 +646,20 @@ function bindDeviceCards(container, connected) {
             });
         }
 
-        const audioBtn = card.querySelector(".sidebar-device-audio-btn");
+        const filesBtn = card.querySelector(".sidebar-device-files-btn");
+        if (filesBtn) {
+            filesBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                void window.deviceFsAPI?.openExplorer?.({
+                    deviceId: device.deviceId || serial,
+                    serial,
+                    deviceName
+                });
+            });
+            filesBtn.addEventListener("dblclick", (event) => event.stopPropagation());
+        }
+
+        const audioBtn = card.querySelector(".sidebar-device-audio-btn:not(.sidebar-device-files-btn)");
         if (audioBtn) {
             audioBtn.addEventListener("click", (event) => {
                 event.stopPropagation();

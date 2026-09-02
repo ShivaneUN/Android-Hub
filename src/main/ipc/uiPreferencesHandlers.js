@@ -149,6 +149,29 @@ function registerUiPreferencesHandlers(deps) {
         return manager.setRememberScreenAcrossDisconnect(payload?.enabled === true);
     });
 
+    ipcMain.handle("ui:get-clipboard-autosync", async () => {
+        const manager = getUiPreferencesManager?.();
+        return { clipboardAutosync: manager?.getClipboardAutosync?.() !== false };
+    });
+
+    ipcMain.handle("ui:set-clipboard-autosync", async (_event, payload = {}) => {
+        const manager = getUiPreferencesManager?.();
+        if (!manager?.setClipboardAutosync) {
+            return { success: false, error: "manager-unavailable" };
+        }
+        const result = manager.setClipboardAutosync(payload?.enabled !== false);
+        if (result.success) {
+            for (const win of getWindows()) {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send("ui:clipboard-autosync-changed", {
+                        clipboardAutosync: result.clipboardAutosync
+                    });
+                }
+            }
+        }
+        return result;
+    });
+
     ipcMain.handle("ui:set-sidebar-open", async (_event, payload = {}) => {
         const manager = getUiPreferencesManager?.();
         if (!manager) {

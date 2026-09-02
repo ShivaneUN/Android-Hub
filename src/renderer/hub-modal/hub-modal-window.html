@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="../help/help-panel.css">
 <link rel="stylesheet" href="../settings-panel/settings-panel.css">
 <link rel="stylesheet" href="../styles/settings-layout.css">
+<link rel="stylesheet" href="../device-fs/device-fs.css">
 <link rel="stylesheet" href="hub-modal-window.css">
 <script src="../../shared/device-colors.js"></script>
 <script src="../styles/hub-accent.js"></script>
@@ -488,6 +489,19 @@
             </span>
           </button>
         </div>
+
+        <div class="home-shortcuts-group">
+          <div class="home-shortcuts-group-title" data-i18n="settingsPanel.clipboardGroupTitle">Presse-papiers</div>
+          <button type="button" class="settings-perf-mode-btn" id="settings-clipboard-autosync-toggle" aria-pressed="true">
+            <span class="settings-perf-mode-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
+            </span>
+            <span class="settings-perf-mode-copy">
+              <strong data-i18n="settingsPanel.clipboardTitle">Copier-coller PC ↔ appareil</strong>
+              <span data-i18n="settingsPanel.clipboardDesc">Ctrl+C / Ctrl+V entre le PC et l’appareil. Désactivez pour ne plus synchroniser le presse-papiers.</span>
+            </span>
+          </button>
+        </div>
       </div>
       <div id="settings-pane-updates" class="settings-tab-pane" data-settings-pane="updates">
         <div class="about-layout">
@@ -614,6 +628,38 @@
   </div>
 </div>
 
+</div>
+
+<div id="device-fs-overlay" class="device-fs-overlay hidden" role="presentation">
+  <div class="device-fs-dialog" role="dialog" aria-modal="true" aria-labelledby="device-fs-title">
+    <div class="device-fs-header">
+      <h3 class="device-fs-title" id="device-fs-title" data-i18n="deviceFs.title">Fichiers de l’appareil</h3>
+      <button type="button" class="device-fs-close" id="device-fs-close-btn" data-i18n-title="deviceFs.close" title="Fermer">✕</button>
+    </div>
+    <div class="device-fs-toolbar">
+      <button type="button" id="device-fs-up-btn" data-i18n="deviceFs.up">Remonter</button>
+      <span class="device-fs-path" id="device-fs-path">/sdcard</span>
+      <button type="button" id="device-fs-upload-btn" data-i18n="deviceFs.upload">Envoyer</button>
+      <button type="button" id="device-fs-download-btn" data-i18n="deviceFs.download">Télécharger</button>
+      <button type="button" id="device-fs-mkdir-btn" data-i18n="deviceFs.mkdir">Nouveau dossier</button>
+      <button type="button" id="device-fs-delete-btn" data-i18n="deviceFs.delete">Supprimer</button>
+    </div>
+    <div class="device-fs-shortcuts" id="device-fs-shortcuts">
+      <button type="button" data-fs-shortcut="/sdcard/Download" data-i18n="deviceFs.shortcutDownload">Téléchargements</button>
+      <button type="button" data-fs-shortcut="/sdcard/DCIM" data-i18n="deviceFs.shortcutDcim">DCIM</button>
+      <button type="button" data-fs-shortcut="/sdcard/Pictures" data-i18n="deviceFs.shortcutPictures">Images</button>
+      <button type="button" data-fs-shortcut="/sdcard/Documents" data-i18n="deviceFs.shortcutDocuments">Documents</button>
+      <button type="button" data-fs-shortcut="/sdcard/Movies" data-i18n="deviceFs.shortcutMovies">Vidéos</button>
+      <button type="button" data-fs-shortcut="/sdcard/Music" data-i18n="deviceFs.shortcutMusic">Musique</button>
+    </div>
+    <div class="device-fs-drop" id="device-fs-drop" data-i18n="deviceFs.dropHint">Glissez des fichiers ou dossiers du PC ici</div>
+    <ul class="device-fs-list" id="device-fs-list"></ul>
+    <div class="device-fs-footer">
+      <span class="device-fs-status" id="device-fs-status"></span>
+    </div>
+  </div>
+</div>
+
 <div id="cleanup-modal-overlay" class="modal-overlay hidden" role="presentation">
   <div class="modal-box cleanup-modal-box" role="dialog" aria-modal="true" aria-labelledby="cleanup-modal-title">
     <div class="cleanup-modal-header">
@@ -654,6 +700,7 @@
 <script src="../devices.js"></script>
 <script src="../launch-latency.js"></script>
 <script src="../devices-panel/DevicesPanel.js"></script>
+<script src="../device-fs/DeviceFsExplorer.js"></script>
 <script src="../apps/AppList.js"></script>
 <script src="../new-instance/new-instance-pipeline.js"></script>
 <script src="../new-session.js"></script>

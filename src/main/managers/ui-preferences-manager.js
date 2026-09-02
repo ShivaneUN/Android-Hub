@@ -35,6 +35,7 @@ const DEFAULT_PREFERENCES = {
     displayLayout: "grid",
     focusedDeviceId: null,
     duoDeviceIds: [null, null],
+    clipboardAutosync: true,
     performance: structuredClone(DEFAULT_PERFORMANCE_PREFS),
     deviceScreenPower: structuredClone(DEFAULT_DEVICE_SCREEN_POWER)
 };
@@ -99,6 +100,7 @@ class UiPreferencesManager {
             ];
             const performance = normalizePerformancePrefs(parsed?.performance);
             const deviceScreenPower = normalizeDeviceScreenPower(parsed?.deviceScreenPower);
+            const clipboardAutosync = parsed?.clipboardAutosync !== false;
             return {
                 locale,
                 sidebarOpen,
@@ -106,6 +108,7 @@ class UiPreferencesManager {
                 displayLayout,
                 focusedDeviceId,
                 duoDeviceIds,
+                clipboardAutosync,
                 performance,
                 deviceScreenPower
             };
@@ -147,9 +150,20 @@ class UiPreferencesManager {
             displayLayout: this.getDisplayLayout(),
             focusedDeviceId: this.getFocusedDeviceId(),
             duoDeviceIds: this.getDuoDeviceIds(),
+            clipboardAutosync: this.getClipboardAutosync(),
             performance: this.getPerformancePrefs(),
             deviceScreenPower: this.getDeviceScreenPowerPrefs()
         };
+    }
+
+    getClipboardAutosync() {
+        return this.preferences.clipboardAutosync !== false;
+    }
+
+    setClipboardAutosync(enabled) {
+        this.preferences.clipboardAutosync = enabled !== false;
+        this.savePreferences();
+        return { success: true, clipboardAutosync: this.getClipboardAutosync() };
     }
 
     getPerformancePrefs() {

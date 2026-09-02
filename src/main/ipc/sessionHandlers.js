@@ -759,10 +759,21 @@ function attachTabCycleHandler(webContents) {
     webContents.on("before-input-event", (event, input) => {
         if (input.type !== "keyDown") return;
         if (!(input.control || input.meta)) return;
-        if (input.key !== "Tab") return;
+
+        if (input.key === "Tab") {
+            event.preventDefault();
+            cycleSessionTab(input.shift ? "prev" : "next");
+            return;
+        }
+
+        if (input.alt) return;
+        if (input.isAutoRepeat) return;
+        const key = String(input.key || "").toLowerCase();
+        if (key !== "c" && key !== "x" && key !== "v") return;
+        if (!global.clipboardSyncManager?.isEnabled?.()) return;
 
         event.preventDefault();
-        cycleSessionTab(input.shift ? "prev" : "next");
+        void global.clipboardSyncManager.handleShortcut(webContents, key);
     });
 }
 

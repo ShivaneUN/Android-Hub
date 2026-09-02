@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld("videoAPI", {
         ipcRenderer.send("launch-latency:first-frame", { sessionId, ts: ts || Date.now() })
 });
 
+contextBridge.exposeInMainWorld("deviceFsAPI", {
+    pushPaths: (payload) => ipcRenderer.invoke("device-fs:push-paths", payload)
+});
+
 contextBridge.exposeInMainWorld("audioAPI", {
     getGlobalState: () => ipcRenderer.invoke("audio:getGlobalState"),
     onGlobalStateChanged: (callback) =>

@@ -16,6 +16,10 @@
         return document.getElementById("settings-perf-mode-toggle");
     }
 
+    function getClipboardToggle() {
+        return document.getElementById("settings-clipboard-autosync-toggle");
+    }
+
     function getRememberScreenToggle() {
         return document.getElementById("settings-remember-screen-toggle");
     }
@@ -85,11 +89,42 @@
         return result.deviceScreenPower || { rememberAcrossDisconnect: enabled };
     }
 
+    async function readClipboardPrefs() {
+        if (window.uiPreferencesAPI?.getClipboardAutosync) {
+            try {
+                return await window.uiPreferencesAPI.getClipboardAutosync();
+            } catch (_err) {
+                /* fall through */
+            }
+        }
+        return { clipboardAutosync: true };
+    }
+
+    async function writeClipboardAutosync(enabled) {
+        if (!window.uiPreferencesAPI?.setClipboardAutosync) {
+            window.showHubToast?.(t("settingsPanel.clipboardSaveFailed"), "error");
+            return null;
+        }
+        const result = await window.uiPreferencesAPI.setClipboardAutosync(enabled);
+        if (!result?.success) {
+            window.showHubToast?.(result?.error || t("settingsPanel.clipboardSaveFailed"), "error");
+            return null;
+        }
+        return result;
+    }
+
     function applyLocalDom(prefs = {}) {
         const modeOn = prefs.performanceMode === true;
         document.body?.classList.toggle("perf-reduce-motion", modeOn || prefs.uiAnimations === false);
         document.body?.classList.toggle("perf-hide-fps", modeOn || prefs.fpsMonitor === false);
         document.body?.classList.toggle("perf-no-app-logos", modeOn || prefs.appLogos === false);
+    }
+
+    function applyClipboardUi(enabled) {
+        const btn = getClipboardToggle();
+        if (!btn) return;
+        btn.classList.toggle("is-on", enabled === true);
+        btn.setAttribute("aria-pressed", enabled === true ? "true" : "false");
     }
 
     function applyRememberScreenUi(enabled) {
@@ -120,9 +155,14 @@
     }
 
     async function syncToggleUi() {
-        const [prefs, screenPrefs] = await Promise.all([readPrefs(), readScreenPowerPrefs()]);
+        const [prefs, screenPrefs, clipboardPrefs] = await Promise.all([
+            readPrefs(),
+            readScreenPowerPrefs(),
+            readClipboardPrefs()
+        ]);
         applyPrefsToUi(prefs);
         applyRememberScreenUi(screenPrefs?.rememberAcrossDisconnect === true);
+        applyClipboardUi(clipboardPrefs?.clipboardAutosync !== false);
     }
 
     function bindPerformanceSection() {
@@ -161,6 +201,15 @@
                     const result = await writeRememberScreen(next);
                     if (!result) return;
                     applyRememberScreenUi(result.rememberAcrossDisconnect === true);
+                })();
+            });
+
+            getClipboardToggle()?.addEventListener("click", () => {
+                const next = !getClipboardToggle()?.classList.contains("is-on");
+                void (async () => {
+                    const result = await writeClipboardAutosync(next);
+                    if (!result) return;
+                    applyClipboardUi(result.clipboardAutosync !== false);
                 })();
             });
 

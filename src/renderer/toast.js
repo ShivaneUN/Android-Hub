@@ -65,4 +65,8 @@
     }
 
     window.showHubToast = showToast;
+
+    window.deviceFsAPI?.onToast?.((payload) => {
+        if (payload?.message) showToast(payload.message, payload.type || "info");
+    });
 })();

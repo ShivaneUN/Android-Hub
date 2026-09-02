@@ -1,0 +1,153 @@
+.device-fs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.device-fs-overlay.hidden {
+  display: none;
+}
+
+.device-fs-dialog {
+  width: min(720px, 100%);
+  height: min(620px, 100%);
+  background: var(--bg-panel, #141820);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary, #f5f7fb);
+}
+
+.device-fs-header,
+.device-fs-toolbar,
+.device-fs-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.device-fs-footer {
+  border-bottom: none;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  min-height: 40px;
+}
+
+.device-fs-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.device-fs-path {
+  font-size: 12px;
+  opacity: 0.7;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-fs-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+}
+
+.device-fs-shortcuts button,
+.device-fs-toolbar button,
+.device-fs-close {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.device-fs-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.device-fs-shortcuts button:hover,
+.device-fs-toolbar button:hover,
+.device-fs-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.device-fs-drop {
+  margin: 0 16px 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.device-fs-drop.is-active {
+  border-color: var(--accent, #4ea1ff);
+  opacity: 1;
+}
+
+.device-fs-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 8px 16px;
+  overflow: auto;
+  flex: 1;
+}
+
+.device-fs-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.device-fs-item:hover,
+.device-fs-item.is-selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.device-fs-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-fs-empty {
+  opacity: 0.6;
+  padding: 24px;
+  text-align: center;
+}
+
+.device-fs-overlay.is-busy .device-fs-dialog {
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.device-fs-status {
+  font-size: 12px;
+  opacity: 0.75;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

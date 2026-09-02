@@ -297,6 +297,11 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
     getDeviceScreenPowerPrefs: () => ipcRenderer.invoke("ui:get-device-screen-power-prefs"),
     setRememberScreenAcrossDisconnect: (enabled) =>
         ipcRenderer.invoke("ui:set-remember-screen-across-disconnect", { enabled: Boolean(enabled) }),
+    getClipboardAutosync: () => ipcRenderer.invoke("ui:get-clipboard-autosync"),
+    setClipboardAutosync: (enabled) =>
+        ipcRenderer.invoke("ui:set-clipboard-autosync", { enabled: Boolean(enabled) }),
+    onClipboardAutosyncChanged: (callback) =>
+        ipcRenderer.on("ui:clipboard-autosync-changed", (_event, data) => callback(data)),
     setSidebarOpen: (sidebarOpen) => ipcRenderer.invoke("ui:set-sidebar-open", { sidebarOpen }),
     setDisplayPreferences: (payload) => ipcRenderer.invoke("ui:set-display-preferences", payload),
     getHubWallpaper: () => ipcRenderer.invoke("ui:get-hub-wallpaper"),
@@ -308,6 +313,21 @@ contextBridge.exposeInMainWorld("uiPreferencesAPI", {
         ipcRenderer.on("ui:wallpaper-changed", (_event, data) => callback(data)),
     onPerformanceChanged: (callback) =>
         ipcRenderer.on("ui:performance-changed", (_event, data) => callback(data))
+});
+
+contextBridge.exposeInMainWorld("deviceFsAPI", {
+    shortcuts: () => ipcRenderer.invoke("device-fs:shortcuts"),
+    list: (payload) => ipcRenderer.invoke("device-fs:list", payload),
+    mkdir: (payload) => ipcRenderer.invoke("device-fs:mkdir", payload),
+    remove: (payload) => ipcRenderer.invoke("device-fs:remove", payload),
+    pickAndPush: (payload) => ipcRenderer.invoke("device-fs:pick-and-push", payload),
+    pushPaths: (payload) => ipcRenderer.invoke("device-fs:push-paths", payload),
+    pull: (payload) => ipcRenderer.invoke("device-fs:pull", payload),
+    openExplorer: (payload) => ipcRenderer.invoke("device-fs:open-explorer", payload),
+    onProgress: (callback) =>
+        ipcRenderer.on("device-fs:progress", (_event, data) => callback(data)),
+    onToast: (callback) =>
+        ipcRenderer.on("device-fs:toast", (_event, data) => callback(data))
 });
 
 contextBridge.exposeInMainWorld("maintenanceAPI", {
