@@ -1,7 +1,7 @@
 {
   "name": "android-hub",
-  "version": "1.1.62",
-  "patchRevision": 4,
+  "version": "1.1.63",
+  "patchRevision": 0,
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",

@@ -100,8 +100,7 @@ function registerUiPreferencesHandlers(deps) {
                 hoverPreview: true,
                 dockBatteryLive: true,
                 uiAnimations: true,
-                sessionTransportSwitch: true,
-                experimentalYumeRenderer: false
+                sessionTransportSwitch: true
             };
         }
         return manager.getPerformancePrefs();

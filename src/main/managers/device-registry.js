@@ -593,6 +593,11 @@ class DeviceRegistry {
                 this.wifiDevicesManager.touchLastSeen(config.deviceId);
             } catch (err) {
                 console.warn(`[DeviceRegistry] Auto-connect WiFi échec ${config.deviceId}:`, err.message);
+                global.hubDiagnosticLog?.append?.({
+                    level: "warn",
+                    scope: "wifi",
+                    message: `Auto-connect WiFi ${config.deviceId}: ${err.message}`
+                });
             }
         }
     }

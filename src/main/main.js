@@ -77,7 +77,8 @@ const { registerAppMetadataHandlers, attachAppMetadataPrefetch } = require("./ip
 const { MaintenanceCleanupManager } = require("./managers/maintenance-cleanup-manager");
 const { registerMaintenanceHandlers } = require("./ipc/maintenanceHandlers");
 const { UiPreferencesManager } = require("./managers/ui-preferences-manager");
-const { HubDiagnosticLog } = require("./managers/hub-diagnostic-log");
+const { HubDiagnosticLog, installHubLogWebContentsBridge } = require("./managers/hub-diagnostic-log");
+installHubLogWebContentsBridge();
 const { registerHubLogHandlers } = require("./ipc/hubLogHandlers");
 const { DisplayPresetsManager } = require("./managers/display-presets-manager");
 const { registerDisplayPresetsHandlers } = require("./ipc/display-presets-handlers");
@@ -1762,9 +1763,13 @@ app.whenReady().then(() => {
     global.customNamesManager = new CustomNamesManager(userDataPath);
     global.uiPreferencesManager = new UiPreferencesManager(userDataPath);
     global.hubDiagnosticLog = new HubDiagnosticLog();
+    global.hubDiagnosticLog.installGlobalCapture();
+    for (const existing of BrowserWindow.getAllWindows()) {
+        global.hubDiagnosticLog.attachWebContents(existing.webContents);
+    }
     global.hubDiagnosticLog.append({
         scope: "hub",
-        message: `Log local prêt (Yume ${global.uiPreferencesManager.getPerformancePrefs?.()?.experimentalYumeRenderer ? "ON" : "OFF"})`
+        message: "Log local prêt"
     });
     global.deviceColorsManager = new DeviceColorsManager(userDataPath);
     global.displayPresetsManager = new DisplayPresetsManager(userDataPath);
@@ -2724,6 +2729,11 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             return { success: true, launchId, displayId: null };
         } catch (err) {
             console.error("[NewInstance] Erreur lancement scrcpy:", err.message);
+            global.hubDiagnosticLog?.append?.({
+                level: "error",
+                scope: "video",
+                message: `Lancement scrcpy : ${err.message}`
+            });
             return { success: false, error: err.message };
         }
         } finally {
@@ -2949,6 +2959,12 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                         forwardTypeAVideoEvent(tabId, "video-packet", packetPayload);
                     } catch (err) {
                         console.error("❌ ERREUR ENVOI IPC PACKET:", err.message);
+                        global.hubDiagnosticLog?.append?.({
+                            level: "error",
+                            scope: "video",
+                            sessionId: tabId,
+                            message: `IPC packet Type A : ${err.message}`
+                        });
                     }
                 }
             });
@@ -2977,6 +2993,12 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
 
             scrcpyClient.on("error", (err) => {
                 console.error(`[Video] Erreur pour ${tabId}:`, err.message);
+                global.hubDiagnosticLog?.append?.({
+                    level: "error",
+                    scope: "video",
+                    sessionId: tabId,
+                    message: `Stream Type A : ${err.message}`
+                });
                 if (win && !win.isDestroyed()) {
                     const errorPayload = { tabId, error: err.message };
                     forwardTypeAVideoEvent(tabId, "video-error", errorPayload);
@@ -3046,6 +3068,12 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
             } catch (err) {
                 if (options.videoCodec === "h265") {
                     console.warn(`[Video] H265 non supporté par cet appareil — bascule sur H264 (${tabId})`);
+                    global.hubDiagnosticLog?.append?.({
+                        level: "warn",
+                        scope: "video",
+                        sessionId: tabId,
+                        message: "H265 non supporté — bascule H264"
+                    });
 
                     client.stop();
                     delete videoClients[tabId];
@@ -3084,10 +3112,22 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
                 } else {
                     const canRetryWithNewDisplay = Number.isInteger(options.displayId);
                     if (!canRetryWithNewDisplay) {
+                        global.hubDiagnosticLog?.append?.({
+                            level: "error",
+                            scope: "video",
+                            sessionId: tabId,
+                            message: `Démarrage stream Type A : ${err.message}`
+                        });
                         throw err;
                     }
 
                     console.warn(`[Video] display_id=${options.displayId} indisponible pour ${tabId}, fallback en new_display.`);
+                    global.hubDiagnosticLog?.append?.({
+                        level: "warn",
+                        scope: "video",
+                        sessionId: tabId,
+                        message: `display_id=${options.displayId} indisponible — fallback new_display`
+                    });
 
                     client.stop();
                     delete videoClients[tabId];

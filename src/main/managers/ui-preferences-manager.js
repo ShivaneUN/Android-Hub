@@ -10,8 +10,7 @@ const DEFAULT_PERFORMANCE_PREFS = {
     hoverPreview: true,
     dockBatteryLive: true,
     uiAnimations: true,
-    sessionTransportSwitch: true,
-    experimentalYumeRenderer: false
+    sessionTransportSwitch: true
 };
 
 const PERFORMANCE_FEATURE_KEYS = [
@@ -69,7 +68,6 @@ function normalizePerformancePrefs(raw) {
     for (const key of PERFORMANCE_FEATURE_KEYS) {
         prefs[key] = source[key] !== false;
     }
-    prefs.experimentalYumeRenderer = source.experimentalYumeRenderer === true;
     return prefs;
 }
 
@@ -236,22 +234,9 @@ class UiPreferencesManager {
             }
         }
 
-        if (Object.prototype.hasOwnProperty.call(patch, "experimentalYumeRenderer")) {
-            next.experimentalYumeRenderer = patch.experimentalYumeRenderer === true;
-        }
-
         this.preferences.performance = normalizePerformancePrefs(next);
         this.savePreferences();
-        const saved = this.getPerformancePrefs();
-        if (current.experimentalYumeRenderer !== saved.experimentalYumeRenderer) {
-            global.hubDiagnosticLog?.append?.({
-                scope: "yume",
-                message: saved.experimentalYumeRenderer
-                    ? "Option Yume-chan ON (Paramètres)"
-                    : "Option Yume-chan OFF (Paramètres)"
-            });
-        }
-        return { success: true, performance: saved };
+        return { success: true, performance: this.getPerformancePrefs() };
     }
 
     isPerformanceFeatureEnabled(key) {

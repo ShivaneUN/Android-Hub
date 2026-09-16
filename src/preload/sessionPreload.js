@@ -39,9 +39,6 @@ contextBridge.exposeInMainWorld("videoAPI", {
     activateSession: (sessionId) => ipcRenderer.invoke("session:switchTo", sessionId),
     reportLaunchLatencyFirstFrame: (sessionId, ts) =>
         ipcRenderer.send("launch-latency:first-frame", { sessionId, ts: ts || Date.now() }),
-    getPerformancePrefs: () => ipcRenderer.invoke("ui:get-performance-prefs"),
-    onPerformanceChanged: (callback) =>
-        ipcRenderer.on("ui:performance-changed", (_event, data) => callback(data)),
     appendHubLog: (payload) => ipcRenderer.send("hub-log:append", payload || {})
 });
 

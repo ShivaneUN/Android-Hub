@@ -19,6 +19,26 @@ function hubDiag(level, message, scope = "yume") {
     }
 }
 
+const hubDiagThrottleAt = new Map();
+function hubDiagThrottled(level, message, scope = "video", waitMs = 4000) {
+    const key = `${level}:${scope}:${message}`;
+    const now = Date.now();
+    const last = hubDiagThrottleAt.get(key) || 0;
+    if (now - last < waitMs) return;
+    hubDiagThrottleAt.set(key, now);
+    hubDiag(level, message, scope);
+}
+
+window.addEventListener("error", (event) => {
+    const msg = event?.error?.message || event?.message || "Erreur JS";
+    hubDiagThrottled("error", msg, "session", 2000);
+});
+window.addEventListener("unhandledrejection", (event) => {
+    const reason = event?.reason;
+    const msg = reason?.message || String(reason || "Promise rejected");
+    hubDiagThrottled("error", msg, "session", 2000);
+});
+
 window.addEventListener("storage", (event) => {
     if (event.key !== "androidHub.uiTheme") return;
     document.documentElement.dataset.videoFit = "contain";
@@ -384,8 +404,8 @@ function createYumeVideoSink(canvasEl) {
         }
         if (nextEnabled !== enabled) {
             hubDiag("info", nextEnabled
-                ? "Yume ON — frames via <video> (paysage et portrait)"
-                : "Yume OFF — canvas 2D");
+                ? "Yume — frames via <video> (paysage et portrait)"
+                : "Yume indisponible — canvas 2D");
         }
         enabled = nextEnabled;
         if (!enabled) {
@@ -401,9 +421,8 @@ function createYumeVideoSink(canvasEl) {
     function present(frame, { rotated = false } = {}) {
         lastRotated = Boolean(rotated);
         if (!startTrack() || !writer) {
-            try { frame.close(); } catch (_err) { /* noop */ }
             hubDiag("error", "present() sans piste <video>");
-            return;
+            return false;
         }
         setPresenting(true);
         if (!firstPresentLogged) {
@@ -420,6 +439,7 @@ function createYumeVideoSink(canvasEl) {
             try { frame.close(); } catch (_err) { /* noop */ }
         });
         scheduleLayoutSync();
+        return true;
     }
 
     function captureJpeg(quality = 0.55) {
@@ -512,7 +532,10 @@ function createVideoFramePresenter(ctx, canvasEl, sessionIdParam) {
             const yume = window.__yumeVideoSink;
             if (yume?.isEnabled?.()) {
                 const layout = layoutCanvasForFrame(canvasEl, frameToDraw, sessionIdParam);
-                yume.present(frameToDraw, { rotated: layout.rotated });
+                if (!yume.present(frameToDraw, { rotated: layout.rotated })) {
+                    yume.markCanvasFallback("present() sans piste <video> → canvas");
+                    drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
+                }
             } else {
                 drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
             }
@@ -1057,6 +1080,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
                 state.frameCount += 1;
             },
             error: (err) => {
+                hubDiagThrottled("error", `Décodeur Type A : ${err?.message || err}`, "video");
                 console.error(`[SessionView ${tabId}] Erreur decodeur:`, err);
             }
         });
@@ -1079,6 +1103,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
             await configureDecoder(state.codecMeta, state.streamFormat, avcDescription);
             flushQueue();
         } catch (err) {
+            hubDiag("error", `Reconfig décodeur Type A : ${err?.message || err}`, "video");
             console.error(`[SessionView ${tabId}] Echec reconfiguration decodeur:`, err);
         } finally {
             state.decoderInitializing = false;
@@ -1117,6 +1142,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
             });
             state.decoder.decode(chunk);
         } catch (err) {
+            hubDiagThrottled("error", `Decode chunk Type A : ${err?.message || err}`, "video");
             console.error(`[SessionView ${tabId}] Erreur decode chunk:`, err);
         }
     }
@@ -1149,6 +1175,7 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
     window.videoAPI.onVideoCodecMeta((eventData) => {
         if (eventData.tabId !== tabId) return;
         initDecoder(eventData).catch((err) => {
+            hubDiag("error", `Init décodeur Type A : ${err?.message || err}`, "video");
             console.error(`[SessionView ${tabId}] Erreur init decodeur:`, err);
         });
     });
@@ -1164,7 +1191,11 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
 
     window.videoAPI.onVideoError((eventData) => {
         if (eventData.tabId !== tabId) return;
-        if (eventData.codecFallback) return;
+        if (eventData.codecFallback) {
+            hubDiag("warn", eventData.error || "Fallback codec Type A", "video");
+            return;
+        }
+        hubDiag("error", `Stream Type A : ${eventData.error || "erreur"}`, "video");
         console.error(`[SessionView ${tabId}] Erreur stream:`, eventData.error);
     });
 
@@ -1278,6 +1309,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
 
     async function initDecoder(meta) {
         if (state.decoderReady || state.decoder) return;
+        try {
         // Soft cut : ne pas réassigner width/height si identiques (sinon clear canvas).
         if (canvasElement.width !== meta.width || canvasElement.height !== meta.height) {
             canvasElement.width = meta.width;
@@ -1302,6 +1334,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
                 state.frameCount += 1;
             },
             error: (err) => {
+                hubDiagThrottled("error", `Décodeur Type B : ${err?.message || err}`, "video");
                 console.error(`[SessionView ${sessionIdParam}] Erreur decodeur:`, err);
             }
         });
@@ -1309,6 +1342,10 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         state.decoderReady = true;
         hubDiag("info", `Codec Type B ${meta.codecId || "h264"} ${meta.width}x${meta.height}`, "video");
         flushQueue();
+        } catch (err) {
+            hubDiag("error", `Init décodeur Type B : ${err?.message || err}`, "video");
+            throw err;
+        }
     }
 
     function decodePacket(packet) {
@@ -1346,6 +1383,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
             });
             state.decoder.decode(chunk);
         } catch (err) {
+            hubDiagThrottled("error", `Decode packet Type B : ${err?.message || err}`, "video");
             console.error(`[SessionView ${sessionIdParam}] Erreur decode packet:`, err);
         }
     }
@@ -1359,6 +1397,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
     window.videoAPI.onNewInstanceVideoCodecMeta((data) => {
         if (!data || data.sessionId !== sessionIdParam) return;
         initDecoder(data).catch((err) => {
+            hubDiag("error", `Init décodeur Type B : ${err?.message || err}`, "video");
             console.error(`[SessionView ${sessionIdParam}] Erreur init decodeur:`, err);
         });
     });
@@ -1375,7 +1414,11 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
 
     window.videoAPI.onNewInstanceVideoError((data) => {
         if (!data || data.sessionId !== sessionIdParam) return;
-        if (data.codecFallback) return;
+        if (data.codecFallback) {
+            hubDiag("warn", data.error || "Fallback codec Type B", "video");
+            return;
+        }
+        hubDiag("error", `Stream Type B : ${data.error || "erreur"}`, "video");
         console.error(`[SessionView ${sessionIdParam}] Erreur stream:`, data.error);
     });
 
@@ -1639,31 +1682,26 @@ async function resolveSessionDeviceId(fallbackDeviceId) {
     return "";
 }
 
-function bindYumeRendererPref() {
+function bindYumeRenderer() {
     if (!canvas || window.__yumeVideoSink) return;
     window.__yumeVideoSink = createYumeVideoSink(canvas);
     hubDiag(
         "info",
         `Session ${sessionViewType} — MediaStreamTrackGenerator=${isYumeRendererSupported() ? "oui" : "non"}`
     );
-    const apply = (prefs) => {
-        window.__yumeVideoSink.setEnabled(prefs?.experimentalYumeRenderer === true);
-    };
-    if (window.videoAPI?.getPerformancePrefs) {
-        window.videoAPI.getPerformancePrefs().then(apply).catch(() => apply({}));
-    }
-    window.videoAPI?.onPerformanceChanged?.((payload) => apply(payload?.performance));
+    window.__yumeVideoSink.setEnabled(true);
 }
 
 async function bootstrapSessionView() {
     const sessionType = type ? String(type).toUpperCase() : "";
 
     if (!sessionId || !sessionType) {
+        hubDiag("error", "sessionId ou type manquant dans l’URL", "session");
         console.error("[SessionView] sessionId ou type manquant dans query string");
         return;
     }
 
-    bindYumeRendererPref();
+    bindYumeRenderer();
 
     if (sessionType === "B") {
         setPortraitDisplay(sessionId, false);

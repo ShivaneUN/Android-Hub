@@ -271,7 +271,7 @@ class WifiAdbService {
      * Reconnecte l'ADB WiFi à partir de la config sauvée.
      * Si usbSerial est mort (débranchement), utilise l'IP sauvée + adb connect (pas de fetch IP USB).
      */
-    async reconnectSaved(deviceId, { usbSerial = null } = {}) {
+    async reconnectSaved(deviceId, { usbSerial = null, forceTcpip = false } = {}) {
         const entry = this.wifiDevicesManager.getByDeviceId(deviceId);
         if (!entry?.ip && !usbSerial) {
             throw new Error("Configuration WiFi introuvable.");
@@ -328,7 +328,13 @@ class WifiAdbService {
             throw new Error("Configuration WiFi introuvable.");
         }
 
-        // Évite `adb tcpip` à chaque fois : ça redémarre adbd et tue scrcpy / les apps.
+        // Après reboot, adbd est USB-only : tcpip obligatoire. Sinon on évite tcpip
+        // (ça redémarre adbd et tue scrcpy) tant que `adb connect` suffit.
+        if (forceTcpip && liveUsb) {
+            await this.enableTcpip(liveUsb, port);
+            return this.connectWithRetry(ip, port);
+        }
+
         try {
             return await this.connectWithRetry(ip, port);
         } catch (connectErr) {

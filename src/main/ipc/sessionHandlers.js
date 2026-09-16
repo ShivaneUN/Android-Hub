@@ -1311,6 +1311,14 @@ function setupBrowserViewVideoForwarding(newInstanceManager, getMainWindow) {
     newInstanceManager.on("video-error", (data) => {
         if (!data?.sessionId) return;
         forward(data.sessionId, "new-instance:video-error", data);
+        global.hubDiagnosticLog?.append?.({
+            level: data.codecFallback ? "warn" : "error",
+            scope: "video",
+            sessionId: data.sessionId,
+            message: data.codecFallback
+                ? (data.error || "Fallback codec Type B")
+                : `Stream Type B : ${data.error || "erreur"}`
+        });
 
         const win = typeof getMainWindow === "function" ? getMainWindow() : null;
         if (data.codecFallback) {

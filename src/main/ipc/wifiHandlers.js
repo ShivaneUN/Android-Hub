@@ -567,12 +567,66 @@ async function handleTopologyChangeForWifiSessions(deps, unified, previousUnifie
             console.log(
                 `[wifi][topology] USB rebranché device=${device.deviceId} — WiFi coupé (toggle → USB)`
             );
+            global.hubDiagnosticLog?.append?.({
+                level: "warn",
+                scope: "wifi",
+                message: `USB rebranché — ADB WiFi coupé (${device.deviceId})`
+            });
             notifyTransportReattachState(deps.getMainWindow, {
                 deviceId: device.deviceId,
                 phase: "end",
                 silent: true
             });
         };
+
+        // Reboot / adbd reset : USB revient, ADB WiFi est mort, aucune session.
+        // L'ancien chemin coupait le WiFi (wifiEnabled=false + adb disconnect) —
+        // d'où la perte d'ADB WiFi après un redémarrage d'appareil.
+        if (!hasSessions && wasWifiEnabled && !device.wifiAvailable) {
+            const usbSerial = device.usbSerial
+                || (registry?.resolveLiveUsbSerial
+                    ? await registry.resolveLiveUsbSerial({ deviceId: device.deviceId }).catch(() => null)
+                    : null);
+            console.log(
+                `[wifi][topology] USB rebranché device=${device.deviceId} — ADB WiFi mort, restauration tcpip`
+                + ` usbSerial=${usbSerial || "?"}`
+            );
+            global.hubDiagnosticLog?.append?.({
+                level: "warn",
+                scope: "wifi",
+                message: `USB revenu, ADB WiFi hors ligne — restauration tcpip (${device.deviceId})`
+            });
+            try {
+                await wifiService.reconnectSaved(device.deviceId, {
+                    usbSerial: usbSerial || undefined,
+                    forceTcpip: Boolean(usbSerial)
+                });
+                // USB est là : le Hub reste en USB. On ne fait que réarmer adbd
+                // (tcpip) pour ne pas perdre l'ADB WiFi au prochain débranchement.
+                if (wifiManager?.setWifiEnabled) {
+                    wifiManager.setWifiEnabled(device.deviceId, false);
+                }
+                global.hubDiagnosticLog?.append?.({
+                    level: "info",
+                    scope: "wifi",
+                    message: `tcpip restauré, transport USB (${device.deviceId})`
+                });
+                if (typeof deps.refreshDeviceList === "function") {
+                    await deps.refreshDeviceList();
+                }
+            } catch (err) {
+                console.warn(
+                    `[wifi][topology] restauration WiFi device=${device.deviceId}:`,
+                    err?.message || err
+                );
+                global.hubDiagnosticLog?.append?.({
+                    level: "error",
+                    scope: "wifi",
+                    message: `Restauration ADB WiFi ${device.deviceId}: ${err?.message || err}`
+                });
+            }
+            continue;
+        }
 
         // Sessions actives en WiFi (ou WiFi armé) → demander avant de basculer.
         if (hasSessions && (onWifiShell || wasWifiEnabled)) {
@@ -1201,6 +1255,28 @@ function registerWifiHandlers(deps) {
             if (wifiManager?.setWifiEnabled && config && !config.wifiEnabled) {
                 wifiManager.setWifiEnabled(deviceId, true);
             }
+            const wifiService = getWifiAdbService();
+            const registry = getDeviceRegistry();
+            const wifiSerial = config?.ip
+                ? wifiService?.buildWifiSerial?.(config.ip, config.port || 5555)
+                : null;
+            const wifiOnline = wifiSerial
+                ? await wifiService?.isAdbOnline?.(wifiSerial)
+                : false;
+            if (!wifiOnline) {
+                const usbSerial = registry?.resolveLiveUsbSerial
+                    ? await registry.resolveLiveUsbSerial({ deviceId }).catch(() => null)
+                    : null;
+                global.hubDiagnosticLog?.append?.({
+                    level: "warn",
+                    scope: "wifi",
+                    message: `Rester WiFi — ADB hors ligne, restauration tcpip (${deviceId})`
+                });
+                await wifiService.reconnectSaved(deviceId, {
+                    usbSerial: usbSerial || undefined,
+                    forceTcpip: Boolean(usbSerial)
+                });
+            }
             wifiManager.touchLastSeen?.(deviceId);
             await refreshDeviceList();
             notifyTransportReattachState(getMainWindow, {
@@ -1210,6 +1286,11 @@ function registerWifiHandlers(deps) {
             });
             return { success: true, deviceId, stayedOnWifi: true };
         } catch (err) {
+            global.hubDiagnosticLog?.append?.({
+                level: "error",
+                scope: "wifi",
+                message: `Rester WiFi ${deviceId}: ${err?.message || err}`
+            });
             return { success: false, error: err.message || String(err) };
         }
     });
