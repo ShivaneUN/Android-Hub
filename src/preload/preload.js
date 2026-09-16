@@ -320,6 +320,8 @@ contextBridge.exposeInMainWorld("deviceFsAPI", {
     list: (payload) => ipcRenderer.invoke("device-fs:list", payload),
     mkdir: (payload) => ipcRenderer.invoke("device-fs:mkdir", payload),
     remove: (payload) => ipcRenderer.invoke("device-fs:remove", payload),
+    preview: (payload) => ipcRenderer.invoke("device-fs:preview", payload),
+    openLocal: (payload) => ipcRenderer.invoke("device-fs:open-local", payload),
     pickAndPush: (payload) => ipcRenderer.invoke("device-fs:pick-and-push", payload),
     pushPaths: (payload) => ipcRenderer.invoke("device-fs:push-paths", payload),
     pull: (payload) => ipcRenderer.invoke("device-fs:pull", payload),
@@ -357,4 +359,11 @@ contextBridge.exposeInMainWorld("hubModalWindowAPI", {
     onOpen: (callback) => ipcRenderer.on("hub-modal:open", (_event, payload) => callback(payload)),
     close: () => ipcRenderer.send("hub-modal:close-request"),
     invokeMain: (action, args) => ipcRenderer.invoke("hub-modal:invoke-main", { action, args: args || [] })
+});
+
+contextBridge.exposeInMainWorld("hubLogAPI", {
+    list: () => ipcRenderer.invoke("hub-log:list"),
+    clear: () => ipcRenderer.invoke("hub-log:clear"),
+    append: (payload) => ipcRenderer.send("hub-log:append", payload || {}),
+    onEntry: (callback) => ipcRenderer.on("hub-log:entry", (_event, data) => callback(data))
 });

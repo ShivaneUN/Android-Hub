@@ -6,6 +6,19 @@ const canvas = document.getElementById("video-canvas");
 /** "A" | "B" — une BrowserView = un type fixe (URL query). */
 const sessionViewType = type ? String(type).toUpperCase() : "A";
 
+function hubDiag(level, message, scope = "yume") {
+    try {
+        window.videoAPI?.appendHubLog?.({
+            level,
+            scope,
+            message,
+            sessionId
+        });
+    } catch (_err) {
+        /* noop */
+    }
+}
+
 window.addEventListener("storage", (event) => {
     if (event.key !== "androidHub.uiTheme") return;
     document.documentElement.dataset.videoFit = "contain";
@@ -131,6 +144,7 @@ function syncPortraitLayout(sessionIdParam, { resetZoom = false } = {}) {
 
     document.documentElement.dataset.portraitDisplay = portrait ? "1" : "0";
     canvas.classList.toggle("portrait-interim", interim);
+    document.getElementById("session-video-element")?.classList.toggle("portrait-interim", interim);
 
     const viewport = canvas.closest(".session-zoom-viewport");
     if (viewport) {
@@ -148,55 +162,50 @@ function syncPortraitLayout(sessionIdParam, { resetZoom = false } = {}) {
     if (resetZoom) {
         window.__sessionWheelZoom?.[sessionIdParam]?.reset?.();
     }
+    window.__yumeVideoSink?.syncLayout?.();
 }
 
-function drawVideoFrame(ctx, canvasEl, frame, sessionIdParam) {
+function layoutCanvasForFrame(canvasEl, frame, sessionIdParam) {
     const frameW = frame.displayWidth;
     const frameH = frame.displayHeight;
     const prevCanvasW = canvasEl.width;
     const prevCanvasH = canvasEl.height;
+    let rotated = false;
 
     if (!isOrientationManagedSession()) {
         const portraitStream = frameH > frameW;
         typeBPortraitStreamCorrection.set(sessionIdParam, portraitStream);
-
         if (portraitStream) {
-            const cw = frameH;
-            const ch = frameW;
-            if (canvasEl.width !== cw || canvasEl.height !== ch) {
-                canvasEl.width = cw;
-                canvasEl.height = ch;
-            }
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, cw, ch);
-            ctx.save();
-            ctx.translate(cw / 2, ch / 2);
-            ctx.rotate(PORTRAIT_DISPLAY_ROTATION);
-            ctx.drawImage(frame, -frameW / 2, -frameH / 2, frameW, frameH);
-            ctx.restore();
+            rotated = true;
+            syncCanvasSizeForInput(canvasEl, frameH, frameW);
         } else {
-            if (canvasEl.width !== frameW || canvasEl.height !== frameH) {
-                canvasEl.width = frameW;
-                canvasEl.height = frameH;
-            }
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.drawImage(frame, 0, 0, frameW, frameH);
+            syncCanvasSizeForInput(canvasEl, frameW, frameH);
         }
-        frame.close();
-        return;
+        return { rotated, frameW, frameH };
     }
 
     const landscapeFrame = frameW > frameH;
     const portraitDisplay = isPortraitDisplay(sessionIdParam);
-
     if (portraitDisplay && landscapeFrame) {
+        rotated = true;
         updatePortraitInputRemapForFrame(sessionIdParam, true, true);
-        const cw = frameH;
-        const ch = frameW;
-        if (canvasEl.width !== cw || canvasEl.height !== ch) {
-            canvasEl.width = cw;
-            canvasEl.height = ch;
-        }
+        syncCanvasSizeForInput(canvasEl, frameH, frameW);
+    } else {
+        updatePortraitInputRemapForFrame(sessionIdParam, portraitDisplay, landscapeFrame);
+        syncCanvasSizeForInput(canvasEl, frameW, frameH);
+    }
+    if (canvasEl.width !== prevCanvasW || canvasEl.height !== prevCanvasH) {
+        syncPortraitLayout(sessionIdParam);
+    }
+    return { rotated, frameW, frameH };
+}
+
+function drawVideoFrame(ctx, canvasEl, frame, sessionIdParam) {
+    const { rotated, frameW, frameH } = layoutCanvasForFrame(canvasEl, frame, sessionIdParam);
+
+    if (rotated) {
+        const cw = canvasEl.width;
+        const ch = canvasEl.height;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, cw, ch);
         ctx.save();
@@ -205,18 +214,264 @@ function drawVideoFrame(ctx, canvasEl, frame, sessionIdParam) {
         ctx.drawImage(frame, -frameW / 2, -frameH / 2, frameW, frameH);
         ctx.restore();
     } else {
-        updatePortraitInputRemapForFrame(sessionIdParam, portraitDisplay, landscapeFrame);
-        if (canvasEl.width !== frameW || canvasEl.height !== frameH) {
-            canvasEl.width = frameW;
-            canvasEl.height = frameH;
-        }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.drawImage(frame, 0, 0, frameW, frameH);
     }
     frame.close();
-    if (isOrientationManagedSession()
-        && (canvasEl.width !== prevCanvasW || canvasEl.height !== prevCanvasH)) {
-        syncPortraitLayout(sessionIdParam);
+}
+
+function frameNeedsCanvasRotation(frame, sessionIdParam) {
+    const frameW = frame.displayWidth;
+    const frameH = frame.displayHeight;
+    if (!isOrientationManagedSession()) {
+        return frameH > frameW;
+    }
+    return isPortraitDisplay(sessionIdParam) && frameW > frameH;
+}
+
+function syncCanvasSizeForInput(canvasEl, width, height) {
+    if (canvasEl.width !== width || canvasEl.height !== height) {
+        canvasEl.width = width;
+        canvasEl.height = height;
+        return true;
+    }
+    return false;
+}
+
+function isYumeRendererSupported() {
+    return typeof MediaStreamTrackGenerator === "function";
+}
+
+function createYumeVideoSink(canvasEl) {
+    let enabled = false;
+    let generator = null;
+    let writer = null;
+    let videoEl = null;
+    let firstPresentLogged = false;
+    let lastRotated = false;
+    let portraitLogged = false;
+    let layoutObserver = null;
+    let layoutRaf = null;
+
+    function ensureVideo() {
+        if (!canvasEl) return null;
+        const viewport = canvasEl.closest(".session-zoom-viewport") || canvasEl.parentElement;
+        if (!viewport) return null;
+        videoEl = document.getElementById("session-video-element");
+        if (!videoEl) {
+            videoEl = document.createElement("video");
+            videoEl.id = "session-video-element";
+            videoEl.muted = true;
+            videoEl.autoplay = true;
+            videoEl.playsInline = true;
+            videoEl.setAttribute("playsinline", "");
+            videoEl.disablePictureInPicture = true;
+            if ("disableRemotePlayback" in videoEl) {
+                videoEl.disableRemotePlayback = true;
+            }
+            viewport.insertBefore(videoEl, canvasEl);
+        } else if (videoEl.parentElement !== viewport) {
+            viewport.insertBefore(videoEl, canvasEl);
+        }
+        return videoEl;
+    }
+
+    function observeLayout() {
+        if (layoutObserver || typeof ResizeObserver !== "function") return;
+        const viewport = canvasEl?.closest(".session-zoom-viewport") || canvasEl?.parentElement;
+        layoutObserver = new ResizeObserver(() => scheduleLayoutSync());
+        if (viewport) layoutObserver.observe(viewport);
+        if (canvasEl) layoutObserver.observe(canvasEl);
+        window.addEventListener("resize", scheduleLayoutSync);
+    }
+
+    function scheduleLayoutSync() {
+        if (layoutRaf !== null) return;
+        layoutRaf = requestAnimationFrame(() => {
+            layoutRaf = null;
+            syncLayout();
+        });
+    }
+
+    function syncLayout() {
+        const video = videoEl || document.getElementById("session-video-element");
+        if (!video || !canvasEl || document.documentElement.dataset.yumeRenderer !== "1") return;
+        const viewport = video.parentElement;
+        if (!viewport) return;
+
+        const canvasRect = canvasEl.getBoundingClientRect();
+        const viewRect = viewport.getBoundingClientRect();
+        if (canvasRect.width < 2 || canvasRect.height < 2) return;
+
+        video.style.position = "absolute";
+        video.style.pointerEvents = "none";
+        video.style.transformOrigin = "center center";
+
+        if (!lastRotated) {
+            video.style.left = `${canvasRect.left - viewRect.left}px`;
+            video.style.top = `${canvasRect.top - viewRect.top}px`;
+            video.style.width = `${canvasRect.width}px`;
+            video.style.height = `${canvasRect.height}px`;
+            video.style.transform = "";
+            video.style.objectFit = "contain";
+            return;
+        }
+
+        const boxW = canvasRect.height;
+        const boxH = canvasRect.width;
+        video.style.left = `${canvasRect.left - viewRect.left + (canvasRect.width - boxW) / 2}px`;
+        video.style.top = `${canvasRect.top - viewRect.top + (canvasRect.height - boxH) / 2}px`;
+        video.style.width = `${boxW}px`;
+        video.style.height = `${boxH}px`;
+        video.style.transform = "rotate(90deg)";
+        video.style.objectFit = "fill";
+    }
+
+    function setPresenting(active) {
+        document.documentElement.dataset.yumeRenderer = active ? "1" : "0";
+    }
+
+    function startTrack() {
+        if (!isYumeRendererSupported()) {
+            hubDiag("error", "MediaStreamTrackGenerator indisponible");
+            return false;
+        }
+        const video = ensureVideo();
+        if (!video) {
+            hubDiag("error", "Élément <video> introuvable (viewport)");
+            return false;
+        }
+        if (writer) return true;
+        generator = new MediaStreamTrackGenerator({ kind: "video" });
+        writer = generator.writable.getWriter();
+        video.srcObject = new MediaStream([generator]);
+        video.play().catch((err) => {
+            hubDiag("warn", `video.play() : ${err?.message || err}`);
+        });
+        hubDiag("info", "Piste <video> démarrée (taille après 1re frame)");
+        observeLayout();
+        return true;
+    }
+
+    function stopTrack() {
+        const wasLive = Boolean(writer);
+        setPresenting(false);
+        try {
+            writer?.releaseLock?.();
+        } catch (_err) {
+            /* noop */
+        }
+        writer = null;
+        generator = null;
+        firstPresentLogged = false;
+        portraitLogged = false;
+        lastRotated = false;
+        if (videoEl) {
+            videoEl.srcObject = null;
+            videoEl.style.transform = "";
+        }
+        if (wasLive) {
+            hubDiag("info", "Piste <video> arrêtée → retour canvas");
+        }
+    }
+
+    function setEnabled(next) {
+        const want = next === true;
+        const supported = isYumeRendererSupported();
+        const nextEnabled = want && supported;
+        if (want && !supported) {
+            hubDiag("error", "Yume demandé mais MediaStreamTrackGenerator absent");
+        }
+        if (nextEnabled !== enabled) {
+            hubDiag("info", nextEnabled
+                ? "Yume ON — frames via <video> (paysage et portrait)"
+                : "Yume OFF — canvas 2D");
+        }
+        enabled = nextEnabled;
+        if (!enabled) {
+            stopTrack();
+        }
+        return enabled;
+    }
+
+    function canPresent(frame) {
+        return enabled && Boolean(frame);
+    }
+
+    function present(frame, { rotated = false } = {}) {
+        lastRotated = Boolean(rotated);
+        if (!startTrack() || !writer) {
+            try { frame.close(); } catch (_err) { /* noop */ }
+            hubDiag("error", "present() sans piste <video>");
+            return;
+        }
+        setPresenting(true);
+        if (!firstPresentLogged) {
+            firstPresentLogged = true;
+            hubDiag("info", `Première frame Yume ${frame.displayWidth}x${frame.displayHeight}${rotated ? " portrait" : ""}`);
+        } else if (rotated && !portraitLogged) {
+            portraitLogged = true;
+            hubDiag("info", "Yume portrait — CSS rotate(90), input canvas inchangé");
+        } else if (!rotated) {
+            portraitLogged = false;
+        }
+        writer.write(frame).catch((err) => {
+            hubDiag("error", `writer.write : ${err?.message || err}`);
+            try { frame.close(); } catch (_err) { /* noop */ }
+        });
+        scheduleLayoutSync();
+    }
+
+    function captureJpeg(quality = 0.55) {
+        if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth < 2) return null;
+        try {
+            const vw = videoEl.videoWidth;
+            const vh = videoEl.videoHeight;
+            const snap = document.createElement("canvas");
+            const snapCtx = snap.getContext("2d");
+            if (lastRotated) {
+                snap.width = vh;
+                snap.height = vw;
+                snapCtx.translate(vh / 2, vw / 2);
+                snapCtx.rotate(Math.PI / 2);
+                snapCtx.drawImage(videoEl, -vw / 2, -vh / 2, vw, vh);
+            } else {
+                snap.width = vw;
+                snap.height = vh;
+                snapCtx.drawImage(videoEl, 0, 0);
+            }
+            return snap.toDataURL("image/jpeg", quality);
+        } catch (_err) {
+            return null;
+        }
+    }
+
+    return {
+        setEnabled,
+        isEnabled: () => enabled,
+        canPresent,
+        present,
+        attach: ensureVideo,
+        captureJpeg,
+        stop: stopTrack,
+        syncLayout,
+        markCanvasFallback(reason) {
+            setPresenting(false);
+            hubDiag("warn", reason || "Fallback canvas");
+        }
+    };
+}
+
+function captureSessionPreviewJpeg(canvasElement, quality = 0.55) {
+    const fromYume = window.__yumeVideoSink?.captureJpeg?.(quality);
+    if (fromYume) return fromYume;
+    if (!canvasElement || canvasElement.width === 0 || canvasElement.height === 0) {
+        return null;
+    }
+    try {
+        return canvasElement.toDataURL("image/jpeg", quality);
+    } catch (_err) {
+        return null;
     }
 }
 
@@ -254,7 +509,13 @@ function createVideoFramePresenter(ctx, canvasEl, sessionIdParam) {
             const frameToDraw = pendingFrame;
             pendingFrame = null;
             if (!frameToDraw) return;
-            drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
+            const yume = window.__yumeVideoSink;
+            if (yume?.isEnabled?.()) {
+                const layout = layoutCanvasForFrame(canvasEl, frameToDraw, sessionIdParam);
+                yume.present(frameToDraw, { rotated: layout.rotated });
+            } else {
+                drawVideoFrame(ctx, canvasEl, frameToDraw, sessionIdParam);
+            }
             reportFirstFrameIfNeeded();
         });
     }
@@ -875,8 +1136,10 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
         ensureCanvasSize(meta.width, meta.height);
         try {
             await configureDecoder(meta, state.streamFormat, null);
+            hubDiag("info", `Codec Type A ${meta.codecId || "h264"} ${meta.width}x${meta.height}`, "video");
             flushQueue();
         } catch (err) {
+            hubDiag("error", `Init décodeur Type A : ${err?.message || err}`, "video");
             console.error(`[SessionView ${tabId}] Echec init decodeur:`, err);
         } finally {
             state.decoderInitializing = false;
@@ -954,14 +1217,8 @@ function initTypeAVideoPlayer(tabId, canvasElement) {
             return state.frameCount;
         },
         capturePreviewFrame(quality = 0.55) {
-            if (state.frameCount === 0 || canvasElement.width === 0 || canvasElement.height === 0) {
-                return null;
-            }
-            try {
-                return canvasElement.toDataURL("image/jpeg", quality);
-            } catch (_err) {
-                return null;
-            }
+            if (state.frameCount === 0) return null;
+            return captureSessionPreviewJpeg(canvasElement, quality);
         }
     };
 }
@@ -1050,6 +1307,7 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
         });
         state.decoder.configure(decoderConfig);
         state.decoderReady = true;
+        hubDiag("info", `Codec Type B ${meta.codecId || "h264"} ${meta.width}x${meta.height}`, "video");
         flushQueue();
     }
 
@@ -1180,14 +1438,8 @@ function initTypeBVideoPipeline(sessionIdParam, canvasElement) {
             return state.frameCount;
         },
         capturePreviewFrame(quality = 0.55) {
-            if (state.frameCount === 0 || canvasElement.width === 0 || canvasElement.height === 0) {
-                return null;
-            }
-            try {
-                return canvasElement.toDataURL("image/jpeg", quality);
-            } catch (_err) {
-                return null;
-            }
+            if (state.frameCount === 0) return null;
+            return captureSessionPreviewJpeg(canvasElement, quality);
         }
     };
 }
@@ -1387,6 +1639,22 @@ async function resolveSessionDeviceId(fallbackDeviceId) {
     return "";
 }
 
+function bindYumeRendererPref() {
+    if (!canvas || window.__yumeVideoSink) return;
+    window.__yumeVideoSink = createYumeVideoSink(canvas);
+    hubDiag(
+        "info",
+        `Session ${sessionViewType} — MediaStreamTrackGenerator=${isYumeRendererSupported() ? "oui" : "non"}`
+    );
+    const apply = (prefs) => {
+        window.__yumeVideoSink.setEnabled(prefs?.experimentalYumeRenderer === true);
+    };
+    if (window.videoAPI?.getPerformancePrefs) {
+        window.videoAPI.getPerformancePrefs().then(apply).catch(() => apply({}));
+    }
+    window.videoAPI?.onPerformanceChanged?.((payload) => apply(payload?.performance));
+}
+
 async function bootstrapSessionView() {
     const sessionType = type ? String(type).toUpperCase() : "";
 
@@ -1394,6 +1662,8 @@ async function bootstrapSessionView() {
         console.error("[SessionView] sessionId ou type manquant dans query string");
         return;
     }
+
+    bindYumeRendererPref();
 
     if (sessionType === "B") {
         setPortraitDisplay(sessionId, false);
@@ -1403,6 +1673,7 @@ async function bootstrapSessionView() {
         if (typeof attachCanvasWheelZoom === "function") {
             attachCanvasWheelZoom(canvas, sessionId);
         }
+        window.__yumeVideoSink?.attach?.();
         if (canvas) canvas.focus();
         if (!window.__sessionInputReady) {
             window.__sessionInputReady = true;
@@ -1418,6 +1689,7 @@ async function bootstrapSessionView() {
     if (typeof attachCanvasWheelZoom === "function") {
         attachCanvasWheelZoom(canvas, sessionId);
     }
+    window.__yumeVideoSink?.attach?.();
     if (canvas) canvas.focus();
 
     if (!window.__sessionInputReady) {

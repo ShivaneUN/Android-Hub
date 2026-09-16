@@ -1,7 +1,7 @@
 {
   "name": "android-hub",
   "version": "1.1.62",
-  "patchRevision": 3,
+  "patchRevision": 4,
   "description": "Affichage et contrôle multi-appareils Android via scrcpy/ADB",
   "main": "src/main/main.js",
   "author": "Shivane",
@@ -10,6 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "set ANDROID_HUB_DEVTOOLS=1&& electron . --devtools",
+    "log": "set ANDROID_HUB_DEVTOOLS=1&& set ANDROID_HUB_LOG_TAB=1&& electron . --devtools --hub-log",
     "prebuild": "node scripts/clean-dist-unpack.js && node scripts/generate-update-feed.js",
     "build": "electron-builder --win --config electron-builder.config.js",
     "build:dir": "electron-builder --win --dir --config electron-builder.config.js",

@@ -1,4 +1,5 @@
-const { ipcMain, dialog, BrowserWindow } = require("electron");
+const { ipcMain, dialog, BrowserWindow, shell, app } = require("electron");
+const fs = require("fs");
 const path = require("path");
 const { DEFAULT_PUSH_TARGET } = require("../managers/device-fs-manager");
 
@@ -83,8 +84,50 @@ function registerDeviceFsHandlers({
             if (!manager) return { success: false, error: "Explorateur indisponible" };
             const serial = await resolveDeviceSerial(payload);
             const result = await manager.remove(serial, payload.path);
+            sendToast(`${path.basename(String(payload.path || ""))} supprimé`, "success");
             return { success: true, ...result };
         } catch (err) {
+            sendToast(err?.message || String(err), "error");
+            return { success: false, error: err?.message || String(err) };
+        }
+    });
+
+    ipcMain.handle("device-fs:preview", async (_event, payload = {}) => {
+        try {
+            const manager = getDeviceFsManager?.();
+            if (!manager) return { success: false, error: "Explorateur indisponible" };
+            const serial = await resolveDeviceSerial(payload);
+            const result = await manager.preview(serial, payload.path);
+            return { success: true, ...result };
+        } catch (err) {
+            return { success: false, error: err?.message || String(err) };
+        }
+    });
+
+    ipcMain.handle("device-fs:open-local", async (_event, payload = {}) => {
+        try {
+            const manager = getDeviceFsManager?.();
+            if (!manager) return { success: false, error: "Explorateur indisponible" };
+            if (payload.isDir) {
+                return { success: false, error: "Ouvrez le dossier dans la liste" };
+            }
+            const serial = await resolveDeviceSerial(payload);
+            const remotePath = payload.path;
+            const name = String(payload.name || path.basename(String(remotePath || "")) || "file");
+            const tmpDir = path.join(app.getPath("temp"), "android-hub-device-fs");
+            fs.mkdirSync(tmpDir, { recursive: true });
+            const dest = path.join(tmpDir, name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_"));
+            const transferId = `fs-${Date.now()}`;
+            const result = await manager.pull(serial, remotePath, dest, (progress) => {
+                sendProgress({ transferId, ...progress });
+            });
+            const openError = await shell.openPath(result.localPath);
+            if (openError) {
+                return { success: false, error: openError, ...result };
+            }
+            return { success: true, opened: true, ...result };
+        } catch (err) {
+            sendToast(err?.message || String(err), "error");
             return { success: false, error: err?.message || String(err) };
         }
     });
@@ -214,7 +257,7 @@ function registerDeviceFsHandlers({
         }
         await modal.open({
             panel: "settings",
-            tab: "devices",
+            tab: "files",
             openFiles: {
                 deviceId: payload.deviceId || null,
                 serial: payload.serial || null,

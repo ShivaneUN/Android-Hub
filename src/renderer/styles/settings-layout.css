@@ -226,6 +226,12 @@
   font-size: 12px !important;
 }
 
+#settings-pane-files.settings-tab-pane.active {
+  padding: 0 !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+}
+
 #settings-pane-devices .devices-panel-list {
   display: flex;
   flex-direction: column;
@@ -1452,4 +1458,42 @@
     align-items: stretch;
     gap: 12px;
   }
+}
+
+#settings-pane-log.settings-tab-pane.active {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.settings-log-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-log-output {
+  flex: 1 1 auto;
+  min-height: 220px;
+  max-height: none;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0b0e14;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: #d7deea;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-log-line {
+  margin: 0 0 4px;
+}
+
+.settings-log-line.is-warn {
+  color: #fbbf24;
+}
+
+.settings-log-line.is-error {
+  color: #f87171;
 }

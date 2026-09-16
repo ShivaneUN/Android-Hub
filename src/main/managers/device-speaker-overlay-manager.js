@@ -2070,9 +2070,12 @@ class DeviceSpeakerOverlayManager {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
         const flag = open ? "true" : "false";
         void this.mainWindow.webContents.executeJavaScript(`
-            window.__deviceSpeakerPopoverOpen = ${flag};
-            const btn = document.getElementById("nav-toggle-global-audio");
-            if (btn) btn.classList.toggle("speaker-volume-open", ${flag});
+            (() => {
+                window.__deviceSpeakerPopoverOpen = ${flag};
+                const btn = document.getElementById("nav-toggle-global-audio");
+                if (btn) btn.classList.toggle("speaker-volume-open", ${flag});
+                return true;
+            })()
         `).catch(() => {});
     }
 

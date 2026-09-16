@@ -14,7 +14,7 @@
         });
     }
 
-    async function activateTab(tab) {
+    async function activateTab(tab, extra = {}) {
         showTab(tab);
 
         if (tab === "devices") {
@@ -23,6 +23,11 @@
         }
 
         window.stopDevicesPanelLiveRefresh?.();
+
+        if (tab === "files") {
+            await window.openDeviceFsExplorer?.(extra.files || {});
+            return;
+        }
 
         if (tab === "control") {
             await window.openControlPanel?.({ inChildWindow: true });
@@ -47,6 +52,10 @@
 
         if (tab === "performance") {
             window.bindPerformanceSection?.();
+        }
+
+        if (tab === "log") {
+            window.bindLogSection?.();
         }
     }
 
@@ -75,19 +84,27 @@
 
         if (!inChildWindow) {
             if (window.hubModalAPI?.open) {
-                await window.hubModalAPI.open({ panel: "settings", tab });
+                await window.hubModalAPI.open({
+                    panel: "settings",
+                    tab,
+                    openFiles: options.files || undefined
+                });
             }
             setSidebarActive();
             return;
         }
 
         bindTabButtons();
-        await activateTab(tab);
+        await activateTab(tab, options);
     }
 
     async function refreshSettingsPanel() {
         if (currentTab === "devices") {
             await window.refreshDevicesPanel?.({ silent: false });
+            return;
+        }
+        if (currentTab === "files") {
+            await window.refreshDeviceFsExplorer?.();
             return;
         }
         if (currentTab === "control") {

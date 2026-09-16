@@ -266,9 +266,12 @@ class ScreenPowerOverlayManager {
         if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
         const flag = open ? "true" : "false";
         void this.mainWindow.webContents.executeJavaScript(`
-            window.__screenPowerPopoverOpen = ${flag};
-            const btn = document.getElementById("nav-toggle-screen");
-            if (btn) btn.classList.toggle("screen-power-open", ${flag});
+            (() => {
+                window.__screenPowerPopoverOpen = ${flag};
+                const btn = document.getElementById("nav-toggle-screen");
+                if (btn) btn.classList.toggle("screen-power-open", ${flag});
+                return true;
+            })()
         `).catch(() => {});
     }
 

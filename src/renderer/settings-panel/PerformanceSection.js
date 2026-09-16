@@ -20,6 +20,10 @@
         return document.getElementById("settings-clipboard-autosync-toggle");
     }
 
+    function getYumeToggle() {
+        return document.getElementById("settings-yume-renderer-toggle");
+    }
+
     function getRememberScreenToggle() {
         return document.getElementById("settings-remember-screen-toggle");
     }
@@ -127,6 +131,13 @@
         btn.setAttribute("aria-pressed", enabled === true ? "true" : "false");
     }
 
+    function applyYumeUi(enabled) {
+        const btn = getYumeToggle();
+        if (!btn) return;
+        btn.classList.toggle("is-on", enabled === true);
+        btn.setAttribute("aria-pressed", enabled === true ? "true" : "false");
+    }
+
     function applyRememberScreenUi(enabled) {
         const btn = getRememberScreenToggle();
         if (!btn) return;
@@ -152,6 +163,7 @@
         });
 
         applyLocalDom(prefs);
+        applyYumeUi(prefs.experimentalYumeRenderer === true);
     }
 
     async function syncToggleUi() {
@@ -210,6 +222,15 @@
                     const result = await writeClipboardAutosync(next);
                     if (!result) return;
                     applyClipboardUi(result.clipboardAutosync !== false);
+                })();
+            });
+
+            getYumeToggle()?.addEventListener("click", () => {
+                const next = !getYumeToggle()?.classList.contains("is-on");
+                void (async () => {
+                    const result = await writePrefs({ experimentalYumeRenderer: next });
+                    if (!result) return;
+                    applyYumeUi(result.experimentalYumeRenderer === true);
                 })();
             });
 

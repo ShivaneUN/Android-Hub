@@ -1,25 +1,11 @@
-.device-fs-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-  padding: 24px;
-  box-sizing: border-box;
-}
-
-.device-fs-overlay.hidden {
-  display: none;
-}
-
-.device-fs-dialog {
-  width: min(720px, 100%);
-  height: min(620px, 100%);
-  background: var(--bg-panel, #141820);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
-  border-radius: 16px;
+#settings-pane-files .device-fs-dialog {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -49,6 +35,29 @@
   flex: 1;
 }
 
+.device-fs-device-label {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.device-fs-device-select {
+  min-width: 140px;
+  max-width: 220px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: #0a0e14;
+  color: #e8ecf4;
+  font: inherit;
+  font-size: 12px;
+  color-scheme: dark;
+}
+
+.device-fs-device-select option {
+  background: #0a0e14;
+  color: #e8ecf4;
+}
+
 .device-fs-path {
   font-size: 12px;
   opacity: 0.7;
@@ -66,8 +75,7 @@
 }
 
 .device-fs-shortcuts button,
-.device-fs-toolbar button,
-.device-fs-close {
+.device-fs-toolbar button {
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
   background: transparent;
   color: inherit;
@@ -77,15 +85,8 @@
   cursor: pointer;
 }
 
-.device-fs-close {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-}
-
 .device-fs-shortcuts button:hover,
-.device-fs-toolbar button:hover,
-.device-fs-close:hover {
+.device-fs-toolbar button:hover {
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -110,6 +111,47 @@
   padding: 8px 8px 16px;
   overflow: auto;
   flex: 1;
+  min-height: 0;
+}
+
+.device-fs-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.device-fs-body .device-fs-list {
+  flex: 1;
+}
+
+.device-fs-preview {
+  width: 240px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.device-fs-preview img {
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.device-fs-preview-hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: center;
+  line-height: 1.4;
 }
 
 .device-fs-item {
@@ -126,6 +168,11 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.device-fs-item.is-dir .device-fs-item-name::after {
+  content: " ›";
+  opacity: 0.45;
+}
+
 .device-fs-item-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,7 +185,7 @@
   text-align: center;
 }
 
-.device-fs-overlay.is-busy .device-fs-dialog {
+#settings-pane-files.is-busy .device-fs-dialog {
   opacity: 0.75;
   pointer-events: none;
 }

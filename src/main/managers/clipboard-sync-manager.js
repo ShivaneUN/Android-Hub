@@ -8,6 +8,14 @@ const {
     consumeDeviceMessages
 } = require("../../native/scrcpy/control/clipboard-protocol");
 
+const KEY_ACTION_DOWN = 0;
+const KEY_ACTION_UP = 1;
+const KEYCODE_A = 29;
+const KEYCODE_CTRL_LEFT = 113;
+const META_CTRL_ON = 0x1000;
+const META_CTRL_LEFT_ON = 0x2000;
+const META_CTRL = META_CTRL_ON | META_CTRL_LEFT_ON;
+
 /**
  * Sync presse-papiers PC ↔ device via le socket contrôle existant.
  * Greffe externe sur _attachControlListeners (scrcpy-socket.js LOCK inchangé).
@@ -137,8 +145,17 @@ class ClipboardSyncManager {
         }
     }
 
+    async sendSelectAll(client) {
+        if (typeof client?.sendKeyCode !== "function") {
+            throw new Error("Contrôle scrcpy indisponible");
+        }
+        await client.sendKeyCode(KEY_ACTION_DOWN, KEYCODE_CTRL_LEFT, 0, META_CTRL);
+        await client.sendKeyCode(KEY_ACTION_DOWN, KEYCODE_A, 0, META_CTRL);
+        await client.sendKeyCode(KEY_ACTION_UP, KEYCODE_A, 0, META_CTRL);
+        await client.sendKeyCode(KEY_ACTION_UP, KEYCODE_CTRL_LEFT, 0, 0);
+    }
+
     async handleShortcut(webContents, key) {
-        if (!this.isEnabled()) return { success: false, error: "clipboard-disabled" };
         const sessionId = this.findSessionIdByWebContents(webContents);
         const client = this.getClientForSession(sessionId);
         if (!client?.controlSocket) {
@@ -146,6 +163,11 @@ class ClipboardSyncManager {
         }
 
         try {
+            if (key === "a") {
+                await this.sendSelectAll(client);
+                return { success: true };
+            }
+            if (!this.isEnabled()) return { success: false, error: "clipboard-disabled" };
             if (key === "v") {
                 const text = clipboard.readText();
                 await this.sendSetClipboard(client, text, { paste: true });

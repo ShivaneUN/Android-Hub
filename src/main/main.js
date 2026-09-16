@@ -77,6 +77,8 @@ const { registerAppMetadataHandlers, attachAppMetadataPrefetch } = require("./ip
 const { MaintenanceCleanupManager } = require("./managers/maintenance-cleanup-manager");
 const { registerMaintenanceHandlers } = require("./ipc/maintenanceHandlers");
 const { UiPreferencesManager } = require("./managers/ui-preferences-manager");
+const { HubDiagnosticLog } = require("./managers/hub-diagnostic-log");
+const { registerHubLogHandlers } = require("./ipc/hubLogHandlers");
 const { DisplayPresetsManager } = require("./managers/display-presets-manager");
 const { registerDisplayPresetsHandlers } = require("./ipc/display-presets-handlers");
 const { registerUiPreferencesHandlers } = require("./ipc/uiPreferencesHandlers");
@@ -1759,6 +1761,11 @@ app.whenReady().then(() => {
     historyPath = path.join(userDataPath, "device-history.json");
     global.customNamesManager = new CustomNamesManager(userDataPath);
     global.uiPreferencesManager = new UiPreferencesManager(userDataPath);
+    global.hubDiagnosticLog = new HubDiagnosticLog();
+    global.hubDiagnosticLog.append({
+        scope: "hub",
+        message: `Log local prêt (Yume ${global.uiPreferencesManager.getPerformancePrefs?.()?.experimentalYumeRenderer ? "ON" : "OFF"})`
+    });
     global.deviceColorsManager = new DeviceColorsManager(userDataPath);
     global.displayPresetsManager = new DisplayPresetsManager(userDataPath);
     // Mode perf off : ne pas laisser qHD imposé / override actif.
@@ -3646,6 +3653,7 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
     global.sessionStreamRegistry = new SessionStreamRegistry();
 
     registerHubModalHandlers(() => global.hubModalOverlayManager);
+    registerHubLogHandlers(() => global.hubDiagnosticLog);
     registerStreamDeckDuoPopupHandlers({
         getMainWindow: () => win,
         getStreamDeckDuoPopupManager: () => global.streamDeckDuoPopupManager
@@ -3812,6 +3820,12 @@ async function listDevicesForUI({ lightweight = false, forceFresh = false } = {}
         },
         syncDevicesForUi: listDevicesForUI
     });
+
+    if (process.argv.includes("--hub-log") || process.env.ANDROID_HUB_LOG_TAB === "1") {
+        setTimeout(() => {
+            void global.hubModalOverlayManager?.open?.({ panel: "settings", tab: "log" });
+        }, 900);
+    }
 
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -135,6 +135,12 @@
           </span>
           <span data-i18n="settingsPanel.tabDevices">Appareils</span>
         </button>
+        <button type="button" class="settings-tab-btn" data-settings-tab="files">
+          <span class="settings-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+          </span>
+          <span data-i18n="settingsPanel.tabFiles">Dossiers</span>
+        </button>
         <button type="button" class="settings-tab-btn" data-settings-tab="appearance">
           <span class="settings-nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.5 0 10-4 10-9a8 8 0 1 0-8 8h1a2.5 2.5 0 0 0 0-5h-1"/><circle cx="7.5" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="11" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="12.5" r="1" fill="currentColor" stroke="none"/></svg>
@@ -164,6 +170,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg>
           </span>
           <span data-i18n="settingsPanel.tabPerformance">Performances</span>
+        </button>
+        <button type="button" class="settings-tab-btn" data-settings-tab="log">
+          <span class="settings-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h14M5 12h14M5 18h9"/></svg>
+          </span>
+          <span data-i18n="settingsPanel.tabLog">Log</span>
         </button>
         <button type="button" class="settings-tab-btn settings-tab-btn--footer" data-settings-tab="updates">
           <span class="settings-nav-icon" aria-hidden="true">
@@ -197,6 +209,43 @@
         <p class="devices-panel-default-hint" data-i18n="devicesPanel.wifiDefaultHint">Par défaut : HD 720p · 30 fps · 8 Mbps</p>
         <div class="devices-panel-list" id="devices-panel-wifi-list">
           <p class="apps-loading" data-i18n="devicesPanel.loading">Chargement...</p>
+        </div>
+      </div>
+      <div id="settings-pane-files" class="settings-tab-pane" data-settings-pane="files" tabindex="0">
+        <div class="device-fs-dialog" role="region" aria-labelledby="device-fs-title">
+          <div class="device-fs-header">
+            <h3 class="device-fs-title" id="device-fs-title" data-i18n="deviceFs.title">Fichiers de l’appareil</h3>
+            <label class="device-fs-device-label" for="device-fs-device-select" data-i18n="deviceFs.device">Appareil</label>
+            <select id="device-fs-device-select" class="device-fs-device-select" aria-label="Appareil"></select>
+          </div>
+          <div class="device-fs-toolbar">
+            <button type="button" id="device-fs-up-btn" data-i18n="deviceFs.up">Remonter</button>
+            <span class="device-fs-path" id="device-fs-path">/sdcard</span>
+            <button type="button" id="device-fs-upload-btn" data-i18n="deviceFs.upload">Envoyer</button>
+            <button type="button" id="device-fs-download-btn" data-i18n="deviceFs.download">Télécharger</button>
+            <button type="button" id="device-fs-open-btn" data-i18n="deviceFs.open">Ouvrir</button>
+            <button type="button" id="device-fs-mkdir-btn" data-i18n="deviceFs.mkdir">Nouveau dossier</button>
+            <button type="button" id="device-fs-delete-btn" data-i18n="deviceFs.delete">Supprimer</button>
+          </div>
+          <div class="device-fs-shortcuts" id="device-fs-shortcuts">
+            <button type="button" data-fs-shortcut="/sdcard/Download" data-i18n="deviceFs.shortcutDownload">Téléchargements</button>
+            <button type="button" data-fs-shortcut="/sdcard/DCIM" data-i18n="deviceFs.shortcutDcim">DCIM</button>
+            <button type="button" data-fs-shortcut="/sdcard/Pictures" data-i18n="deviceFs.shortcutPictures">Images</button>
+            <button type="button" data-fs-shortcut="/sdcard/Documents" data-i18n="deviceFs.shortcutDocuments">Documents</button>
+            <button type="button" data-fs-shortcut="/sdcard/Movies" data-i18n="deviceFs.shortcutMovies">Vidéos</button>
+            <button type="button" data-fs-shortcut="/sdcard/Music" data-i18n="deviceFs.shortcutMusic">Musique</button>
+          </div>
+          <div class="device-fs-drop" id="device-fs-drop" data-i18n="deviceFs.dropHint">Glissez des fichiers ou dossiers du PC ici</div>
+          <div class="device-fs-body">
+            <ul class="device-fs-list" id="device-fs-list"></ul>
+            <div class="device-fs-preview" id="device-fs-preview">
+              <img id="device-fs-preview-img" alt="" hidden>
+              <p class="device-fs-preview-hint" id="device-fs-preview-hint" data-i18n="deviceFs.previewHint">Cliquez une photo pour l’aperçu</p>
+            </div>
+          </div>
+          <div class="device-fs-footer">
+            <span class="device-fs-status" id="device-fs-status"></span>
+          </div>
         </div>
       </div>
       <div id="settings-pane-appearance" class="settings-tab-pane" data-settings-pane="appearance">
@@ -502,6 +551,34 @@
             </span>
           </button>
         </div>
+
+        <div class="home-shortcuts-group">
+          <div class="home-shortcuts-group-title" data-i18n="settingsPanel.yumeGroupTitle">Expérimental</div>
+          <button type="button" class="settings-perf-mode-btn" id="settings-yume-renderer-toggle" aria-pressed="false">
+            <span class="settings-perf-mode-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 12h8"/></svg>
+            </span>
+            <span class="settings-perf-mode-copy">
+              <strong data-i18n="settingsPanel.yumeTitle">Rendu vidéo Yume-chan</strong>
+              <span data-i18n="settingsPanel.yumeDesc">Affiche le flux via &lt;video&gt; (MediaStreamTrackGenerator) au lieu du canvas 2D, en paysage et en portrait. Défaut OFF : rien ne change. Coupez si l’image ou les clics posent problème.</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div id="settings-pane-log" class="settings-tab-pane" data-settings-pane="log">
+        <div class="settings-section-head">
+          <span class="settings-section-title" data-i18n="settingsPanel.tabLog">Log</span>
+          <div class="settings-log-actions">
+            <button type="button" class="settings-section-action" id="settings-log-copy">
+              <span data-i18n="settingsPanel.logCopy">Copier</span>
+            </button>
+            <button type="button" class="settings-section-action" id="settings-log-clear">
+              <span data-i18n="settingsPanel.logClear">Vider</span>
+            </button>
+          </div>
+        </div>
+        <p class="home-shortcuts-hint" data-i18n="settingsPanel.logLead">Suivi local du rendu Yume-chan et du flux session. Ne logue pas chaque frame.</p>
+        <div id="settings-log-output" class="settings-log-output" role="log" aria-live="polite"></div>
       </div>
       <div id="settings-pane-updates" class="settings-tab-pane" data-settings-pane="updates">
         <div class="about-layout">
@@ -630,36 +707,6 @@
 
 </div>
 
-<div id="device-fs-overlay" class="device-fs-overlay hidden" role="presentation">
-  <div class="device-fs-dialog" role="dialog" aria-modal="true" aria-labelledby="device-fs-title">
-    <div class="device-fs-header">
-      <h3 class="device-fs-title" id="device-fs-title" data-i18n="deviceFs.title">Fichiers de l’appareil</h3>
-      <button type="button" class="device-fs-close" id="device-fs-close-btn" data-i18n-title="deviceFs.close" title="Fermer">✕</button>
-    </div>
-    <div class="device-fs-toolbar">
-      <button type="button" id="device-fs-up-btn" data-i18n="deviceFs.up">Remonter</button>
-      <span class="device-fs-path" id="device-fs-path">/sdcard</span>
-      <button type="button" id="device-fs-upload-btn" data-i18n="deviceFs.upload">Envoyer</button>
-      <button type="button" id="device-fs-download-btn" data-i18n="deviceFs.download">Télécharger</button>
-      <button type="button" id="device-fs-mkdir-btn" data-i18n="deviceFs.mkdir">Nouveau dossier</button>
-      <button type="button" id="device-fs-delete-btn" data-i18n="deviceFs.delete">Supprimer</button>
-    </div>
-    <div class="device-fs-shortcuts" id="device-fs-shortcuts">
-      <button type="button" data-fs-shortcut="/sdcard/Download" data-i18n="deviceFs.shortcutDownload">Téléchargements</button>
-      <button type="button" data-fs-shortcut="/sdcard/DCIM" data-i18n="deviceFs.shortcutDcim">DCIM</button>
-      <button type="button" data-fs-shortcut="/sdcard/Pictures" data-i18n="deviceFs.shortcutPictures">Images</button>
-      <button type="button" data-fs-shortcut="/sdcard/Documents" data-i18n="deviceFs.shortcutDocuments">Documents</button>
-      <button type="button" data-fs-shortcut="/sdcard/Movies" data-i18n="deviceFs.shortcutMovies">Vidéos</button>
-      <button type="button" data-fs-shortcut="/sdcard/Music" data-i18n="deviceFs.shortcutMusic">Musique</button>
-    </div>
-    <div class="device-fs-drop" id="device-fs-drop" data-i18n="deviceFs.dropHint">Glissez des fichiers ou dossiers du PC ici</div>
-    <ul class="device-fs-list" id="device-fs-list"></ul>
-    <div class="device-fs-footer">
-      <span class="device-fs-status" id="device-fs-status"></span>
-    </div>
-  </div>
-</div>
-
 <div id="cleanup-modal-overlay" class="modal-overlay hidden" role="presentation">
   <div class="modal-box cleanup-modal-box" role="dialog" aria-modal="true" aria-labelledby="cleanup-modal-title">
     <div class="cleanup-modal-header">
@@ -709,6 +756,7 @@
 <script src="../settings-panel/HomeShortcutsSection.js"></script>
 <script src="../performance/PerformancePrefs.js"></script>
 <script src="../settings-panel/PerformanceSection.js"></script>
+<script src="../settings-panel/LogSection.js"></script>
 <script src="../settings-panel/UpdateSettingsSection.js"></script>
 <script src="../settings-panel/SettingsPanel.js"></script>
 <script src="../control-panel/ControlPanel.js"></script>

@@ -443,6 +443,14 @@ class BrowserViewManager {
         return true;
     }
 
+    broadcastToSessionViews(channel, payload) {
+        if (!channel) return;
+        this.views.forEach(({ view }) => {
+            if (!view?.webContents || view.webContents.isDestroyed()) return;
+            view.webContents.send(channel, payload);
+        });
+    }
+
     sendToSessionView(sessionId, channel, payload) {
         const entry = this.views.get(sessionId);
         if (!entry?.view?.webContents || entry.view.webContents.isDestroyed()) {

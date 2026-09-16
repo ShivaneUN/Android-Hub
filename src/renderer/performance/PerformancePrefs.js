@@ -20,7 +20,8 @@
         hoverPreview: true,
         dockBatteryLive: true,
         uiAnimations: true,
-        sessionTransportSwitch: true
+        sessionTransportSwitch: true,
+        experimentalYumeRenderer: false
     };
 
     let cachedPrefs = { ...DEFAULT_PREFS };
@@ -33,6 +34,7 @@
         for (const key of FEATURE_KEYS) {
             prefs[key] = source[key] !== false;
         }
+        prefs.experimentalYumeRenderer = source.experimentalYumeRenderer === true;
         return prefs;
     }
 

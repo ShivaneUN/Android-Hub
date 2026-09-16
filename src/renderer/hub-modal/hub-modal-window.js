@@ -55,10 +55,6 @@
         window.hubModalWindowAPI?.close?.();
     }
 
-    function isDeviceFsOpen() {
-        return Boolean(window.isDeviceFsExplorerOpen?.());
-    }
-
     function isCleanupModalOpen() {
         const overlay = document.getElementById("cleanup-modal-overlay");
         return Boolean(overlay && !overlay.classList.contains("hidden"));
@@ -77,7 +73,6 @@
             panel.addEventListener("mousedown", (event) => {
                 if (event.target !== panel) return;
                 if (isCleanupModalOpen()) return;
-                if (isDeviceFsOpen()) return;
                 closeHubModal();
             });
         });
@@ -85,12 +80,6 @@
         document.addEventListener("keydown", (event) => {
             if (event.key !== "Escape") return;
             if (event.defaultPrevented) return;
-
-            if (isDeviceFsOpen()) {
-                window.closeDeviceFsExplorer?.();
-                event.preventDefault();
-                return;
-            }
 
             if (isCleanupModalOpen()) {
                 document.getElementById("cleanup-modal-cancel-btn")?.click();
@@ -121,16 +110,17 @@
             window.stopDevicesPanelLiveRefresh?.();
             await window.openNewSessionPanel({ inChildWindow: true });
         } else if (panel === "settings" && typeof window.openSettingsPanel === "function") {
-            await window.openSettingsPanel({ inChildWindow: true, tab: tab || "devices" });
+            const settingsTab = payload.openFiles ? "files" : (tab || "devices");
+            await window.openSettingsPanel({
+                inChildWindow: true,
+                tab: settingsTab,
+                files: payload.openFiles || undefined
+            });
         } else if (panel === "help" && typeof window.openHelpPanel === "function") {
             window.stopDevicesPanelLiveRefresh?.();
             window.openHelpPanel(payload.tab || "shortcuts");
         } else {
             window.stopDevicesPanelLiveRefresh?.();
-        }
-
-        if (payload.openFiles && typeof window.openDeviceFsExplorer === "function") {
-            await window.openDeviceFsExplorer(payload.openFiles);
         }
     }
 

@@ -67,6 +67,75 @@ function quoteForDeviceShell(value) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+const IMAGE_MIME = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml"
+};
+const PREVIEW_MAX_BYTES = 15 * 1024 * 1024;
+
+function extensionOf(name) {
+    const base = String(name || "");
+    const idx = base.lastIndexOf(".");
+    return idx >= 0 ? base.slice(idx + 1).toLowerCase() : "";
+}
+
+function mimeFromName(name) {
+    return IMAGE_MIME[extensionOf(name)] || null;
+}
+
+function looksLikeLsLong(stdout) {
+    return String(stdout || "").split(/\r?\n/).some((line) => (
+        /^[-dlcbps][-rwxsStT]{9}[+.@]?\s/.test(line.trim())
+    ));
+}
+
+function parseLsLong(stdout, dir) {
+    const entries = [];
+    for (const raw of String(stdout || "").split(/\r?\n/)) {
+        const line = raw.replace(/\r/g, "").trim();
+        if (!line || /^total\s/i.test(line) || line.startsWith("ls:")) continue;
+        const match = line.match(/^([-dlcbps])[-rwxsStT]{9}[+.@]?\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)$/);
+        if (!match) continue;
+        const name = match[2].replace(/\/$/, "").trim();
+        if (!name || name === "." || name === "..") continue;
+        const fullPath = joinRemote(dir, name);
+        if (!fullPath) continue;
+        entries.push({
+            name,
+            path: fullPath,
+            isDir: match[1] === "d"
+        });
+    }
+    return entries;
+}
+
+function parseLsMarked(stdout, dir) {
+    const entries = [];
+    for (const raw of String(stdout || "").split(/\r?\n/)) {
+        const line = raw.replace(/\r/g, "").trim();
+        if (!line || line === "." || line === ".." || line.startsWith("ls:")) continue;
+        const typed = line.match(/^([df])\t(.*)$/);
+        if (typed) {
+            const name = typed[2].trim();
+            const fullPath = joinRemote(dir, name);
+            if (!name || !fullPath) continue;
+            entries.push({ name, path: fullPath, isDir: typed[1] === "d" });
+            continue;
+        }
+        const isDir = line.endsWith("/");
+        const name = isDir ? line.slice(0, -1) : line;
+        const fullPath = joinRemote(dir, name);
+        if (!name || !fullPath) continue;
+        entries.push({ name, path: fullPath, isDir });
+    }
+    return entries;
+}
+
 class DeviceFsManager {
     constructor(adbPath) {
         this.adbPath = adbPath;
@@ -92,34 +161,32 @@ class DeviceFsManager {
     async list(serial, remotePath) {
         const dir = isAllowedRemotePath(remotePath) ? normalizeRemotePath(remotePath) : "/sdcard";
         const quoted = quoteForDeviceShell(dir);
-        let stdout = "";
+        let entries = [];
         try {
-            stdout = await this._runAdb(serial, ["shell", `ls -1p ${quoted}`], { timeoutMs: 15000 });
+            const longOut = await this._runAdb(serial, ["shell", `ls -l ${quoted}`], { timeoutMs: 20000 });
+            if (looksLikeLsLong(longOut)) {
+                entries = parseLsLong(longOut, dir);
+            }
         } catch (err) {
             const message = String(err?.message || "");
-            if (/unknown option|illegal option|invalid option/i.test(message)) {
-                stdout = await this._runAdb(serial, ["shell", `ls -1 ${quoted}`], { timeoutMs: 15000 });
-            } else if (/no such file|not a directory/i.test(message)) {
+            if (/no such file|not a directory/i.test(message)) {
                 throw new Error("Dossier introuvable");
-            } else {
-                throw err;
             }
         }
 
-        const entries = [];
-        for (const raw of stdout.split(/\r?\n/)) {
-            const line = raw.replace(/\r/g, "").trim();
-            if (!line || line === "." || line === "..") continue;
-            const isDir = line.endsWith("/");
-            const name = isDir ? line.slice(0, -1) : line;
-            if (!name || name.startsWith("ls:")) continue;
-            const fullPath = joinRemote(dir, name);
-            if (!fullPath) continue;
-            entries.push({
-                name,
-                path: fullPath,
-                isDir
-            });
+        if (!entries.length || !entries.some((item) => item.isDir)) {
+            try {
+                const typed = await this._runAdb(serial, ["shell",
+                    `dir=${quoted}; ls -1 "$dir" 2>/dev/null | while IFS= read -r name || [ -n "$name" ]; do [ -z "$name" ] && continue; if [ -d "$dir/$name" ]; then printf 'd\\t%s\\n' "$name"; else printf 'f\\t%s\\n' "$name"; fi; done`
+                ], { timeoutMs: 25000 });
+                const typedEntries = parseLsMarked(typed, dir);
+                if (typedEntries.length) entries = typedEntries;
+            } catch (_err) {
+                if (!entries.length) {
+                    const marked = await this._runAdb(serial, ["shell", `ls -1p ${quoted}`], { timeoutMs: 15000 });
+                    entries = parseLsMarked(marked, dir);
+                }
+            }
         }
 
         entries.sort((a, b) => {
@@ -140,7 +207,7 @@ class DeviceFsManager {
         if (!fullPath || !isAllowedRemotePath(fullPath, { allowRoot: false })) {
             throw new Error("Nom de dossier invalide");
         }
-        await this._runAdb(serial, ["shell", "mkdir", "-p", fullPath], { timeoutMs: 12000 });
+        await this._runAdb(serial, ["shell", `mkdir -p -- ${quoteForDeviceShell(fullPath)}`], { timeoutMs: 12000 });
         return { path: fullPath };
     }
 
@@ -149,8 +216,37 @@ class DeviceFsManager {
         if (!isAllowedRemotePath(target, { allowRoot: false })) {
             throw new Error("Suppression refusée");
         }
-        await this._runAdb(serial, ["shell", "rm", "-rf", target], { timeoutMs: 60000 });
+        await this._runAdb(serial, ["shell", `rm -rf -- ${quoteForDeviceShell(target)}`], { timeoutMs: 60000 });
         return { path: target };
+    }
+
+    async preview(serial, remotePath) {
+        const source = normalizeRemotePath(remotePath);
+        if (!isAllowedRemotePath(source, { allowRoot: false })) {
+            throw new Error("Chemin device invalide");
+        }
+        const name = basenameRemote(source);
+        const mime = mimeFromName(name);
+        if (!mime) {
+            return { previewable: false, name };
+        }
+        const quoted = quoteForDeviceShell(source);
+        const result = await this._execOut(serial, `cat -- ${quoted}`, {
+            timeoutMs: 45000,
+            maxBytes: PREVIEW_MAX_BYTES
+        });
+        if (result.truncated) {
+            return { previewable: false, tooLarge: true, name, mime };
+        }
+        if (!result.buffer?.length) {
+            return { previewable: false, name, mime };
+        }
+        return {
+            previewable: true,
+            name,
+            mime,
+            data: result.buffer.toString("base64")
+        };
     }
 
     async push(serial, localPaths, remoteDir, onProgress) {
@@ -251,6 +347,61 @@ class DeviceFsManager {
                     return;
                 }
                 finish(new Error(stderr.trim() || stdout.trim() || `adb exit ${code}`));
+            });
+        });
+    }
+
+    _execOut(serial, shellCommand, { timeoutMs = 30000, maxBytes = 0 } = {}) {
+        return new Promise((resolve, reject) => {
+            if (!this.adbPath || !serial) {
+                reject(new Error("ADB ou serial manquant"));
+                return;
+            }
+            const child = spawnHidden(this.adbPath, ["-s", serial, "exec-out", "sh", "-c", shellCommand]);
+            const chunks = [];
+            let stderr = "";
+            let size = 0;
+            let truncated = false;
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                child.kill();
+                reject(new Error("Timeout ADB"));
+            }, timeoutMs);
+
+            const finish = (err, value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                if (err) reject(err);
+                else resolve(value);
+            };
+
+            child.stdout?.on("data", (chunk) => {
+                if (truncated) return;
+                size += chunk.length;
+                if (maxBytes && size > maxBytes) {
+                    truncated = true;
+                    child.kill();
+                    return;
+                }
+                chunks.push(chunk);
+            });
+            child.stderr?.on("data", (chunk) => {
+                stderr += chunk.toString();
+            });
+            child.on("error", (err) => finish(err));
+            child.on("close", (code) => {
+                if (truncated) {
+                    finish(null, { truncated: true, buffer: Buffer.concat(chunks) });
+                    return;
+                }
+                if (code !== 0 && size === 0) {
+                    finish(new Error(stderr.trim() || `adb exec-out exit ${code}`));
+                    return;
+                }
+                finish(null, { truncated: false, buffer: Buffer.concat(chunks) });
             });
         });
     }

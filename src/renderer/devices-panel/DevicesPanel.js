@@ -122,9 +122,10 @@
 
     function bindDiscoverSection() {
         const btn = document.getElementById("devices-discover-btn");
-        if (!btn || btn.dataset.bound === "1") return;
-        btn.dataset.bound = "1";
-        btn.addEventListener("click", () => void onDiscoverDevices());
+        if (btn && btn.dataset.bound !== "1") {
+            btn.dataset.bound = "1";
+            btn.addEventListener("click", () => void onDiscoverDevices());
+        }
     }
 
     function bindRowActions(container) {
@@ -620,19 +621,20 @@
         }
 
         if (action === "files") {
-            if (typeof window.openDeviceFsExplorer === "function") {
-                void window.openDeviceFsExplorer({
-                    deviceId,
-                    serial: deviceId,
-                    deviceName: btn.dataset.deviceName || ""
-                });
-                return;
-            }
-            void window.deviceFsAPI?.openExplorer?.({
+            const files = {
                 deviceId,
                 serial: deviceId,
                 deviceName: btn.dataset.deviceName || ""
-            });
+            };
+            if (typeof window.openSettingsPanel === "function") {
+                void window.openSettingsPanel({
+                    inChildWindow: true,
+                    tab: "files",
+                    files
+                });
+                return;
+            }
+            void window.deviceFsAPI?.openExplorer?.(files);
             return;
         }
 

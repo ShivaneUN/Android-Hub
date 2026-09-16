@@ -21,6 +21,10 @@
         const host = canvasEl.parentNode;
         if (host) {
             host.insertBefore(viewport, canvasEl);
+            const videoEl = document.getElementById("session-video-element");
+            if (videoEl && videoEl.parentElement === host) {
+                viewport.appendChild(videoEl);
+            }
             viewport.appendChild(canvasEl);
         }
 
@@ -54,9 +58,10 @@
             const portraitMode = document.documentElement.dataset.portraitDisplay === "1";
             if (portraitMode && state.scale <= MIN_SCALE) {
                 canvasEl.style.transform = "";
-                return;
+            } else {
+                canvasEl.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;
             }
-            canvasEl.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;
+            window.__yumeVideoSink?.syncLayout?.();
         }
 
         function clampTranslation() {

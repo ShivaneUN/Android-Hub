@@ -17,11 +17,13 @@ function broadcastWallpaperChanged(getWindows, state) {
 }
 
 function broadcastPerformanceChanged(getWindows, performance) {
+    const payload = { performance };
     for (const win of getWindows()) {
         if (win && !win.isDestroyed()) {
-            win.webContents.send("ui:performance-changed", { performance });
+            win.webContents.send("ui:performance-changed", payload);
         }
     }
+    global.browserViewManager?.broadcastToSessionViews?.("ui:performance-changed", payload);
 }
 
 function broadcastDisplayPresetsUpdated(getWindows) {
@@ -98,7 +100,8 @@ function registerUiPreferencesHandlers(deps) {
                 hoverPreview: true,
                 dockBatteryLive: true,
                 uiAnimations: true,
-                sessionTransportSwitch: true
+                sessionTransportSwitch: true,
+                experimentalYumeRenderer: false
             };
         }
         return manager.getPerformancePrefs();

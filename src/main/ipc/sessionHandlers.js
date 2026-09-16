@@ -769,6 +769,11 @@ function attachTabCycleHandler(webContents) {
         if (input.alt) return;
         if (input.isAutoRepeat) return;
         const key = String(input.key || "").toLowerCase();
+        if (key === "a") {
+            event.preventDefault();
+            void global.clipboardSyncManager?.handleShortcut?.(webContents, key);
+            return;
+        }
         if (key !== "c" && key !== "x" && key !== "v") return;
         if (!global.clipboardSyncManager?.isEnabled?.()) return;
 
